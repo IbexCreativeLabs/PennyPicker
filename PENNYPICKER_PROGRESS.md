@@ -60,11 +60,17 @@
 - Current BCH transaction-introspection opcodes expose transaction fields such as
   `nLockTime`, but not current block height or block time. `OP_CHECKLOCKTIMEVERIFY`
   provides a not-before constraint; it cannot make a signed quote unspendable after
-  an expiry. Therefore a covenant can authenticate the quote but cannot independently
-  enforce a maximum quote age with current BCH script rules. An app-side freshness
-  check would remain a trust assumption because third parties can construct their own
-  fills. References: [BCH native introspection CHIP](https://github.com/bitjson/bch-2022/blob/master/CHIP-2021-02-Add-Native-Introspection-Opcodes.md),
-  [BCH locktime rules](https://documentation.cash/protocol/blockchain/transaction.html).
+  an expiry. CashScript likewise exposes `tx.locktime` as the transaction's nLockTime;
+  CLTV compares its operand with that transaction field. Consensus separately checks
+  whether the locktime is reached against the chain's median-time-past. A transaction
+  can therefore use an older nLockTime after that value has matured; it does not prove
+  the chain's current time to the script. A covenant can authenticate the quote but
+  cannot independently enforce a maximum quote age with these rules. An app-side
+  freshness check would remain a trust assumption because third parties can construct
+  their own fills. References: [BCH native introspection CHIP](https://github.com/bitjson/bch-2022/blob/master/CHIP-2021-02-Add-Native-Introspection-Opcodes.md),
+  [CashScript introspection and CLTV](https://cashscript.org/docs/design/covenants),
+  [BCH locktime rules](https://documentation.cash/protocol/blockchain/transaction.html),
+  [BCH CLTV specification](https://documentation.cash/protocol/forks/bip-0065.html).
 - ParyonUSD also uses the `PUSD` symbol on BCH mainnet. PennyPicker's planned Chipnet
   category is a separate experimental token, so the ticker is not a unique identifier;
   UIs and market data must identify assets by category. ParyonUSD prices are not a
