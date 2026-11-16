@@ -20,6 +20,10 @@
 - Existing `/cashonize` connection remains available. This milestone does not request
   keys or initialize a signing wallet. No transaction was built, signed or broadcast
   during development.
+- Added an exportable BCMR-v2 draft after the PUSD genesis output is confirmed. It is
+  bound to the verified category, marks PUSD as experimental and not USD-backed, and
+  reports the SHA-256 of the exact downloaded JSON bytes. It does not alter Vox's
+  existing metadata registries, upload the file, or claim on-chain authentication.
 
 ## Important architecture findings
 
@@ -94,7 +98,9 @@
    invariants and funding/rounding before preparing a transaction builder.
 3. Manually review and, if accepted, use `/penny-picker/token` to sign and broadcast
    the prepared PUSD genesis on Chipnet. Then verify the confirmed output and publish
-   BCMR metadata. This requires an explicit user decision and wallet interaction.
+   BCMR metadata. A local metadata draft can now be downloaded after confirmation;
+   public publication still needs hosted bytes and an authenticated registry identity.
+   Genesis requires an explicit user decision and wallet interaction.
 4. Implement chain indexing/discovery and unsigned order creation/cancellation using
    the reviewed covenant; distinguish created, indexed, matched, signed, broadcast
    and confirmed states.

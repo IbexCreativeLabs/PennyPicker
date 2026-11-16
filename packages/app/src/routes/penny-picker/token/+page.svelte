@@ -22,6 +22,7 @@
 		type UnsignedPusdGenesis
 	} from '$lib/pennypicker/pusdGenesis';
 	import type { CashonizeClient, CashonizeSession } from '$lib/cashonize/walletconnect';
+	import { createPusdBcmrDraft, type PusdBcmrDraft } from '$lib/pennypicker/bcmrDraft';
 
 	let client: CashonizeClient | undefined = $state();
 	let session: CashonizeSession | undefined = $state();
@@ -32,6 +33,7 @@
 	let signedTransactionHash = $state('');
 	let broadcastTxid = $state('');
 	let outputStatus = $state('');
+	let bcmrDraft = $state<PusdBcmrDraft | undefined>();
 	let autoApproveConfirmed = $state(false);
 	let busy = $state(false);
 	let error = $state('');
@@ -144,13 +146,17 @@
 				(utxo) => utxo.token?.amount === PUSD_INITIAL_AMOUNT && !utxo.token.nft
 			);
 			if (categoryOutputs.length > 0 && created.length === 0) {
+				bcmrDraft = undefined;
 				outputStatus = 'A UTXO with the candidate category was found, but its amount or NFT state does not match the fixed-supply PUSD specification.';
 			} else if (created.length === 0) {
+				bcmrDraft = undefined;
 				outputStatus = 'No PUSD output is indexed yet. The transaction may still be propagating, or it may not have been accepted.';
 			} else if (created.some((utxo) => (utxo.height ?? -1) > 0)) {
 				localStorage.setItem(PUSD_CATEGORY_STORAGE_KEY, genesis.candidateCategory);
+				bcmrDraft = createPusdBcmrDraft(genesis.candidateCategory);
 				outputStatus = `Confirmed PUSD UTXO found: ${created.map((utxo) => `${broadcastTxid}:${utxo.vout} (${utxo.token!.amount.toString()} base units, ${utxo.satoshis.toString()} sats)`).join(', ')}.`;
 			} else {
+				bcmrDraft = undefined;
 				outputStatus = `PUSD UTXO found in the mempool: ${created.map((utxo) => `${broadcastTxid}:${utxo.vout} (${utxo.token!.amount.toString()} base units, ${utxo.satoshis.toString()} sats)`).join(', ')}. It is not confirmed yet.`;
 			}
 		} catch (cause) {
@@ -159,6 +165,17 @@
 			busy = false;
 			currentOperation = '';
 		}
+	}
+
+	function downloadBcmrDraft() {
+		if (!bcmrDraft) return;
+		const blob = new Blob([bcmrDraft.json], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = `pusd-chipnet-bcmr-${bcmrDraft.category}.json`;
+		anchor.click();
+		URL.revokeObjectURL(url);
 	}
 
 </script>
@@ -234,12 +251,21 @@
 		</section>
 	{/if}
 
+	{#if bcmrDraft}
+		<section class="preview">
+			<h2>BCMR metadata draft</h2>
+			<p>A confirmed PUSD category was found, so PennyPicker prepared a BCMR-v2 JSON file for that category. This local draft is not published or authenticated; wallets will not discover it automatically.</p>
+			<p>SHA-256 of the exact downloaded bytes: <code>{bcmrDraft.sha256Hex}</code></p>
+			<button type="button" onclick={downloadBcmrDraft}>Download BCMR JSON draft</button>
+		</section>
+	{/if}
+
 	{#if currentOperation}<p role="status">{currentOperation}</p>{/if}
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
 	<section class="next">
 		<h2>After genesis</h2>
-		<p>The token category must be registered in a BCMR metadata registry before wallets can reliably display its name and symbol. Publishing registry metadata is a separate step and is not automated here. Genesis does not create or publish an exchange order.</p>
+		<p>The metadata draft is for review or manual import. Public publication still requires hosting the exact JSON bytes and choosing an authenticated registry identity/authchain; this app does not upload or publish it. Genesis does not create or publish an exchange order.</p>
 	</section>
 </main>
 
