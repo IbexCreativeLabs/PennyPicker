@@ -44,6 +44,14 @@
 - Photon is a BCH proof-of-work oracle, not a BCH/PUSD price oracle.
 - No authenticated and manipulation-resistant BCH/PUSD oracle feed is configured.
   Stale or untrusted prices must block order matching and transaction execution.
+- Riften Labs documents price endpoints keyed by exact token category, but its public
+  examples use the Cauldron indexer host and document no Chipnet endpoint, signed
+  response, or authenticated-feed guarantee. Historical responses include a timestamp;
+  current responses contain only a price. These endpoints cannot authorize execution.
+  A Chipnet reference source remains unresolved, and a market price must not be
+  substituted for PUSD/USD or treated as a guaranteed peg. References:
+  [Riften Labs Indexer API](https://docs.riftenlabs.com/cauldron/API/) and
+  [Cauldron endpoints](https://docs.riftenlabs.com/cauldron/API/cauldron/).
 - Source review of `packages/cauldron` found contract derivation for a supplied pool
   public-key hash, but no pool discovery or reserve index. CatDex's `getAllMarketOrders`
   similarly queries only caller-supplied script hashes. A direct PennyPicker-category
@@ -77,6 +85,9 @@
   reference). Matching rejects duplicate IDs, invalid remaining quantities, malformed
   timestamps, and side/delta combinations. The current per-fill BCH quote rounds up
   to satoshis; cumulative rounding still needs covenant-level review before trading.
+- Market order drafts and matching now enforce the CashTokens signed-int64 token
+  amount bound, and BCH quote conversion rejects outputs above the maximum monetary
+  supply. The shared bound is used by both the market layer and commitment codec.
 - Genesis preparation now checks every unsigned input against its same-index
   Cashonize source output, requires all input unlocking scripts to be empty, and
   validates the PUSD output value and destination script before presenting the

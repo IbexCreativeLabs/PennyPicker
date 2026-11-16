@@ -9,6 +9,8 @@ export const PUSD_UNITS_PER_TOKEN = 100n;
 export const RATE_SCALE = 100_000_000n;
 export const SATS_PER_BCH = 100_000_000n;
 export const MAX_BCH_SATOSHIS = 21_000_000n * SATS_PER_BCH;
+/** CashTokens encode fungible amounts as signed 64-bit integers. */
+export const MAX_TOKEN_UNITS = (1n << 63n) - 1n;
 export const MAX_ORACLE_AGE_MS = 5 * 60 * 1000;
 export const MIN_ORDER_DELTA_BPS = -9_999;
 export const MAX_ORDER_DELTA_BPS = 1_000_000;
@@ -83,7 +85,9 @@ export function createOrder(
 ): PricedOrder {
 	assertFreshOracle(oracle, nowMs);
 	if (!input.id.trim()) throw new Error('Order ID is required.');
-	if (input.quantityUnits <= 0n) throw new Error('Order quantity must be positive.');
+	if (input.quantityUnits <= 0n || input.quantityUnits > MAX_TOKEN_UNITS) {
+		throw new Error('Order quantity must fit the CashToken amount range.');
+	}
 	assertSideDelta(input.side, input.deltaBps);
 	const limitRateSatsPerPusdScaled = rateAtDeltaBps(oracle.rateSatsPerPusdScaled, input.deltaBps);
 	return {
@@ -118,7 +122,11 @@ export function quoteSatoshis(pusdUnits: bigint, rateSatsPerPusdScaled: bigint):
 	if (rateSatsPerPusdScaled <= 0n) throw new Error('Rate must be positive.');
 	const numerator = pusdUnits * rateSatsPerPusdScaled;
 	const denominator = PUSD_UNITS_PER_TOKEN * RATE_SCALE;
-	return (numerator + denominator - 1n) / denominator;
+	const satoshis = (numerator + denominator - 1n) / denominator;
+	if (satoshis > MAX_BCH_SATOSHIS) {
+		throw new Error('Quoted BCH amount exceeds the maximum monetary supply.');
+	}
+	return satoshis;
 }
 
 export function formatPusd(units: bigint): string {
@@ -171,6 +179,7 @@ export function matchOrders(
 		ids.add(order.id);
 		if (
 			order.quantityUnits <= 0n ||
+			order.quantityUnits > MAX_TOKEN_UNITS ||
 			order.remainingUnits < 0n ||
 			order.remainingUnits > order.quantityUnits
 		) {

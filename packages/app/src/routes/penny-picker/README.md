@@ -8,6 +8,8 @@ Rates in the market module are fixed-point satoshis per whole PUSD with a 1e8 sc
 PUSD quantities use integer CashToken base units (100 units per PUSD). Signed BPS
 deltas adjust the BCH/PUSD limit from the reference; positive deltas raise the limit
 and negative deltas lower it. BCH output amounts round upward to whole satoshis.
+Order quantities are bounded by the CashTokens signed-int64 amount limit, and
+simulated BCH quotes cannot exceed BCH's maximum monetary supply.
 
 PUSD is an experimental token with no backing or promised USD peg. The page must not
 be used for trade decisions. Production use needs a reviewed covenant that binds the

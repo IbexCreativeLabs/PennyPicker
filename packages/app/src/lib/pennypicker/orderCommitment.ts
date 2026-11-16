@@ -1,7 +1,6 @@
-import { assertSideDelta, type OrderSide } from './market';
+import { assertSideDelta, MAX_TOKEN_UNITS, type OrderSide } from './market';
+export { MAX_TOKEN_UNITS };
 
-/** CashTokens caps fungible token amounts at signed int64 max. */
-export const MAX_TOKEN_UNITS = (1n << 63n) - 1n;
 export const BPS_ORDER_COMMITMENT_VERSION = 1;
 export const BPS_ORDER_COMMITMENT_BYTES = 14;
 
