@@ -53,6 +53,12 @@
   fresh observation from a production provider whose adapter authenticates the data.
   The development mock cannot satisfy this type and is still used only for local
   arithmetic. No provider currently implements this interface.
+- Added a draft 14-byte BPS order commitment codec: version, explicit side, remaining
+  PUSD base units, and signed BPS delta. It is isolated from CatDex because the
+  current covenant does not enforce this format. The reference quote is intentionally
+  supplied at fill time; the eventual covenant must authenticate it and ensure the
+  escrow can cover a changing BCH/PUSD rate. Fourteen bytes is within CashTokens'
+  40-byte NFT commitment limit ([specification](https://cashtokens.org/docs/spec/chip/)).
 - Chipnet activated BCH's May 2025 BigInt/VM-limits upgrade at height 227,228, so
   arbitrary-precision contract arithmetic is available there. The open protocol
   problem is oracle authenticity/freshness, not numeric precision. A covenant can

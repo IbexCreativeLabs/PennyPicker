@@ -9,6 +9,8 @@ export const PUSD_UNITS_PER_TOKEN = 100n;
 export const RATE_SCALE = 100_000_000n;
 export const SATS_PER_BCH = 100_000_000n;
 export const MAX_ORACLE_AGE_MS = 5 * 60 * 1000;
+export const MIN_ORDER_DELTA_BPS = -9_999;
+export const MAX_ORDER_DELTA_BPS = 1_000_000;
 
 export type OrderSide = 'buy-pusd' | 'sell-pusd';
 
@@ -55,12 +57,20 @@ export function assertFreshOracle(
 /** Floor the limit rate to the supported fixed-point precision. */
 export function rateAtDeltaBps(referenceRate: bigint, deltaBps: number): bigint {
 	if (referenceRate <= 0n) throw new Error('Reference rate must be positive.');
-	if (!Number.isSafeInteger(deltaBps) || deltaBps <= -10_000 || deltaBps > 1_000_000) {
-		throw new Error('BPS delta is outside the supported range.');
-	}
+	assertDeltaBps(deltaBps);
 	const result = (referenceRate * (BPS_DENOMINATOR + BigInt(deltaBps))) / BPS_DENOMINATOR;
 	if (result <= 0n) throw new Error('BPS delta rounds the limit price to zero.');
 	return result;
+}
+
+export function assertDeltaBps(deltaBps: number): void {
+	if (
+		!Number.isSafeInteger(deltaBps) ||
+		deltaBps < MIN_ORDER_DELTA_BPS ||
+		deltaBps > MAX_ORDER_DELTA_BPS
+	) {
+		throw new Error('BPS delta is outside the supported range.');
+	}
 }
 
 export function createOrder(
@@ -83,7 +93,8 @@ export function createOrder(
 }
 
 /** Buy orders use discounts (negative BPS); sell orders use premiums (positive BPS). */
-function assertSideDelta(side: OrderSide, deltaBps: number): void {
+export function assertSideDelta(side: OrderSide, deltaBps: number): void {
+	assertDeltaBps(deltaBps);
 	if (side !== 'buy-pusd' && side !== 'sell-pusd') throw new Error('Order side is invalid.');
 	if (side === 'buy-pusd' && deltaBps > 0) {
 		throw new Error('A buy order must be at or below the oracle reference (zero or negative BPS).');
