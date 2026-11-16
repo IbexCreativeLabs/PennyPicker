@@ -1,0 +1,110 @@
+{
+  "contractName": "PennyPickerOrder",
+  "constructorInputs": [
+    {
+      "name": "oracleCategory",
+      "type": "bytes32"
+    },
+    {
+      "name": "pusdCategory",
+      "type": "bytes32"
+    },
+    {
+      "name": "makerPkh",
+      "type": "bytes20"
+    },
+    {
+      "name": "side",
+      "type": "int"
+    },
+    {
+      "name": "deltaBps",
+      "type": "int"
+    },
+    {
+      "name": "targetUnits",
+      "type": "int"
+    }
+  ],
+  "abi": [
+    {
+      "name": "fill",
+      "inputs": []
+    },
+    {
+      "name": "cancel",
+      "inputs": [
+        {
+          "name": "makerPk",
+          "type": "pubkey"
+        },
+        {
+          "name": "makerSig",
+          "type": "sig"
+        }
+      ]
+    }
+  ],
+  "bytecode": "OP_6 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_INPUTINDEX OP_DUP OP_0 OP_GREATERTHAN OP_VERIFY OP_0 OP_UTXOTOKENCATEGORY OP_ROT OP_1 OP_CAT OP_EQUALVERIFY OP_0 OP_UTXOTOKENCOMMITMENT OP_8 OP_SPLIT OP_DROP OP_BIN2NUM OP_DUP OP_0 OP_GREATERTHAN OP_VERIFY OP_OVER OP_OUTPUTBYTECODE OP_2 OP_PICK OP_UTXOBYTECODE OP_EQUALVERIFY OP_OVER OP_UTXOTOKENAMOUNT OP_2 OP_PICK OP_OUTPUTTOKENAMOUNT OP_OVER OP_0 OP_GREATERTHAN OP_IF OP_3 OP_PICK OP_UTXOTOKENCATEGORY OP_5 OP_PICK OP_EQUALVERIFY OP_ENDIF OP_DUP OP_0 OP_GREATERTHAN OP_IF OP_3 OP_PICK OP_OUTPUTTOKENCATEGORY OP_5 OP_PICK OP_EQUALVERIFY OP_ENDIF OP_DUP OP_ROT OP_SUB OP_3 OP_PICK OP_OUTPUTVALUE OP_4 OP_ROLL OP_UTXOVALUE OP_SUB OP_6 OP_ROLL OP_0 OP_NUMEQUAL OP_IF OP_OVER OP_0 OP_GREATERTHAN OP_VERIFY OP_2 OP_PICK OP_8 OP_PICK OP_LESSTHANOREQUAL OP_VERIFY OP_ELSE OP_OVER OP_0 OP_LESSTHAN OP_VERIFY OP_ENDIF 00407a10f35a OP_MUL OP_SWAP OP_3 OP_ROLL OP_MUL 1027 OP_6 OP_ROLL OP_ADD OP_MUL OP_ADD OP_0 OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_DROP OP_1 OP_ELSE OP_6 OP_ROLL OP_1 OP_NUMEQUALVERIFY OP_6 OP_PICK OP_HASH160 OP_3 OP_ROLL OP_EQUALVERIFY OP_6 OP_ROLL OP_6 OP_ROLL OP_CHECKSIGVERIFY OP_2DROP OP_2DROP OP_DROP OP_1 OP_ENDIF",
+  "source": "pragma cashscript ^0.11.0;\n\n// PennyPicker oracle-relative BPS limit order (one order per P2SH32 address).\n//\n// Escrow and proceeds live in a single UTXO at this address:\n//   side 0 (buy PUSD):  UTXO holds BCH; fills deliver PUSD into it and remove BCH.\n//   side 1 (sell PUSD): UTXO holds PUSD; fills remove PUSD and add BCH to it.\n//\n// Fills must spend the PennyPicker oracle-state UTXO at input 0. Its mutable NFT\n// commitment starts with rate:int64le = satoshis per whole PUSD, scaled by 1e8.\n// The effective limit is rate * (10000 + deltaBps) / 10000. The settlement check is\n// exact (no rounding): dSat * 1e14 + dUnits * rate * (10000 + deltaBps) >= 0,\n// where 1e14 = 100 PUSD units * 1e8 rate scale * 10000 BPS denominator.\ncontract PennyPickerOrder(\n    bytes32 oracleCategory,\n    bytes32 pusdCategory,\n    bytes20 makerPkh,\n    int side,\n    int deltaBps,\n    int targetUnits\n) {\n    function fill() {\n        int i = this.activeInputIndex;\n        require(i > 0);\n\n        // Authentic current oracle state: the only mutable NFT of its category.\n        require(tx.inputs[0].tokenCategory == oracleCategory + 0x01);\n        bytes rateBin = tx.inputs[0].nftCommitment.split(8)[0];\n        int rate = int(rateBin);\n        require(rate > 0);\n\n        // The order continues at the same index and address.\n        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);\n\n        int inUnits = tx.inputs[i].tokenAmount;\n        int outUnits = tx.outputs[i].tokenAmount;\n        if (inUnits > 0) {\n            require(tx.inputs[i].tokenCategory == pusdCategory);\n        }\n        if (outUnits > 0) {\n            require(tx.outputs[i].tokenCategory == pusdCategory);\n        }\n\n        int dUnits = outUnits - inUnits;\n        int dSat = tx.outputs[i].value - tx.inputs[i].value;\n\n        if (side == 0) {\n            require(dUnits > 0);\n            require(outUnits <= targetUnits);\n        } else {\n            require(dUnits < 0);\n        }\n\n        require(dSat * 100000000000000 + dUnits * rate * (10000 + deltaBps) >= 0);\n    }\n\n    // The maker withdraws escrow and proceeds, closing or replacing the order.\n    function cancel(pubkey makerPk, sig makerSig) {\n        require(hash160(makerPk) == makerPkh);\n        require(checkSig(makerSig, makerPk));\n    }\n}\n",
+  "debug": {
+    "bytecode": "5679009c63c07600a06900ce7b517e8800cf587f75817600a06978cd5279c78878d05279d37800a0635379ce557988687600a0635379d155798868767b945379cc547ac694567a009c637800a06952795879a1696778009f69680600407a10f35a957c537a95021027567a93959300a2696d6d755167567a519d5679a9537a88567a567aad6d6d755168",
+    "sourceMap": "22:4:55:5;;;;;23:16:23:37;24::24:17;:20::21;:16:::1;:8::23;27:26:27:27:0;:16::42:1;:46::60:0;:63::67;:46:::1;:8::69;28:34:28:35:0;:24::50:1;:57::58:0;:24::59:1;:::62;29:19:29:31;30:16:30:20:0;:23::24;:16:::1;:8::26;33:27:33:28:0;:16::45:1;:59::60:0;;:49::77:1;:8::79;35:32:35:33:0;:22::46:1;36:34:36:35:0;;:23::48:1;37:12:37:19:0;:22::23;:12:::1;:25:39:9:0;38:30:38:31;;:20::46:1;:50::62:0;;:12::64:1;37:25:39:9;40:12:40:20:0;:23::24;:12:::1;:26:42:9:0;41:31:41:32;;:20::47:1;:51::63:0;;:12::65:1;40:26:42:9;44:21:44:29:0;:32::39;:21:::1;45:30:45:31:0;;:19::38:1;:51::52:0;;:41::59:1;:19;47:12:47:16:0;;:20::21;:12:::1;:23:50:9:0;48:20:48:26;:29::30;:20:::1;:12::32;49:20:49:28:0;;:32::43;;:20:::1;:12::45;50:15:52:9:0;51:20:51:26;:29::30;:20:::1;:12::32;50:15:52:9;54:23:54:38:0;:16:::1;:41::47:0;:50::54;;:41:::1;:58::63:0;:66::74;;:58:::1;:41::75;:16;:79::80:0;:16:::1;:8::82;22:4:55:5;;;;;58::61::0;;;;59:24:59:31;;:16::32:1;:36::44:0;;:8::46:1;60:25:60:33:0;;:35::42;;:8::45:1;58:4:61:5;;;;14:0:62:1",
+    "logs": [],
+    "requires": [
+      {
+        "ip": 15,
+        "line": 24
+      },
+      {
+        "ip": 21,
+        "line": 27
+      },
+      {
+        "ip": 31,
+        "line": 30
+      },
+      {
+        "ip": 37,
+        "line": 33
+      },
+      {
+        "ip": 52,
+        "line": 38
+      },
+      {
+        "ip": 63,
+        "line": 41
+      },
+      {
+        "ip": 83,
+        "line": 48
+      },
+      {
+        "ip": 89,
+        "line": 49
+      },
+      {
+        "ip": 94,
+        "line": 51
+      },
+      {
+        "ip": 110,
+        "line": 54
+      },
+      {
+        "ip": 125,
+        "line": 59
+      },
+      {
+        "ip": 130,
+        "line": 60
+      }
+    ]
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.11.5"
+  },
+  "updatedAt": "2026-11-16T18:10:52.781Z"
+}

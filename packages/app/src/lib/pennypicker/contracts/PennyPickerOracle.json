@@ -1,0 +1,98 @@
+{
+  "contractName": "PennyPickerOracle",
+  "constructorInputs": [
+    {
+      "name": "operatorPkh",
+      "type": "bytes20"
+    }
+  ],
+  "abi": [
+    {
+      "name": "update",
+      "inputs": [
+        {
+          "name": "operatorPk",
+          "type": "pubkey"
+        },
+        {
+          "name": "operatorSig",
+          "type": "sig"
+        }
+      ]
+    },
+    {
+      "name": "read",
+      "inputs": []
+    }
+  ],
+  "bytecode": "OP_OVER OP_0 OP_NUMEQUAL OP_IF OP_2 OP_PICK OP_HASH160 OP_EQUALVERIFY OP_ROT OP_ROT OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_OVER OP_UTXOBYTECODE OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENCATEGORY OP_OVER OP_UTXOTOKENCATEGORY OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENAMOUNT OP_OVER OP_UTXOTOKENAMOUNT OP_NUMEQUALVERIFY OP_DUP OP_OUTPUTTOKENCOMMITMENT OP_DUP OP_SIZE OP_NIP OP_16 OP_NUMEQUALVERIFY OP_8 OP_SPLIT OP_4 OP_SPLIT OP_3 OP_ROLL OP_UTXOTOKENCOMMITMENT OP_8 OP_SPLIT OP_NIP OP_4 OP_SPLIT OP_4 OP_ROLL OP_BIN2NUM OP_0 OP_GREATERTHAN OP_VERIFY OP_3 OP_ROLL OP_BIN2NUM OP_ROT OP_BIN2NUM OP_GREATERTHANOREQUAL OP_VERIFY OP_SWAP OP_BIN2NUM OP_SWAP OP_BIN2NUM OP_GREATERTHAN OP_NIP OP_ELSE OP_SWAP OP_1 OP_NUMEQUALVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_OVER OP_UTXOBYTECODE OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENCATEGORY OP_OVER OP_UTXOTOKENCATEGORY OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENAMOUNT OP_OVER OP_UTXOTOKENAMOUNT OP_NUMEQUALVERIFY OP_DUP OP_OUTPUTTOKENCOMMITMENT OP_OVER OP_UTXOTOKENCOMMITMENT OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE OP_SWAP OP_UTXOVALUE OP_GREATERTHANOREQUAL OP_NIP OP_ENDIF",
+  "source": "pragma cashscript ^0.11.0;\n\n// PennyPicker BCH/PUSD reference-price state.\n//\n// Holds the single mutable NFT of the oracle category (genesis mints no minting\n// baton). Commitment (16 bytes):\n//   rate:int64le      satoshis per whole PUSD, scaled by 1e8 (> 0)\n//   timestamp:int32le unix seconds claimed by the operator\n//   sequence:int32le  strictly increasing update counter\n//\n// Freshness model: fills must spend and recreate this UTXO unchanged, so a\n// superseded price is an already-spent output and cannot be used. The maximum\n// age of the current price is the operator's update cadence; the script cannot\n// observe wall-clock time, so it does not enforce a maximum age.\ncontract PennyPickerOracle(bytes20 operatorPkh) {\n    function update(pubkey operatorPk, sig operatorSig) {\n        require(hash160(operatorPk) == operatorPkh);\n        require(checkSig(operatorSig, operatorPk));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);\n        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);\n        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);\n\n        bytes next = tx.outputs[i].nftCommitment;\n        require(next.length == 16);\n        bytes nextRate, bytes nextTail = next.split(8);\n        bytes nextTime, bytes nextSeq = nextTail.split(4);\n        bytes prevTail = tx.inputs[i].nftCommitment.split(8)[1];\n        bytes prevTime, bytes prevSeq = prevTail.split(4);\n        require(int(nextRate) > 0);\n        require(int(nextTime) >= int(prevTime));\n        require(int(nextSeq) > int(prevSeq));\n    }\n\n    // Anyone may spend the state to read it, if it is recreated unchanged.\n    function read() {\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);\n        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);\n        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);\n        require(tx.outputs[i].nftCommitment == tx.inputs[i].nftCommitment);\n        require(tx.outputs[i].value >= tx.inputs[i].value);\n    }\n}\n",
+  "debug": {
+    "bytecode": "78009c635279a9887b7badc076cd78c78876d178ce8876d378d09d76d2768277609d587f547f537acf587f77547f547a8100a069537a817b81a2697c817c81a077677c519dc076cd78c78876d178ce8876d378d09d76d278cf8876cc7cc6a27768",
+    "sourceMap": "16:4:33:5;;;;17:24:17:34;;:16::35:1;:8::52;18:25:18:36:0;:38::48;:8::51:1;19:16:19:37:0;20:27:20:28;:16::45:1;:59::60:0;:49::77:1;:8::79;21:27:21:28:0;:16::43:1;:57::58:0;:47::73:1;:8::75;22:27:22:28:0;:16::41:1;:55::56:0;:45::69:1;:8::71;24:32:24:33:0;:21::48:1;25:16:25:20:0;:::27:1;;:31::33:0;:8::35:1;26:52:26:53:0;:41::54:1;27:55:27:56:0;:40::57:1;28:35:28:36:0;;:25::51:1;:58::59:0;:25::60:1;:::63;29:55:29:56:0;:40::57:1;30:20:30:28:0;;:16::29:1;:32::33:0;:16:::1;:8::35;31:20:31:28:0;;:16::29:1;:37::45:0;:33::46:1;:16;:8::48;32:20:32:27:0;:16::28:1;:35::42:0;:31::43:1;:8::45;16:4:33:5;;36::43::0;;;37:16:37:37;38:27:38:28;:16::45:1;:59::60:0;:49::77:1;:8::79;39:27:39:28:0;:16::43:1;:57::58:0;:47::73:1;:8::75;40:27:40:28:0;:16::41:1;:55::56:0;:45::69:1;:8::71;41:27:41:28:0;:16::43:1;:57::58:0;:47::73:1;:8::75;42:27:42:28:0;:16::35:1;:49::50:0;:39::57:1;:8::59;36:4:43:5;15:0:44:1",
+    "logs": [],
+    "requires": [
+      {
+        "ip": 8,
+        "line": 17
+      },
+      {
+        "ip": 11,
+        "line": 18
+      },
+      {
+        "ip": 17,
+        "line": 20
+      },
+      {
+        "ip": 22,
+        "line": 21
+      },
+      {
+        "ip": 27,
+        "line": 22
+      },
+      {
+        "ip": 34,
+        "line": 25
+      },
+      {
+        "ip": 52,
+        "line": 30
+      },
+      {
+        "ip": 59,
+        "line": 31
+      },
+      {
+        "ip": 65,
+        "line": 32
+      },
+      {
+        "ip": 75,
+        "line": 38
+      },
+      {
+        "ip": 80,
+        "line": 39
+      },
+      {
+        "ip": 85,
+        "line": 40
+      },
+      {
+        "ip": 90,
+        "line": 41
+      },
+      {
+        "ip": 96,
+        "line": 42
+      }
+    ]
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.11.5"
+  },
+  "updatedAt": "2026-11-16T18:10:53.052Z"
+}

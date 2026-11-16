@@ -1,0 +1,44 @@
+pragma cashscript ^0.11.0;
+
+// PennyPicker BCH/PUSD reference-price state.
+//
+// Holds the single mutable NFT of the oracle category (genesis mints no minting
+// baton). Commitment (16 bytes):
+//   rate:int64le      satoshis per whole PUSD, scaled by 1e8 (> 0)
+//   timestamp:int32le unix seconds claimed by the operator
+//   sequence:int32le  strictly increasing update counter
+//
+// Freshness model: fills must spend and recreate this UTXO unchanged, so a
+// superseded price is an already-spent output and cannot be used. The maximum
+// age of the current price is the operator's update cadence; the script cannot
+// observe wall-clock time, so it does not enforce a maximum age.
+contract PennyPickerOracle(bytes20 operatorPkh) {
+    function update(pubkey operatorPk, sig operatorSig) {
+        require(hash160(operatorPk) == operatorPkh);
+        require(checkSig(operatorSig, operatorPk));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);
+
+        bytes next = tx.outputs[i].nftCommitment;
+        require(next.length == 16);
+        bytes nextRate, bytes nextTail = next.split(8);
+        bytes nextTime, bytes nextSeq = nextTail.split(4);
+        bytes prevTail = tx.inputs[i].nftCommitment.split(8)[1];
+        bytes prevTime, bytes prevSeq = prevTail.split(4);
+        require(int(nextRate) > 0);
+        require(int(nextTime) >= int(prevTime));
+        require(int(nextSeq) > int(prevSeq));
+    }
+
+    // Anyone may spend the state to read it, if it is recreated unchanged.
+    function read() {
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);
+        require(tx.outputs[i].nftCommitment == tx.inputs[i].nftCommitment);
+        require(tx.outputs[i].value >= tx.inputs[i].value);
+    }
+}
