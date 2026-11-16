@@ -12,6 +12,7 @@ import {
 	requestChipnetAddresses
 } from '$lib/cashonize/walletconnect';
 import {
+	discoverOracleCategory,
 	discoverOrders,
 	getAddressUtxos,
 	getOracleState,
@@ -201,6 +202,16 @@ class PennyPickerSession {
 
 	async refreshMarket() {
 		this.reloadConfig();
+		if (!this.config.oracleCategory && this.config.oracleOperatorPkh) {
+			try {
+				const found = await discoverOracleCategory(this.config.oracleOperatorPkh);
+				if (found) {
+					this.config = { ...this.config, oracleCategory: found, source: { ...this.config.source, oracleCategory: 'discovered' } };
+				}
+			} catch (cause) {
+				this.marketError = `Chipnet Electrum server unreachable: ${errorText(cause)}`;
+			}
+		}
 		const market = this.market;
 		if (!market) {
 			this.oracleLoaded = true;

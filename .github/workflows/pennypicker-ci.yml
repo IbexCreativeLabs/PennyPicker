@@ -1,0 +1,34 @@
+name: PennyPicker CI
+
+# Runs the covenant/transaction tests and the production build on every push.
+# Deployment itself is done by Cloudflare Pages' GitHub integration (see DEPLOYMENT.md).
+# The inherited Vox workflows (GitHub Pages deploys to vox.cash / unspent.dev) were removed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Covenant, builder and mechanism tests (libauth BCH VM)
+        working-directory: packages/app
+        run: |
+          pnpm dlx tsx@4 scripts/pennypicker-contracts.test.ts
+          pnpm dlx tsx@4 scripts/pennypicker-exchange.test.ts
+          pnpm dlx tsx@4 scripts/pennypicker-mechanisms.test.ts
+      - name: Production build (static site in ./docs)
+        run: pnpm app:build

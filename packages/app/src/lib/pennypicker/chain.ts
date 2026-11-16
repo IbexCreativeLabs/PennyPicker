@@ -19,6 +19,7 @@ import {
 	type OracleUtxo
 } from './exchange';
 import { PUSD_CATEGORY_STORAGE_KEY } from './pusdGenesis';
+import { CHIPNET_DEPLOYMENT } from './deployment';
 
 export const ORACLE_CATEGORY_STORAGE_KEY = 'pennypicker:chipnet:oracle-category';
 export const ORACLE_OPERATOR_STORAGE_KEY = 'pennypicker:chipnet:oracle-operator-pkh';
@@ -45,28 +46,69 @@ export function writeStorage(key: string, value: string): void {
 	}
 }
 
+export type ConfigSource = 'env' | 'local' | 'default' | 'discovered' | 'missing';
+
 /**
  * Market identity: environment variables (shared deployment) take precedence
- * over values stored locally after this browser ran a genesis.
+ * over values stored locally after this browser ran a genesis, then over the
+ * committed public defaults in deployment.ts.
  */
-export function loadMarketConfig(): Partial<MarketConfig> & { source: Record<string, 'env' | 'local' | 'missing'> } {
+export function loadMarketConfig(): Partial<MarketConfig> & { source: Record<string, ConfigSource> } {
 	const env = import.meta.env ?? {};
-	const pick = (envKey: string, storageKey: string, pattern: RegExp) => {
+	const pick = (envKey: string, storageKey: string, fallback: string | undefined, pattern: RegExp) => {
 		const fromEnv = String(env[envKey] ?? '').trim().toLowerCase();
 		if (pattern.test(fromEnv)) return { value: fromEnv, source: 'env' as const };
 		const local = readStorage(storageKey);
 		if (pattern.test(local)) return { value: local, source: 'local' as const };
+		if (fallback && pattern.test(fallback)) return { value: fallback, source: 'default' as const };
 		return { value: undefined, source: 'missing' as const };
 	};
-	const pusd = pick('VITE_PENNYPICKER_PUSD_CATEGORY', PUSD_CATEGORY_STORAGE_KEY, hex32);
-	const oracle = pick('VITE_PENNYPICKER_ORACLE_CATEGORY', ORACLE_CATEGORY_STORAGE_KEY, hex32);
-	const operator = pick('VITE_PENNYPICKER_ORACLE_OPERATOR_PKH', ORACLE_OPERATOR_STORAGE_KEY, hex20);
+	const pusd = pick('VITE_PENNYPICKER_PUSD_CATEGORY', PUSD_CATEGORY_STORAGE_KEY, CHIPNET_DEPLOYMENT.pusdCategory, hex32);
+	const oracle = pick('VITE_PENNYPICKER_ORACLE_CATEGORY', ORACLE_CATEGORY_STORAGE_KEY, CHIPNET_DEPLOYMENT.oracleCategory, hex32);
+	const operator = pick('VITE_PENNYPICKER_ORACLE_OPERATOR_PKH', ORACLE_OPERATOR_STORAGE_KEY, CHIPNET_DEPLOYMENT.oracleOperatorPkh, hex20);
 	return {
 		pusdCategory: pusd.value,
 		oracleCategory: oracle.value,
 		oracleOperatorPkh: operator.value,
 		source: { pusdCategory: pusd.source, oracleCategory: oracle.source, oracleOperatorPkh: operator.source }
 	};
+}
+
+/**
+ * Find the oracle category from the operator's oracle contract when it is not
+ * configured. Accepts a candidate only if its genesis transaction spent
+ * output 0 of a transaction whose output 0 paid the operator's own P2PKH
+ * address (i.e. the operator created it). Returns undefined when there is no
+ * oracle yet, or when the result is ambiguous.
+ */
+export async function discoverOracleCategory(operatorPkh: string): Promise<string | undefined> {
+	const address = oracleAddress(operatorPkh);
+	const provider = await chipnetProvider(address);
+	const candidates = (await provider.getUtxos(address))
+		.map(toChainUtxo)
+		.filter((utxo) => utxo.token?.nft?.capability === 'mutable')
+		.filter((utxo) => {
+			try {
+				decodeOracleCommitment(hexToBin(utxo.token!.nft!.commitment));
+				return true;
+			} catch {
+				return false;
+			}
+		});
+	const operatorLocking = `76a914${operatorPkh}88ac`;
+	const verified: string[] = [];
+	for (const candidate of candidates) {
+		const category = candidate.token!.category;
+		try {
+			const parent = decodeTransaction(hexToBin(await provider.getRawTransaction(category)));
+			if (typeof parent === 'string') continue;
+			if (binToHex(parent.outputs[0]?.lockingBytecode ?? new Uint8Array()) === operatorLocking) verified.push(category);
+		} catch {
+			/* unknown parent: not verifiable */
+		}
+	}
+	const unique = [...new Set(verified)];
+	return unique.length === 1 ? unique[0] : undefined;
 }
 
 export function isCompleteMarket(config: Partial<MarketConfig>): config is MarketConfig {

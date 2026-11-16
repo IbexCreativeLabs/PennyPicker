@@ -143,6 +143,9 @@
 		{#if !pp.wallet}
 			<h2>Operator actions</h2>
 			<p class="muted">Connect the operator's Cashonize wallet to create the oracle or publish prices. <a href="/penny-picker/wallet">Wallet →</a></p>
+		{:else if !exists && !pp.config.oracleCategory && !canOperate}
+			<h2>Oracle not created yet</h2>
+			<p class="muted">Only the operator (<span class="mono">{pp.config.oracleOperatorPkh?.slice(0, 12)}…</span>) can create the oracle. Trading opens once it exists. This page updates automatically when it appears on Chipnet.</p>
 		{:else if !exists && !pp.config.oracleCategory}
 			<h2>Create the oracle</h2>
 			<div class="pp-grid-2 action">

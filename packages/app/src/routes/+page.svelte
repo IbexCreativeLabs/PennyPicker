@@ -1,5 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	// This fork is the PennyPicker demo: the site root opens the PennyPicker app.
+	// The original Vox protocol list stays reachable at /?vox.
+	onMount(() => {
+		if (!page.url.searchParams.has('vox')) void goto('/penny-picker', { replaceState: true });
+	});
 	const isMainnet = page.url.hostname == 'vox.cash';
 	let protocols = [
 		{

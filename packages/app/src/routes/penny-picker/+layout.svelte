@@ -4,6 +4,11 @@
 	import '$lib/pennypicker/ui/theme.css';
 	import { pp } from '$lib/pennypicker/ui/session.svelte';
 	import { formatPrice } from '$lib/pennypicker/contracts';
+	import DemoNotice from '$lib/pennypicker/ui/DemoNotice.svelte';
+	import Feedback from '$lib/pennypicker/ui/Feedback.svelte';
+
+	const build = __PENNYPICKER_BUILD__;
+	let notice: DemoNotice | undefined = $state();
 
 	let { children } = $props();
 	let menuOpen = $state(false);
@@ -36,6 +41,7 @@
 			</nav>
 			<div class="status">
 				<span class="pp-badge accent plain" title="All transactions use BCH Chipnet (test network)">Chipnet</span>
+				<button class="pp-badge warn plain demo" type="button" onclick={() => notice?.show()} title="About this experimental demo">Demo</button>
 				{#if pp.price}
 					<a href="/penny-picker/oracle" class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}" title="Operator-published reference price">
 						{formatPrice(pp.price)}
@@ -67,10 +73,13 @@
 
 	{@render children()}
 
+	<DemoNotice bind:this={notice} />
+	<Feedback />
+
 	<footer class="foot">
 		<div class="bar small muted">
-			<span>Experimental prototype on BCH Chipnet. PUSD is a test token with no USD backing or peg.</span>
-			<span><a href="/penny-picker">Overview</a> · <a href="/penny-picker/simulator">Simulator</a> · <a href="/">Vox</a></span>
+			<span>Experimental prototype on BCH Chipnet. PUSD is a test token with no USD backing or peg. The oracle is operator-controlled. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
+			<span><a href="/penny-picker">Overview</a> · <a href="/penny-picker/simulator">Simulator</a> · <a href="/?vox">Vox</a></span>
 		</div>
 	</footer>
 </div>
@@ -93,7 +102,9 @@
 	.setup-strip .bar { padding-block: 0.35rem; gap: 0.75rem; }
 	.progress { width: 7rem; height: 6px; border-radius: 3px; background: var(--pp-border); overflow: hidden; }
 	.progress span { display: block; height: 100%; background: var(--pp-accent); }
-	.foot { border-top: 1px solid var(--pp-border); }
+	.foot { border-top: 1px solid var(--pp-border); padding-bottom: 3.5rem; }
+	.demo { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 600; }
+	.linkish { border: 0; background: none; padding: 0; color: var(--pp-accent); font: inherit; cursor: pointer; text-decoration: underline; }
 	.foot .bar { justify-content: space-between; padding-block: 1rem; }
 	@media (max-width: 860px) {
 		.menu { display: inline-flex; }

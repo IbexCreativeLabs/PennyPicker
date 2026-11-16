@@ -72,6 +72,15 @@ The user performed these steps through Cashonize and the app. All are confirmed,
 | `/penny-picker/wallet` | Connect or disconnect Cashonize (QR pairing), balances, UTXO list |
 | `/penny-picker/simulator` | The original in-memory simulator (legacy sats-per-PUSD convention) |
 
+## Deployment (public demo)
+
+- **Target:** Cloudflare Pages, deployed from GitHub with auto-deploy on push to `main`. The site is static (`docs/`), plus one Pages Function, `functions/api/feedback.js`, that turns feedback into GitHub issues. Full steps are in `DEPLOYMENT.md`.
+- **Verified locally:** the production build and `wrangler pages dev`, covering every route, the response headers, and every validation path of the feedback function.
+- **Not done yet: the public URL is not live.** It needs the Cloudflare project to be created, the WalletConnect project ID set as a build variable, and, if your Reown allowlist is not empty, the domain added. A GitHub token for the feedback function is optional.
+- **Committed defaults:** the market identifiers are in `deployment.ts` (PUSD category and operator PKH). The oracle category is discovered on-chain and accepted only if the operator's own address created it.
+- **What visitors see:** `/` redirects to `/penny-picker` (the Vox list is still available at `/?vox`). A first-visit demo notice and a Demo badge appear, and a Feedback button sits on every page.
+- **CI:** the inherited Vox deploy workflows (GitHub Pages to `vox.cash` and `unspent.dev`) were removed. `pennypicker-ci.yml` runs the tests and the build.
+
 ## Tests
 
 Run from `packages/app`, using libauth's BCH 2025 VM:
