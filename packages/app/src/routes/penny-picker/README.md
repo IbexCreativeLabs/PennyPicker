@@ -15,10 +15,10 @@ oracle and BPS order terms, a fresh authenticated BCH/PUSD oracle, a deployed PU
 category, a chain order indexer, and explicit Cashonize transaction approval.
 
 The separate `/penny-picker/token` route can prepare the 1,000,000 PUSD CashToken
-genesis from a connected Cashonize Chipnet address using a watch-only Vox wallet. It
-does not derive or load keys. Signing requires a separate button and sends
-`broadcast: false`; broadcasting is another explicit button. The route verifies the
-signed transaction's inputs, outputs, category, supply and hash before enabling
-broadcast, then checks the address for the resulting token UTXO and confirmation.
-Genesis has not been run. The displayed category before confirmation is only a
-candidate, and token BCMR metadata still requires a separate publication step.
+genesis from a connected Cashonize Chipnet address using a watch-only Vox wallet. If
+there is no confirmed BCH-only vout 0, it can prepare a one-input self-transfer with
+one BCH-only output at vout 0. Signing and broadcasting each require separate buttons;
+WalletConnect signing requests use `broadcast: false`. The route verifies transaction
+inputs, output script/value, category, supply and hash, then checks the resulting UTXO
+and confirmation. Genesis has not been run. The category before confirmation is only a
+candidate, and BCMR metadata still requires publication.

@@ -93,7 +93,8 @@ export async function requestCashonizeTransactionSignature(
 	client: CashonizeClient,
 	session: CashonizeSession,
 	unsignedTransaction: string,
-	sourceOutputs: unknown
+	sourceOutputs: unknown,
+	userPrompt = 'Review the PennyPicker transaction before signing.'
 ): Promise<{ signedTransaction: string; signedTransactionHash: string }> {
 	const namespace = session.namespaces.bch;
 	if (!namespace?.chains?.includes(CHIPNET_CHAIN) || !namespace.methods.includes('bch_signTransaction')) {
@@ -108,7 +109,7 @@ export async function requestCashonizeTransactionSignature(
 				transaction: unsignedTransaction,
 				sourceOutputs,
 				broadcast: false,
-				userPrompt: 'Review the PennyPicker USD fixed-supply Chipnet token genesis transaction.'
+				userPrompt
 			}
 		}
 	});

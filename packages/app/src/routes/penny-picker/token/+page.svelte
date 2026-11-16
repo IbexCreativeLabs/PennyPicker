@@ -17,8 +17,11 @@
 		PUSD_NAME,
 		PUSD_SYMBOL,
 		PUSD_TOKEN_OUTPUT_SATOSHIS,
+		buildUnsignedBchSelfTransfer,
 		serializeCashonizeSourceOutputs,
+		verifyBchSelfTransferSignature,
 		verifyPusdGenesisSignature,
+		type UnsignedBchSelfTransfer,
 		type UnsignedPusdGenesis
 	} from '$lib/pennypicker/pusdGenesis';
 	import type { CashonizeClient, CashonizeSession } from '$lib/cashonize/walletconnect';
@@ -29,10 +32,16 @@
 	let addresses = $state<string[]>([]);
 	let selectedAddress = $state('');
 	let genesis: UnsignedPusdGenesis | undefined = $state();
+	let selfTransfer: UnsignedBchSelfTransfer | undefined = $state();
 	let signedTransaction = $state('');
 	let signedTransactionHash = $state('');
 	let broadcastTxid = $state('');
 	let outputStatus = $state('');
+	let selfTransferSignedTransaction = $state('');
+	let selfTransferSignedHash = $state('');
+	let selfTransferBroadcastTxid = $state('');
+	let selfTransferStatus = $state('');
+	let selfTransferReviewConfirmed = $state(false);
 	let bcmrDraft = $state<PusdBcmrDraft | undefined>();
 	let autoApproveConfirmed = $state(false);
 	let busy = $state(false);
@@ -50,12 +59,118 @@
 			addresses = await requestChipnetAddresses(client, session);
 			selectedAddress = addresses[0] ?? '';
 			genesis = undefined;
+			selfTransfer = undefined;
 			signedTransaction = '';
 			signedTransactionHash = '';
 			broadcastTxid = '';
 			outputStatus = '';
+			selfTransferSignedTransaction = '';
+			selfTransferSignedHash = '';
+			selfTransferBroadcastTxid = '';
+			selfTransferStatus = '';
+			selfTransferReviewConfirmed = false;
 		} catch (cause) {
 			error = describeWalletConnectError(cause);
+		} finally {
+			busy = false;
+			currentOperation = '';
+		}
+	}
+
+	async function prepareSelfTransfer() {
+		if (!selectedAddress) return;
+		busy = true;
+		currentOperation = 'Reading Chipnet UTXOs and preparing an unsigned BCH-only self-transfer…';
+		error = '';
+		selfTransfer = undefined;
+		selfTransferSignedTransaction = '';
+		selfTransferSignedHash = '';
+		selfTransferBroadcastTxid = '';
+		selfTransferStatus = '';
+		selfTransferReviewConfirmed = false;
+		try {
+			selfTransfer = await buildUnsignedBchSelfTransfer(selectedAddress);
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : String(cause);
+		} finally {
+			busy = false;
+			currentOperation = '';
+		}
+	}
+
+	async function requestSelfTransferSignature() {
+		if (!client || !session || !selfTransfer || !selfTransferReviewConfirmed) return;
+		busy = true;
+		currentOperation = 'Waiting for Cashonize to review and sign the self-transfer…';
+		error = '';
+		try {
+			const signed = await requestCashonizeTransactionSignature(
+				client,
+				session,
+				selfTransfer.unsignedTransaction,
+				serializeCashonizeSourceOutputs(selfTransfer.sourceOutputs),
+				'Review the BCH-only self-transfer. It spends one confirmed UTXO and returns BCH to this Chipnet address at output 0.'
+			);
+			verifyBchSelfTransferSignature(
+				selfTransfer.unsignedTransaction,
+				signed.signedTransaction,
+				signed.signedTransactionHash
+			);
+			selfTransferSignedTransaction = signed.signedTransaction;
+			selfTransferSignedHash = signed.signedTransactionHash;
+		} catch (cause) {
+			error = describeWalletConnectError(cause);
+		} finally {
+			busy = false;
+			currentOperation = '';
+		}
+	}
+
+	async function broadcastSelfTransfer() {
+		if (!selfTransfer || !selfTransferSignedTransaction || !selfTransferSignedHash) return;
+		busy = true;
+		currentOperation = 'Broadcasting the signed self-transfer to BCH Chipnet…';
+		error = '';
+		try {
+			const txid = await selfTransfer.wallet.submitTransaction(hexToBin(selfTransferSignedTransaction), true);
+			if (txid !== selfTransferSignedHash) {
+				throw new Error('The Chipnet provider returned a transaction ID different from Cashonize.');
+			}
+			selfTransferBroadcastTxid = txid;
+			selfTransferStatus = 'Broadcast accepted. Wait for confirmation, then check for BCH-only output 0.';
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : String(cause);
+		} finally {
+			busy = false;
+			currentOperation = '';
+		}
+	}
+
+	async function verifySelfTransferOutput() {
+		if (!selfTransfer || !selfTransferBroadcastTxid) return;
+		busy = true;
+		currentOperation = 'Checking for the self-transfer vout 0…';
+		error = '';
+		try {
+			const utxos = await selfTransfer.wallet.getUtxos();
+			const output = utxos.find(
+				(utxo) =>
+					utxo.txid === selfTransferBroadcastTxid &&
+					utxo.vout === 0 &&
+					!utxo.token &&
+					utxo.address === selfTransfer!.address
+			);
+			if (!output) {
+				selfTransferStatus = 'No BCH-only vout 0 is indexed yet. The transaction may still be propagating or may not have been accepted.';
+			} else if (output.satoshis !== selfTransfer.outputSatoshis) {
+				selfTransferStatus = 'The vout 0 UTXO amount differs from the signed preview; do not use it for genesis.';
+			} else if ((output.height ?? -1) <= 0) {
+				selfTransferStatus = `BCH-only vout 0 is visible in the mempool (${output.satoshis.toString()} sats), but is not confirmed yet.`;
+			} else {
+				selfTransferStatus = `Confirmed BCH-only vout 0 is ready for PUSD genesis: ${output.txid}:0 (${output.satoshis.toString()} sats).`;
+			}
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : String(cause);
 		} finally {
 			busy = false;
 			currentOperation = '';
@@ -93,7 +208,8 @@
 				client,
 				session,
 				genesis.unsignedTransaction,
-				serializeCashonizeSourceOutputs(genesis.sourceOutputs)
+				serializeCashonizeSourceOutputs(genesis.sourceOutputs),
+				'Review the PennyPicker USD fixed-supply Chipnet token genesis transaction.'
 			);
 			verifyPusdGenesisSignature(
 				genesis.unsignedTransaction,
@@ -216,6 +332,42 @@
 		<button type="button" onclick={prepareGenesis} disabled={busy || !selectedAddress}>Prepare unsigned genesis</button>
 	</section>
 
+	<section>
+		<h2>Optional prerequisite: create a BCH-only vout 0</h2>
+		<p>CashTokens genesis requires spending a transaction output at index 0. If this address has no confirmed BCH-only vout 0, prepare a one-input self-transfer first. It returns the selected BCH-only UTXO to this same address as its only output. Preparation is unsigned; Cashonize signing and broadcasting each require a separate action.</p>
+		<button type="button" onclick={prepareSelfTransfer} disabled={busy || !selectedAddress}>Prepare unsigned vout-0 self-transfer</button>
+	</section>
+
+	{#if selfTransfer}
+		<section class="preview">
+			<h2>Unsigned BCH-only self-transfer</h2>
+			<dl>
+				<dt>Input</dt><dd><code>{selfTransfer.input.txid}:{selfTransfer.input.vout}</code> · {selfTransfer.input.satoshis.toString()} sats · confirmed BCH only</dd>
+				<dt>Output</dt><dd>vout 0 · {selfTransfer.outputSatoshis.toString()} sats · same Cashonize Chipnet address</dd>
+				<dt>Estimated miner fee</dt><dd>{selfTransfer.feeSatoshis.toString()} sats</dd>
+			</dl>
+			<label class="checkbox"><input type="checkbox" bind:checked={selfTransferReviewConfirmed} /> Automatic approval is disabled in Cashonize; I will verify the source UTXO, vout 0 destination and fee in Cashonize before approving.</label>
+			<button type="button" onclick={requestSelfTransferSignature} disabled={busy || !selfTransferReviewConfirmed}>Request Cashonize signature (no broadcast)</button>
+		</section>
+	{/if}
+
+	{#if selfTransferSignedTransaction}
+		<section class="preview">
+			<h2>Self-transfer signed, not broadcast</h2>
+			<p>Cashonize returned a signed transaction. Its input and sole BCH-only output match the preview; it has not been broadcast. Transaction ID: <code>{selfTransferSignedHash}</code></p>
+			<button class="broadcast" type="button" onclick={broadcastSelfTransfer} disabled={busy}>Broadcast self-transfer to Chipnet</button>
+		</section>
+	{/if}
+
+	{#if selfTransferBroadcastTxid}
+		<section>
+			<h2>Self-transfer status</h2>
+			<p>Provider accepted transaction: <code>{selfTransferBroadcastTxid}</code></p>
+			<button type="button" onclick={verifySelfTransferOutput} disabled={busy}>Check BCH-only vout 0 and confirmation</button>
+			<p role="status">{selfTransferStatus}</p>
+		</section>
+	{/if}
+
 	{#if genesis}
 		<section class="preview">
 			<h2>Unsigned transaction preview</h2>
@@ -228,7 +380,7 @@
 				<dt>Transaction outputs</dt><dd>{genesis.outputCount}</dd>
 			</dl>
 			<p class="caution">Review all inputs, outputs, fees and network in Cashonize. Do not sign if the wallet preview differs from this summary.</p>
-			<label class="checkbox"><input type="checkbox" bind:checked={autoApproveConfirmed} /> I checked Cashonize and automatic transaction approval is off for this app.</label>
+			<label class="checkbox"><input type="checkbox" bind:checked={autoApproveConfirmed} /> Automatic approval is disabled in Cashonize; I will verify all inputs, outputs and fees in Cashonize before approving.</label>
 			<button type="button" onclick={requestSignature} disabled={busy || !autoApproveConfirmed}>Request Cashonize signature (no broadcast)</button>
 		</section>
 	{/if}

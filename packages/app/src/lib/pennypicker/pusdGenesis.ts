@@ -29,10 +29,121 @@ export interface UnsignedPusdGenesis {
 	outputCount: number;
 }
 
+export interface UnsignedBchSelfTransfer {
+	wallet: TestNetWatchWallet;
+	address: string;
+	unsignedTransaction: string;
+	sourceOutputs: SourceOutput[];
+	input: Utxo;
+	outputSatoshis: bigint;
+	feeSatoshis: bigint;
+}
+
 function decodeTransaction(rawHex: string): TransactionBch {
 	const decoded = decodeTransactionBch(hexToBin(rawHex));
 	if (typeof decoded === 'string') throw new Error(`Could not decode transaction: ${decoded}`);
 	return decoded;
+}
+
+/**
+ * Prepare a one-input BCH-only self-transfer with the connected address as the
+ * sole output. With one output it is vout 0, which can then serve as a CashToken
+ * genesis input. This function never signs or submits the transaction.
+ */
+export async function buildUnsignedBchSelfTransfer(
+	address: string
+): Promise<UnsignedBchSelfTransfer> {
+	if (!address.startsWith('bchtest:')) {
+		throw new Error('The BCH self-transfer is restricted to a Chipnet address (bchtest:).');
+	}
+	const destination = cashAddressToLockingBytecode(address);
+	if (typeof destination === 'string') throw new Error(`Invalid Chipnet address: ${destination}`);
+
+	const wallet = await TestNetWatchWallet.watchOnly(address);
+	const utxos = await wallet.getUtxos();
+	if (utxos.some((utxo) => utxo.vout === 0 && !utxo.token && (utxo.height ?? -1) > 0)) {
+		throw new Error('A confirmed BCH-only vout 0 UTXO already exists; prepare PUSD genesis directly.');
+	}
+	const input = utxos.find((utxo) => utxo.vout !== 0 && !utxo.token && (utxo.height ?? -1) > 0);
+	if (!input) {
+		throw new Error('No confirmed BCH-only UTXO with a nonzero output index is available.');
+	}
+
+	const response = await wallet.sendMax(address, {
+		buildUnsigned: true,
+		queryBalance: false,
+		utxoIds: [input]
+	});
+	if (!response.unsignedTransaction || response.sourceOutputs?.length !== 1) {
+		throw new Error('The wallet did not return a one-input unsigned self-transfer.');
+	}
+	const transaction = decodeTransaction(response.unsignedTransaction);
+	const source = response.sourceOutputs[0]!;
+	const txInput = transaction.inputs[0];
+	if (
+		transaction.inputs.length !== 1 ||
+		!txInput ||
+		txInput.outpointIndex !== input.vout ||
+		swapEndianness(binToHex(txInput.outpointTransactionHash)) !== input.txid.toLowerCase() ||
+		txInput.unlockingBytecode.length !== 0 ||
+		source.outpointIndex !== input.vout ||
+		swapEndianness(binToHex(source.outpointTransactionHash)) !== input.txid.toLowerCase() ||
+		source.valueSatoshis !== input.satoshis ||
+		source.token
+	) {
+		throw new Error('The unsigned transaction does not spend only the selected BCH-only outpoint.');
+	}
+	if (transaction.outputs.length !== 1) {
+		throw new Error('The self-transfer must have exactly one output so it is assigned vout 0.');
+	}
+	const output = transaction.outputs[0]!;
+	if (
+		output.token ||
+		binToHex(output.lockingBytecode) !== binToHex(destination.bytecode) ||
+		output.valueSatoshis <= 0n ||
+		output.valueSatoshis >= input.satoshis
+	) {
+		throw new Error('The self-transfer output must return BCH only to the connected Chipnet address.');
+	}
+	return {
+		wallet,
+		address,
+		unsignedTransaction: response.unsignedTransaction,
+		sourceOutputs: response.sourceOutputs,
+		input,
+		outputSatoshis: output.valueSatoshis,
+		feeSatoshis: input.satoshis - output.valueSatoshis
+	};
+}
+
+export function verifyBchSelfTransferSignature(
+	unsignedTransaction: string,
+	signedTransaction: string,
+	expectedHash: string
+): void {
+	const unsigned = decodeTransaction(unsignedTransaction);
+	const signed = decodeTransaction(signedTransaction);
+	if (unsigned.version !== signed.version || unsigned.locktime !== signed.locktime) {
+		throw new Error('Cashonize returned a self-transfer with a different version or locktime.');
+	}
+	if (unsigned.inputs.length !== 1 || signed.inputs.length !== 1 || unsigned.outputs.length !== 1 || signed.outputs.length !== 1) {
+		throw new Error('Cashonize changed the self-transfer input or output count.');
+	}
+	const before = unsigned.inputs[0]!;
+	const after = signed.inputs[0]!;
+	if (
+		before.outpointIndex !== after.outpointIndex ||
+		binToHex(before.outpointTransactionHash) !== binToHex(after.outpointTransactionHash) ||
+		before.sequenceNumber !== after.sequenceNumber ||
+		!after.unlockingBytecode.length
+	) {
+		throw new Error('Cashonize changed the self-transfer input or returned it unsigned.');
+	}
+	if (canonicalOutput(unsigned.outputs[0]!) !== canonicalOutput(signed.outputs[0]!)) {
+		throw new Error('Cashonize changed the BCH-only vout 0 destination or amount.');
+	}
+	const signedHash = swapEndianness(binToHex(hash256(hexToBin(signedTransaction))));
+	if (signedHash !== expectedHash) throw new Error('Cashonize transaction hash did not match the signed self-transfer.');
 }
 
 export async function buildUnsignedPusdGenesis(address: string): Promise<UnsignedPusdGenesis> {
@@ -42,10 +153,11 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 
 	const wallet = await TestNetWatchWallet.watchOnly(address);
 	const utxos = await wallet.getUtxos();
-	const genesisInput = utxos.find((utxo) => utxo.vout === 0 && !utxo.token);
+	const confirmedBchUtxos = utxos.filter((utxo) => !utxo.token && (utxo.height ?? -1) > 0);
+	const genesisInput = confirmedBchUtxos.find((utxo) => utxo.vout === 0);
 	if (!genesisInput) {
 		throw new Error(
-			'No BCH-only vout 0 UTXO is available. Fund this Cashonize Chipnet address and check again.'
+			'No confirmed BCH-only vout 0 UTXO is available. Confirm a self-transfer or fund this Cashonize Chipnet address and check again.'
 		);
 	}
 
@@ -58,7 +170,7 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 		{
 			buildUnsigned: true,
 			queryBalance: false,
-			utxoIds: utxos,
+			utxoIds: confirmedBchUtxos,
 			ensureUtxos: [genesisInput]
 		}
 	);
