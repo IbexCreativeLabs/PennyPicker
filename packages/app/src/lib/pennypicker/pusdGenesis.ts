@@ -81,16 +81,18 @@ export async function buildUnsignedBchSelfTransfer(
 		throw new Error('The wallet did not return a one-input unsigned self-transfer.');
 	}
 	const transaction = decodeTransaction(response.unsignedTransaction);
+	// libauth keeps outpointTransactionHash in display (txid) byte order, the same
+	// order Electrum uses for UTXO txids, so compare without swapping.
 	const source = response.sourceOutputs[0]!;
 	const txInput = transaction.inputs[0];
 	if (
 		transaction.inputs.length !== 1 ||
 		!txInput ||
 		txInput.outpointIndex !== input.vout ||
-		swapEndianness(binToHex(txInput.outpointTransactionHash)) !== input.txid.toLowerCase() ||
+		binToHex(txInput.outpointTransactionHash) !== input.txid.toLowerCase() ||
 		txInput.unlockingBytecode.length !== 0 ||
 		source.outpointIndex !== input.vout ||
-		swapEndianness(binToHex(source.outpointTransactionHash)) !== input.txid.toLowerCase() ||
+		binToHex(source.outpointTransactionHash) !== input.txid.toLowerCase() ||
 		source.valueSatoshis !== input.satoshis ||
 		binToHex(source.lockingBytecode) !== binToHex(destination.bytecode) ||
 		source.token
@@ -212,7 +214,7 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 			!confirmedBchUtxos.some(
 				(utxo) =>
 					utxo.vout === source.outpointIndex &&
-					utxo.txid === swapEndianness(binToHex(source.outpointTransactionHash)) &&
+					utxo.txid === binToHex(source.outpointTransactionHash) &&
 					utxo.satoshis === source.valueSatoshis &&
 					utxo.address === address
 			)
@@ -223,7 +225,7 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 	const genesisIndex = transaction.inputs.findIndex(
 		(input) =>
 			input.outpointIndex === 0 &&
-			swapEndianness(binToHex(input.outpointTransactionHash)) === genesisInput.txid
+			binToHex(input.outpointTransactionHash) === genesisInput.txid
 	);
 	if (genesisIndex === -1) {
 		throw new Error('The unsigned transaction does not spend the selected vout 0 genesis input.');
