@@ -26,7 +26,7 @@
 		{
 			name: 'PennyPicker',
 			description: 'Experimental BCH/PUSD BPS market prototype (Chipnet).',
-			link: '/penny-picker',
+			link: '/penny-picker/exchange',
 			image: '/cat.svg',
 			disabled: false
 		},

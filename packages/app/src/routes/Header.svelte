@@ -43,7 +43,7 @@
 				</a>
 			</li>
 			<li aria-current={page.url.pathname.startsWith('/penny-picker') ? 'page' : undefined}>
-				<a href="/penny-picker" aria-label="PennyPicker BCH/PUSD market">PUSD</a>
+				<a href="/penny-picker/exchange" aria-label="PennyPicker BCH/PUSD exchange">PUSD</a>
 			</li>
 		</ul>
 		<svg viewBox="0 0 2 3" aria-hidden="true">

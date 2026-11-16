@@ -275,6 +275,7 @@
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
 	<section class="next-work"><h2>On-chain status</h2>
+		<p><strong><a href="/penny-picker/exchange">Open the on-chain Chipnet exchange</a></strong>: real covenant orders priced against the on-chain oracle state. This page remains a local, in-memory simulator.</p>
 		<p><a href="/penny-picker/token">Prepare PUSD fixed-supply Chipnet genesis</a> uses a watch-only address and separates preparation, Cashonize signing, broadcast and UTXO verification.</p>
 		<ul>
 		<li>Cashonize Chipnet address and read-only balance loading are available above.</li>

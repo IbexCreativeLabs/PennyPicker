@@ -1,5 +1,8 @@
 # PennyPicker development progress
 
+> Research log for the earlier milestones. For the current state, architecture and
+> next steps see `PROJECT_STATUS.md` (covenants, exchange, oracle operator, mechanisms).
+
 ## Current milestone
 
 - Added an isolated `/penny-picker` market prototype with a browser-local demo book.
