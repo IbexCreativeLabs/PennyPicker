@@ -51,7 +51,23 @@ function normalizeTxid(txid: string): string {
 }
 
 function tokenAmount(utxo: ScriptUtxo): bigint {
-	const amount = utxo.token_data ? BigInt(utxo.token_data.amount) : 0n;
+	const rawAmount = utxo.token_data?.amount;
+	let amount: bigint;
+	if (rawAmount === undefined) {
+		amount = 0n;
+	} else if (typeof rawAmount === 'bigint') {
+		amount = rawAmount;
+	} else if (typeof rawAmount === 'number') {
+		if (!Number.isSafeInteger(rawAmount) || rawAmount < 0) {
+			throw new Error('CashToken amount must be an exact non-negative integer.');
+		}
+		amount = BigInt(rawAmount);
+	} else {
+		if (!/^(0|[1-9][0-9]*)$/.test(rawAmount)) {
+			throw new Error('CashToken amount must be an exact non-negative integer.');
+		}
+		amount = BigInt(rawAmount);
+	}
 	if (amount < 0n || amount > (1n << 63n) - 1n)
 		throw new Error('CashToken amount is out of range.');
 	return amount;

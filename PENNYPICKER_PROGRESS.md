@@ -132,7 +132,9 @@
   escrow must equal remaining PUSD and buy asset threads must carry no PUSD. A thin
   adapter reuses CatDex's existing `getAllMarketOrders` query. It requires the caller
   to supply the script hash and categories; it is not yet connected to a deployed
-  PennyPicker covenant or the market page.
+  PennyPicker covenant or the market page. Numeric token amounts from Electrum are
+  accepted only when JavaScript can represent them as exact safe integers; decimal
+  strings and BigInts remain exact.
 - Added a guarded order lifecycle model covering draft, unsigned, Cashonize-approved,
   broadcast, confirmed, created, discovered, matched, partially filled, filled and
   canceled states. Fill quantity only changes after a matching broadcast is confirmed;
