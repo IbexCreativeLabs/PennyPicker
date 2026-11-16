@@ -26,6 +26,8 @@ export class DevelopmentMockOracle implements BchPusdOracleProvider {
 /** Providers that may authorize transaction preparation must authenticate their data. */
 export interface ProductionBchPusdOracleProvider extends BchPusdOracleProvider {
 	readonly confidence: 'production';
+	/** BCH CashToken category this provider prices; must match the observation and PennyPicker token. */
+	readonly assetCategory: string;
 	/** Feed-specific signature, quorum, or equivalent reviewed validation. */
 	validateObservation(observation: OracleObservation): Promise<boolean>;
 }

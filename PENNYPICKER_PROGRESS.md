@@ -41,6 +41,10 @@
   category is a separate experimental token, so the ticker is not a unique identifier;
   UIs and market data must identify assets by category. ParyonUSD prices are not a
   valid proxy for this token's price. Reference: [ParyonUSD token identity](https://paryonusd.com/).
+- Tightened the production oracle execution boundary to require a 32-byte expected
+  PUSD category and the same category on both provider configuration and observation.
+  The demo quote remains unbound; category identity alone does not authenticate a price
+  or make it fresh on-chain.
 - Oracles.cash exposes signed BCH/USD data and provides a way to validate freshness,
   but that feed cannot establish a BCH/PUSD price while PUSD is an experimental token
   without a USD peg. Do not convert BCH/USD into BCH/PUSD by assuming PUSD equals USD.

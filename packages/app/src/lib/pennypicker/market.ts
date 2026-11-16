@@ -17,6 +17,8 @@ export type OrderSide = 'buy-pusd' | 'sell-pusd';
 
 export interface OracleObservation {
 	pair: 'BCH/PUSD';
+	/** Exact BCH CashToken category for this quote; absent only on the unbound demo fixture. */
+	assetCategory?: string;
 	/** Fixed-point satoshis paid for one whole PUSD, scaled by RATE_SCALE. */
 	rateSatsPerPusdScaled: bigint;
 	observedAtMs: number;

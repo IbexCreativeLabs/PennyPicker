@@ -5,6 +5,7 @@ const verifiedOracleBrand: unique symbol = Symbol('verified-bch-pusd-oracle');
 
 /** An oracle observation that passed freshness and provider authenticity checks. */
 export type VerifiedExecutionOracle = OracleObservation & {
+	assetCategory: string;
 	readonly [verifiedOracleBrand]: true;
 };
 
@@ -13,10 +14,16 @@ export type VerifiedExecutionOracle = OracleObservation & {
  * malformed observations, and unverifiable data fail closed.
  */
 export async function getVerifiedExecutionOracle(
-	provider: ProductionBchPusdOracleProvider
+	provider: ProductionBchPusdOracleProvider,
+	expectedAssetCategory: string
 ): Promise<VerifiedExecutionOracle> {
 	if (provider.confidence !== 'production') {
 		throw new Error('Transaction preparation requires a production BCH/PUSD oracle.');
+	}
+	const expectedCategory = normalizeCategory(expectedAssetCategory, 'Expected PUSD category');
+	const providerCategory = normalizeCategory(provider.assetCategory, 'Oracle provider category');
+	if (providerCategory !== expectedCategory) {
+		throw new Error('The oracle provider is configured for a different PUSD token category.');
 	}
 	const observation = await provider.getLatest();
 	assertFreshOracle(observation);
@@ -26,12 +33,30 @@ export async function getVerifiedExecutionOracle(
 	if (observation.source !== provider.sourceName) {
 		throw new Error('The oracle observation source does not match its provider.');
 	}
+	const observationCategory = normalizeCategory(
+		observation.assetCategory ?? '',
+		'Oracle observation category'
+	);
+	if (observationCategory !== expectedCategory) {
+		throw new Error('The BCH/PUSD quote is for a different token category.');
+	}
 	if (!(await provider.validateObservation(observation))) {
 		throw new Error('The BCH/PUSD oracle observation could not be authenticated.');
 	}
 	// Validation may be asynchronous; check freshness again at the handoff boundary.
 	assertFreshOracle(observation);
-	return Object.freeze({ ...observation, [verifiedOracleBrand]: true as const });
+	return Object.freeze({
+		...observation,
+		assetCategory: observationCategory,
+		[verifiedOracleBrand]: true as const
+	});
+}
+
+function normalizeCategory(category: string, label: string): string {
+	if (typeof category !== 'string') throw new Error(`${label} must be 32-byte hex.`);
+	const normalized = category.toLowerCase();
+	if (!/^[0-9a-f]{64}$/.test(normalized)) throw new Error(`${label} must be 32-byte hex.`);
+	return normalized;
 }
 
 /** Derive the exact fixed-point limit rate used by a transaction builder. */
