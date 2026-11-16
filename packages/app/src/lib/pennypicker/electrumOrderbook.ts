@@ -119,7 +119,11 @@ async function verifyConfirmedTransactionMerkleProofs(
 	);
 	const parsed = proofs.map((proof, index) => {
 		const [txid, requestedHeight] = entries[index]!;
-		if (!isMerkleProof(proof) || proof.block_height !== requestedHeight) {
+		if (
+			!isMerkleProof(proof) ||
+			proof.block_height !== requestedHeight ||
+			proof.merkle.length > 53
+		) {
 			throw new Error(`Electrum returned an invalid Merkle proof for ${txid}.`);
 		}
 		if (!proof.merkle.every((hash) => /^[0-9a-f]{64}$/i.test(hash))) {
@@ -181,6 +185,7 @@ export function calculateMerkleRoot(txid: string, branch: string[], position: nu
 	if (!/^[0-9a-f]{64}$/i.test(txid) || !Number.isSafeInteger(position) || position < 0) {
 		throw new Error('Invalid transaction ID or Merkle position.');
 	}
+	if (branch.length > 53) throw new Error('Merkle branch exceeds the safe integer position range.');
 	let current = hexToBin(txid).reverse();
 	for (const siblingHex of branch) {
 		if (!/^[0-9a-f]{64}$/i.test(siblingHex)) throw new Error('Invalid Merkle branch hash.');
