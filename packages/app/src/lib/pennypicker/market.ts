@@ -47,7 +47,8 @@ export function assertFreshOracle(
 	if (!Number.isSafeInteger(observation.observedAtMs) || observation.observedAtMs <= 0) {
 		throw new Error('Oracle timestamp is invalid.');
 	}
-	if (observation.observedAtMs > nowMs + 30_000) throw new Error('Oracle timestamp is in the future.');
+	if (observation.observedAtMs > nowMs + 30_000)
+		throw new Error('Oracle timestamp is in the future.');
 	if (nowMs - observation.observedAtMs > maxAgeMs) throw new Error('Oracle price is stale.');
 }
 
@@ -70,10 +71,8 @@ export function createOrder(
 	assertFreshOracle(oracle, nowMs);
 	if (!input.id.trim()) throw new Error('Order ID is required.');
 	if (input.quantityUnits <= 0n) throw new Error('Order quantity must be positive.');
-	const limitRateSatsPerPusdScaled = rateAtDeltaBps(
-		oracle.rateSatsPerPusdScaled,
-		input.deltaBps
-	);
+	assertSideDelta(input.side, input.deltaBps);
+	const limitRateSatsPerPusdScaled = rateAtDeltaBps(oracle.rateSatsPerPusdScaled, input.deltaBps);
 	return {
 		...input,
 		remainingUnits: input.quantityUnits,
@@ -81,6 +80,19 @@ export function createOrder(
 		createdAgainst: { ...oracle },
 		limitRateSatsPerPusdScaled
 	};
+}
+
+/** Buy orders use discounts (negative BPS); sell orders use premiums (positive BPS). */
+function assertSideDelta(side: OrderSide, deltaBps: number): void {
+	if (side !== 'buy-pusd' && side !== 'sell-pusd') throw new Error('Order side is invalid.');
+	if (side === 'buy-pusd' && deltaBps > 0) {
+		throw new Error('A buy order must be at or below the oracle reference (zero or negative BPS).');
+	}
+	if (side === 'sell-pusd' && deltaBps < 0) {
+		throw new Error(
+			'A sell order must be at or above the oracle reference (zero or positive BPS).'
+		);
+	}
 }
 
 /**
@@ -138,25 +150,51 @@ export function matchOrders(
 	nowMs = Date.now()
 ): MatchResult {
 	assertFreshOracle(oracle, nowMs);
+	const ids = new Set<string>();
+	for (const order of orders) {
+		if (!order.id.trim() || ids.has(order.id))
+			throw new Error('Order IDs must be non-empty and unique.');
+		ids.add(order.id);
+		if (
+			order.quantityUnits <= 0n ||
+			order.remainingUnits < 0n ||
+			order.remainingUnits > order.quantityUnits
+		) {
+			throw new Error(`Order ${order.id} has invalid quantity or remaining quantity.`);
+		}
+		if (
+			!Number.isSafeInteger(order.createdAtMs) ||
+			order.createdAtMs <= 0 ||
+			order.createdAtMs > nowMs + 30_000
+		) {
+			throw new Error(`Order ${order.id} has an invalid creation time.`);
+		}
+		assertSideDelta(order.side, order.deltaBps);
+	}
 	const priced = orders
 		.filter((order) => order.remainingUnits > 0n)
 		.map((order) => ({
 			...order,
-			limitRateSatsPerPusdScaled: rateAtDeltaBps(
-				oracle.rateSatsPerPusdScaled,
-				order.deltaBps
-			)
+			limitRateSatsPerPusdScaled: rateAtDeltaBps(oracle.rateSatsPerPusdScaled, order.deltaBps)
 		}));
 	const buys = priced
 		.filter((order) => order.side === 'buy-pusd')
-		.sort((a, b) => a.limitRateSatsPerPusdScaled === b.limitRateSatsPerPusdScaled
-			? a.createdAtMs - b.createdAtMs
-			: a.limitRateSatsPerPusdScaled > b.limitRateSatsPerPusdScaled ? -1 : 1);
+		.sort((a, b) =>
+			a.limitRateSatsPerPusdScaled === b.limitRateSatsPerPusdScaled
+				? a.createdAtMs - b.createdAtMs
+				: a.limitRateSatsPerPusdScaled > b.limitRateSatsPerPusdScaled
+					? -1
+					: 1
+		);
 	const sells = priced
 		.filter((order) => order.side === 'sell-pusd')
-		.sort((a, b) => a.limitRateSatsPerPusdScaled === b.limitRateSatsPerPusdScaled
-			? a.createdAtMs - b.createdAtMs
-			: a.limitRateSatsPerPusdScaled < b.limitRateSatsPerPusdScaled ? -1 : 1);
+		.sort((a, b) =>
+			a.limitRateSatsPerPusdScaled === b.limitRateSatsPerPusdScaled
+				? a.createdAtMs - b.createdAtMs
+				: a.limitRateSatsPerPusdScaled < b.limitRateSatsPerPusdScaled
+					? -1
+					: 1
+		);
 	const fills: Fill[] = [];
 	const remainingById = new Map(priced.map((order) => [order.id, order.remainingUnits]));
 	let buyIndex = 0;
@@ -165,9 +203,10 @@ export function matchOrders(
 		const buy = buys[buyIndex]!;
 		const sell = sells[sellIndex]!;
 		if (buy.limitRateSatsPerPusdScaled < sell.limitRateSatsPerPusdScaled) break;
-		const quantityUnits = remainingById.get(buy.id)! < remainingById.get(sell.id)!
-			? remainingById.get(buy.id)!
-			: remainingById.get(sell.id)!;
+		const quantityUnits =
+			remainingById.get(buy.id)! < remainingById.get(sell.id)!
+				? remainingById.get(buy.id)!
+				: remainingById.get(sell.id)!;
 		const maker = buy.createdAtMs <= sell.createdAtMs ? buy : sell;
 		fills.push({
 			buyOrderId: buy.id,

@@ -1,5 +1,6 @@
 import {
 	binToHex,
+	cashAddressToLockingBytecode,
 	decodeTransactionBch,
 	hexToBin,
 	hash256,
@@ -43,7 +44,9 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 	const utxos = await wallet.getUtxos();
 	const genesisInput = utxos.find((utxo) => utxo.vout === 0 && !utxo.token);
 	if (!genesisInput) {
-		throw new Error('No BCH-only vout 0 UTXO is available. Fund this Cashonize Chipnet address and check again.');
+		throw new Error(
+			'No BCH-only vout 0 UTXO is available. Fund this Cashonize Chipnet address and check again.'
+		);
 	}
 
 	const response = await wallet.tokenGenesis(
@@ -63,8 +66,33 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 		throw new Error('The wallet library did not return an unsigned genesis transaction.');
 	}
 	const transaction = decodeTransaction(response.unsignedTransaction);
-	const inputZero = transaction.inputs.find((input) => input.outpointIndex === 0);
-	if (!inputZero || swapEndianness(binToHex(inputZero.outpointTransactionHash)) !== genesisInput.txid) {
+	if (
+		transaction.inputs.length === 0 ||
+		response.sourceOutputs.length !== transaction.inputs.length
+	) {
+		throw new Error(
+			'The unsigned transaction and Cashonize source outputs do not have matching input counts.'
+		);
+	}
+	for (let index = 0; index < transaction.inputs.length; index++) {
+		const input = transaction.inputs[index]!;
+		const source = response.sourceOutputs[index]!;
+		if (
+			input.outpointIndex !== source.outpointIndex ||
+			binToHex(input.outpointTransactionHash) !== binToHex(source.outpointTransactionHash)
+		) {
+			throw new Error('A Cashonize source output does not match its unsigned transaction input.');
+		}
+		if (input.unlockingBytecode.length !== 0) {
+			throw new Error('The prepared genesis transaction unexpectedly contains a signed input.');
+		}
+	}
+	const genesisIndex = transaction.inputs.findIndex(
+		(input) =>
+			input.outpointIndex === 0 &&
+			swapEndianness(binToHex(input.outpointTransactionHash)) === genesisInput.txid
+	);
+	if (genesisIndex === -1) {
 		throw new Error('The unsigned transaction does not spend the selected vout 0 genesis input.');
 	}
 
@@ -76,12 +104,30 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 		throw new Error('The token category does not match the vout 0 genesis input transaction ID.');
 	}
 	if (tokenOutput.token!.amount !== PUSD_INITIAL_AMOUNT || tokenOutput.token!.nft) {
-		throw new Error('The genesis output does not match the fixed PUSD supply without an NFT baton.');
+		throw new Error(
+			'The genesis output does not match the fixed PUSD supply without an NFT baton.'
+		);
+	}
+	if (tokenOutput.valueSatoshis !== PUSD_TOKEN_OUTPUT_SATOSHIS) {
+		throw new Error('The PUSD genesis output does not have the configured BCH value.');
+	}
+	const destination = cashAddressToLockingBytecode(wallet.getTokenDepositAddress());
+	if (typeof destination === 'string')
+		throw new Error(`Could not validate the PUSD destination: ${destination}`);
+	if (binToHex(tokenOutput.lockingBytecode) !== binToHex(destination.bytecode)) {
+		throw new Error('The PUSD genesis output is not locked to the connected Cashonize address.');
 	}
 
-	const inputSatoshis = response.sourceOutputs.reduce((total, output) => total + output.valueSatoshis, 0n);
-	const outputSatoshis = transaction.outputs.reduce((total, output) => total + output.valueSatoshis, 0n);
-	if (inputSatoshis <= outputSatoshis) throw new Error('Genesis transaction does not leave a positive miner fee.');
+	const inputSatoshis = response.sourceOutputs.reduce(
+		(total, output) => total + output.valueSatoshis,
+		0n
+	);
+	const outputSatoshis = transaction.outputs.reduce(
+		(total, output) => total + output.valueSatoshis,
+		0n
+	);
+	if (inputSatoshis <= outputSatoshis)
+		throw new Error('Genesis transaction does not leave a positive miner fee.');
 
 	return {
 		wallet,
@@ -100,15 +146,15 @@ function canonicalOutput(output: TransactionBch['outputs'][number]): string {
 		lockingBytecode: binToHex(output.lockingBytecode),
 		token: output.token
 			? {
-				category: binToHex(output.token.category),
-				amount: output.token.amount.toString(),
-				nft: output.token.nft
-					? {
-						capability: output.token.nft.capability,
-						commitment: binToHex(output.token.nft.commitment)
-					}
-					: undefined
-			}
+					category: binToHex(output.token.category),
+					amount: output.token.amount.toString(),
+					nft: output.token.nft
+						? {
+								capability: output.token.nft.capability,
+								commitment: binToHex(output.token.nft.commitment)
+							}
+						: undefined
+				}
 			: undefined
 	});
 }
@@ -124,7 +170,10 @@ export function verifyPusdGenesisSignature(
 	if (unsigned.version !== signed.version || unsigned.locktime !== signed.locktime) {
 		throw new Error('Cashonize returned a transaction with a different version or locktime.');
 	}
-	if (unsigned.inputs.length !== signed.inputs.length || unsigned.outputs.length !== signed.outputs.length) {
+	if (
+		unsigned.inputs.length !== signed.inputs.length ||
+		unsigned.outputs.length !== signed.outputs.length
+	) {
 		throw new Error('Cashonize returned a transaction with a different input or output count.');
 	}
 	for (let index = 0; index < unsigned.inputs.length; index++) {
@@ -147,7 +196,8 @@ export function verifyPusdGenesisSignature(
 		}
 	}
 	const signedHash = swapEndianness(binToHex(hash256(hexToBin(signedTransaction))));
-	if (signedHash !== expectedHash) throw new Error('Cashonize transaction hash did not match the signed transaction.');
+	if (signedHash !== expectedHash)
+		throw new Error('Cashonize transaction hash did not match the signed transaction.');
 	const tokenOutputs = signed.outputs.filter((output) => output.token);
 	if (
 		tokenOutputs.length !== 1 ||

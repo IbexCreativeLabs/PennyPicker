@@ -33,6 +33,22 @@
 - Photon is a BCH proof-of-work oracle, not a BCH/PUSD price oracle.
 - No authenticated and manipulation-resistant BCH/PUSD oracle feed is configured.
   Stale or untrusted prices must block order matching and transaction execution.
+- Oracles.cash exposes signed BCH/USD data and provides a way to validate freshness,
+  but that feed cannot establish a BCH/PUSD price while PUSD is an experimental token
+  without a USD peg. Do not convert BCH/USD into BCH/PUSD by assuming PUSD equals USD.
+  A future provider needs a direct market reference or an independently justified
+  PUSD/USD observation plus a reviewed composition and trust policy. Reference:
+  [Oracles.cash](https://oracles.cash/) and its
+  [source repository](https://github.com/Bitcoin-com/oracles.cash).
+- Order BPS convention is now enforced in the market core: buy-PUSD deltas are zero
+  or negative (at/below reference); sell-PUSD deltas are zero or positive (at/above
+  reference). Matching rejects duplicate IDs, invalid remaining quantities, malformed
+  timestamps, and side/delta combinations. The current per-fill BCH quote rounds up
+  to satoshis; cumulative rounding still needs covenant-level review before trading.
+- Genesis preparation now checks every unsigned input against its same-index
+  Cashonize source output, requires all input unlocking scripts to be empty, and
+  validates the PUSD output value and destination script before presenting the
+  unsigned transaction for wallet approval.
 
 ## Next implementation order
 
