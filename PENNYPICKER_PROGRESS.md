@@ -71,6 +71,11 @@
   reuses CatDex's existing `getAllMarketOrders` query. It requires the caller to supply
   the script hash and categories; it is not yet connected to a deployed PennyPicker
   covenant or the market page.
+- Added a guarded order lifecycle model covering draft, unsigned, Cashonize-approved,
+  broadcast, confirmed, created, discovered, matched, partially filled, filled and
+  canceled states. Fill quantity only changes after a matching broadcast is confirmed;
+  broadcast IDs must match the signed transaction, and cancellation requires a currently
+  discovered outpoint. This state model is not yet wired to the UI or chain adapter.
 - Chipnet activated BCH's May 2025 BigInt/VM-limits upgrade at height 227,228, so
   arbitrary-precision contract arithmetic is available there. The open protocol
   problem is oracle authenticity/freshness, not numeric precision. A covenant can
