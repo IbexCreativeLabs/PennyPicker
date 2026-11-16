@@ -1,9 +1,15 @@
 import { assertSideDelta, MAX_BCH_SATOSHIS, MAX_TOKEN_UNITS, quoteSatoshis } from './market';
-import { executionLimitRate, type VerifiedExecutionOracle } from './executionOracle';
+import {
+	assertVerifiedOracleCategory,
+	executionLimitRate,
+	type VerifiedExecutionOracle
+} from './executionOracle';
 import type { BpsOrderCommitment } from './orderCommitment';
 
 /** Fee and dust policy supplied by the transaction builder; never guessed here. */
 export interface OrderFundingPolicy {
+	/** Expected deployed PUSD CashToken category, not taken from the oracle itself. */
+	pusdAssetCategory: string;
 	orderThreadDustSats: bigint;
 	assetThreadDustSats: bigint;
 	feeReserveSats: bigint;
@@ -40,6 +46,7 @@ export function planBpsOrderFunding(
 	oracle: VerifiedExecutionOracle,
 	policy: OrderFundingPolicy
 ): BpsOrderFundingPlan {
+	const oracleAssetCategory = assertVerifiedOracleCategory(oracle, policy.pusdAssetCategory);
 	assertSideDelta(order.side, order.deltaBps);
 	if (order.remainingUnits <= 0n || order.remainingUnits > MAX_TOKEN_UNITS) {
 		throw new Error('Order quantity must fit the CashToken amount range and be positive.');
@@ -59,7 +66,11 @@ export function planBpsOrderFunding(
 	if (buyPriceBufferSats < 0n || buyPriceBufferSats > MAX_BCH_SATOSHIS) {
 		throw new Error('Buy price buffer is outside the BCH monetary supply.');
 	}
-	const limitRateSatsPerPusdScaled = executionLimitRate(oracle, order.deltaBps);
+	const limitRateSatsPerPusdScaled = executionLimitRate(
+		oracle,
+		order.deltaBps,
+		policy.pusdAssetCategory
+	);
 	const orderThreadTradeEscrowSats =
 		order.side === 'buy-pusd'
 			? quoteSatoshis(order.remainingUnits, limitRateSatsPerPusdScaled) + buyPriceBufferSats
@@ -79,7 +90,7 @@ export function planBpsOrderFunding(
 		side: order.side,
 		quantityUnits: order.remainingUnits,
 		deltaBps: order.deltaBps,
-		oracleAssetCategory: oracle.assetCategory,
+		oracleAssetCategory,
 		oracleRateSatsPerPusdScaled: oracle.rateSatsPerPusdScaled,
 		limitRateSatsPerPusdScaled,
 		orderThreadDustSats: policy.orderThreadDustSats,

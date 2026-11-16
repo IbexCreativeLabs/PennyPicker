@@ -101,7 +101,9 @@
 - Added a typed execution-oracle boundary: a future transaction builder must use a
   fresh observation from a production provider whose adapter authenticates the data.
   The development mock cannot satisfy this type and is still used only for local
-  arithmetic. No provider currently implements this interface.
+  arithmetic. Fill and funding calculations now also require the expected deployed
+  PUSD category and recheck it against the verified quote at the handoff. No provider
+  currently implements this interface.
 - Added a draft 34-byte BPS order commitment codec: version, explicit side, remaining
   PUSD base units, signed BPS delta, and maker P2PKH hash. The maker hash can support
   permissionless cancellation enforcement without embedding each maker in a unique

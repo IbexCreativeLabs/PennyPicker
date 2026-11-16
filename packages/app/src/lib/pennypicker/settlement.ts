@@ -1,5 +1,9 @@
 import { assertSideDelta, MAX_BCH_SATOSHIS, quoteSatoshis } from './market';
-import { executionLimitRate, type VerifiedExecutionOracle } from './executionOracle';
+import {
+	assertVerifiedOracleCategory,
+	executionLimitRate,
+	type VerifiedExecutionOracle
+} from './executionOracle';
 import {
 	encodeBpsOrderCommitment,
 	MAX_TOKEN_UNITS,
@@ -40,8 +44,10 @@ export function previewBpsFill(
 	order: BpsOrderCommitment,
 	tradeUnitsSigned: bigint,
 	oracle: VerifiedExecutionOracle,
+	expectedPusdCategory: string,
 	liquidity: FillLiquidity
 ): BpsFillPreview {
+	const oracleAssetCategory = assertVerifiedOracleCategory(oracle, expectedPusdCategory);
 	assertSideDelta(order.side, order.deltaBps);
 	if (order.remainingUnits < 0n || order.remainingUnits > MAX_TOKEN_UNITS) {
 		throw new Error('Order remaining quantity is invalid.');
@@ -69,7 +75,11 @@ export function previewBpsFill(
 		throw new Error('Sell order does not have enough PUSD in its token escrow.');
 	}
 
-	const limitRateSatsPerPusdScaled = executionLimitRate(oracle, order.deltaBps);
+	const limitRateSatsPerPusdScaled = executionLimitRate(
+		oracle,
+		order.deltaBps,
+		expectedPusdCategory
+	);
 	const bchSatoshis = quoteSatoshis(quantityUnits, limitRateSatsPerPusdScaled);
 	if (bchSatoshis > MAX_BCH_SATOSHIS) {
 		throw new Error('Fill BCH amount exceeds the maximum BCH monetary supply.');
@@ -87,7 +97,7 @@ export function previewBpsFill(
 		quantityUnits,
 		remainingUnits,
 		committedRemaining,
-		oracleAssetCategory: oracle.assetCategory,
+		oracleAssetCategory,
 		oracleReferenceRateSatsPerPusdScaled: oracle.rateSatsPerPusdScaled,
 		oracleObservedAtMs: oracle.observedAtMs,
 		oracleSource: oracle.source,

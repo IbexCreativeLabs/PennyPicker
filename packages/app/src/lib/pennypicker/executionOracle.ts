@@ -52,6 +52,22 @@ export async function getVerifiedExecutionOracle(
 	});
 }
 
+/** Enforce the exact configured asset category at each execution handoff. */
+export function assertVerifiedOracleCategory(
+	observation: VerifiedExecutionOracle,
+	expectedAssetCategory: string
+): string {
+	if (observation[verifiedOracleBrand] !== true) {
+		throw new Error('The BCH/PUSD quote has not passed the execution-oracle verification boundary.');
+	}
+	const expected = normalizeCategory(expectedAssetCategory, 'Expected PUSD category');
+	const observed = normalizeCategory(observation.assetCategory, 'Oracle provider category');
+	if (observed !== expected) {
+		throw new Error('The BCH/PUSD quote is for a different token category.');
+	}
+	return observed;
+}
+
 function normalizeCategory(category: string, label: string): string {
 	if (typeof category !== 'string') throw new Error(`${label} must be 32-byte hex.`);
 	const normalized = category.toLowerCase();
@@ -60,7 +76,12 @@ function normalizeCategory(category: string, label: string): string {
 }
 
 /** Derive the exact fixed-point limit rate used by a transaction builder. */
-export function executionLimitRate(observation: VerifiedExecutionOracle, deltaBps: number): bigint {
+export function executionLimitRate(
+	observation: VerifiedExecutionOracle,
+	deltaBps: number,
+	expectedAssetCategory: string
+): bigint {
+	assertVerifiedOracleCategory(observation, expectedAssetCategory);
 	assertFreshOracle(observation);
 	return rateAtDeltaBps(observation.rateSatsPerPusdScaled, deltaBps);
 }
