@@ -34,33 +34,40 @@ import {
 import orderArtifact from './contracts/PennyPickerOrder.json';
 import oracleArtifact from './contracts/PennyPickerOracle.json';
 import {
-	buyFillTakeSats,
+	askFillUnitsDue,
+	assertOrderDelta,
+	bidFillUnitsOut,
 	concat,
 	decodeOracleCommitment,
 	encodeOracleCommitment,
+	formatPrice,
+	MAX_TOKEN_UNITS,
 	oracleContract,
 	oracleReadUnlocking,
 	oracleUpdateUnlocking,
 	orderCancelUnlocking,
 	orderContract,
 	orderFillUnlocking,
-	sellFillPaymentSats,
 	settlementSatisfied,
 	type ContractInstance,
 	type OracleState,
-	type OrderContractParams
+	type OrderContractParams,
+	type OrderSide
 } from './contracts';
-import { assertSideDelta, MAX_TOKEN_UNITS, type OrderSide } from './market';
+
+export type { OrderSide };
 
 export const CHIPNET_PREFIX = 'bchtest';
 export const ORDER_ANNOUNCEMENT_PREFIX = utf8ToBin('PPKR');
-export const ORDER_ANNOUNCEMENT_VERSION = 1;
+export const ORDER_ANNOUNCEMENT_VERSION = 2;
 /** Satoshis kept on token-carrying outputs and on the oracle state. */
 export const TOKEN_OUTPUT_SATOSHIS = 1_000n;
 export const ORACLE_OUTPUT_SATOSHIS = 1_000n;
 export const MIN_CHANGE_SATOSHIS = 800n;
-/** Minimum BCH escrow for a buy order (covers continuation dust after fills). */
-export const MIN_BUY_ESCROW_SATOSHIS = 10_000n;
+/** BCH every order UTXO keeps so its continuation output stays above dust. */
+export const ORDER_RESERVE_SATOSHIS = 1_000n;
+/** Smallest ask (BCH sold) and smallest fill, to avoid dust-sized trades. */
+export const MIN_TRADE_SATOSHIS = 5_000n;
 export const FEE_SATS_PER_BYTE = 1n;
 /** Size allowance for a Schnorr P2PKH unlocking script the wallet adds. */
 const P2PKH_UNLOCK_BYTES = 100n;
@@ -330,9 +337,7 @@ export interface OracleUtxo extends ChainUtxo {
 /** Locate the authentic oracle state among UTXOs at the oracle contract address. */
 export function findOracleUtxo(utxos: ChainUtxo[], market: MarketConfig): OracleUtxo | undefined {
 	const matches = utxos.filter(
-		(utxo) =>
-			utxo.token?.category === market.oracleCategory &&
-			utxo.token.nft?.capability === 'mutable'
+		(utxo) => utxo.token?.category === market.oracleCategory && utxo.token.nft?.capability === 'mutable'
 	);
 	if (matches.length > 1) throw new Error('More than one oracle-state NFT found; refusing to choose.');
 	const match = matches[0];
@@ -352,9 +357,9 @@ function oracleReadInput(oracle: OracleUtxo, market: MarketConfig) {
 }
 
 /**
- * Create the oracle category: spends a wallet vout-0 BCH UTXO and sends the
- * category's only token, a mutable NFT holding the first price, to the oracle
- * contract. No minting baton is created.
+ * Create the oracle category: spends a confirmed wallet vout-0 BCH UTXO and
+ * sends the category's only token, a mutable NFT holding the first price, to
+ * the oracle contract. No minting baton is created.
  */
 export function buildOracleGenesis(
 	operatorAddress: string,
@@ -387,8 +392,8 @@ export function buildOracleGenesis(
 		}
 	});
 	const used = new Set([`${genesisInput.txid}:${genesisInput.vout}`]);
-	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
-	// Genesis output is new; exclude it from conservation.
+	// Spend only the genesis input; it must cover the oracle output and fee.
+	const fee = fundWithWalletBch(tx, sources, [], walletLocking, used);
 	assertTokenConservation(tx, sources, category);
 	return {
 		kind: 'oracle-genesis',
@@ -398,16 +403,15 @@ export function buildOracleGenesis(
 		feeSatoshis: fee,
 		createdCategory: category,
 		summary: [
-			`Create oracle category ${category}`,
-			`Mutable NFT → oracle contract ${contractAddress(instance)}`,
-			`Initial rate ${initial.rateSatsPerPusdScaled.toString()} (sats/PUSD × 1e8), sequence ${initial.sequence}`,
-			'No minting baton is created.',
+			`Create the oracle with a reference price of ${formatPrice(initial.price)} PUSD per BCH (sequence ${initial.sequence})`,
+			`Spends ${genesisInput.txid.slice(0, 12)}…:0 · new oracle category = that txid`,
+			`One mutable NFT (the price record) goes to the oracle contract; no minting baton`,
 			`Network fee ≈ ${fee.toString()} sats`
 		]
 	};
 }
 
-/** Operator publishes a new reference price (wallet signs the placeholder). */
+/** Operator publishes a new reference price. Authorised by the operator's own P2PKH input. */
 export function buildOracleUpdate(
 	market: MarketConfig,
 	oracle: OracleUtxo,
@@ -428,20 +432,15 @@ export function buildOracleUpdate(
 		version: 2,
 		locktime: 0,
 		inputs: [input],
-		outputs: [
-			{
-				...prev,
-				token: { ...prev.token!, nft: { capability: 'mutable', commitment: encodeOracleCommitment(next) } }
-			}
-		]
+		outputs: [{ ...prev, token: { ...prev.token!, nft: { capability: 'mutable', commitment: encodeOracleCommitment(next) } } }]
 	};
 	const sources: WcSourceOutput[] = [source(input, prev, contractInfo(oracleArtifact, 'update', instance))];
 	const used = new Set<string>();
 	addAuthorisationInput(tx, sources, walletUtxos, walletLocking, used, 'oracle operator');
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('oracle-update', tx, sources, fee, [
-		`Update reference rate ${oracle.state.rateSatsPerPusdScaled.toString()} → ${next.rateSatsPerPusdScaled.toString()} (sats/PUSD × 1e8)`,
-		`Sequence ${oracle.state.sequence} → ${next.sequence}`
+		`Publish reference price ${formatPrice(oracle.state.price)} → ${formatPrice(next.price)} PUSD per BCH`,
+		`Sequence #${oracle.state.sequence} → #${next.sequence}; authorised by your operator address (input 1)`
 	]);
 }
 
@@ -450,47 +449,49 @@ export function buildOracleUpdate(
 export interface AnnouncedOrder {
 	side: OrderSide;
 	deltaBps: number;
-	targetUnits: bigint;
 	makerPkh: string;
 	lockingBytecodeHex: string;
 	address: string;
-	/** Creation outpoint, when known. */
+	/** Creation transaction, when known. */
 	createdTxid?: string;
 }
 
-export function orderParams(market: MarketConfig, order: Pick<AnnouncedOrder, 'side' | 'deltaBps' | 'targetUnits' | 'makerPkh'>): OrderContractParams {
+type OrderTerms = Pick<AnnouncedOrder, 'side' | 'deltaBps' | 'makerPkh'>;
+
+export function orderParams(market: MarketConfig, order: OrderTerms): OrderContractParams {
 	return {
 		oracleCategory: market.oracleCategory,
 		pusdCategory: market.pusdCategory,
 		makerPkh: order.makerPkh,
 		side: order.side,
-		deltaBps: order.deltaBps,
-		targetUnits: order.targetUnits
+		deltaBps: order.deltaBps
 	};
 }
 
-export function describeOrder(market: MarketConfig, order: Pick<AnnouncedOrder, 'side' | 'deltaBps' | 'targetUnits' | 'makerPkh'>): AnnouncedOrder {
+export function describeOrder(market: MarketConfig, order: OrderTerms): AnnouncedOrder {
 	const instance = orderContract(orderParams(market, order));
 	return {
-		...order,
+		side: order.side,
+		deltaBps: order.deltaBps,
+		makerPkh: order.makerPkh,
 		lockingBytecodeHex: binToHex(instance.lockingBytecode),
 		address: contractAddress(instance)
 	};
 }
 
-function announcement(order: AnnouncedOrder): Output {
+/** OP_RETURN "PPKR" | version | side (0 ask, 1 bid) | deltaBps | makerPkh */
+function announcement(order: OrderTerms): Output {
 	return opReturn([
 		ORDER_ANNOUNCEMENT_PREFIX,
 		Uint8Array.of(ORDER_ANNOUNCEMENT_VERSION),
-		Uint8Array.of(order.side === 'buy-pusd' ? 0 : 1),
+		bigIntToVmNumber(order.side === 'ask' ? 0n : 1n),
 		bigIntToVmNumber(BigInt(order.deltaBps)),
-		bigIntToVmNumber(order.targetUnits),
 		hexToBin(order.makerPkh)
 	]);
 }
 
 /** Parse an order announcement OP_RETURN, or return undefined. */
-export function parseAnnouncement(lockingBytecode: Uint8Array): Omit<AnnouncedOrder, 'lockingBytecodeHex' | 'address'> | undefined {
+export function parseAnnouncement(lockingBytecode: Uint8Array): OrderTerms | undefined {
 	if (lockingBytecode[0] !== 0x6a) return undefined;
 	const chunks: Uint8Array[] = [];
 	let offset = 1;
@@ -508,47 +509,43 @@ export function parseAnnouncement(lockingBytecode: Uint8Array): Omit<AnnouncedOr
 			chunks.push(Uint8Array.of(0x81));
 			continue;
 		} else return undefined;
+		if (offset + length > lockingBytecode.length) return undefined;
 		chunks.push(lockingBytecode.slice(offset, offset + length));
 		offset += length;
 	}
-	if (chunks.length !== 6) return undefined;
-	const [prefix, version, side, delta, target, maker] = chunks as [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array];
+	if (chunks.length !== 5) return undefined;
+	const [prefix, version, side, delta, maker] = chunks as [Uint8Array, Uint8Array, Uint8Array, Uint8Array, Uint8Array];
 	if (binToHex(prefix) !== binToHex(ORDER_ANNOUNCEMENT_PREFIX)) return undefined;
 	if (version.length !== 1 || version[0] !== ORDER_ANNOUNCEMENT_VERSION) return undefined;
-	// OP_0 pushes an empty chunk for the buy side; OP_1 is encoded as 0x01.
-	const sideValue = side.length === 0 ? 0 : side.length === 1 ? side[0] : -1;
-	if (sideValue !== 0 && sideValue !== 1) return undefined;
+	const sideValue = vmNumberToBigInt(side, { requireMinimalEncoding: true });
+	const deltaValue = vmNumberToBigInt(delta, { requireMinimalEncoding: true });
+	if (typeof sideValue === 'string' || typeof deltaValue === 'string') return undefined;
+	if (sideValue !== 0n && sideValue !== 1n) return undefined;
 	if (maker.length !== 20) return undefined;
-	const deltaNumber = vmNumberToBigInt(delta, { requireMinimalEncoding: true });
-	const targetNumber = vmNumberToBigInt(target, { requireMinimalEncoding: true });
-	if (typeof deltaNumber === 'string' || typeof targetNumber === 'string') return undefined;
-	const parsed = {
-		side: sideValue === 0 ? ('buy-pusd' as const) : ('sell-pusd' as const),
-		deltaBps: Number(deltaNumber),
-		targetUnits: targetNumber,
+	const parsed: OrderTerms = {
+		side: sideValue === 0n ? 'ask' : 'bid',
+		deltaBps: Number(deltaValue),
 		makerPkh: binToHex(maker)
 	};
 	try {
-		assertSideDelta(parsed.side, parsed.deltaBps);
+		assertOrderDelta(parsed.side, parsed.deltaBps);
 	} catch {
 		return undefined;
 	}
-	if (parsed.targetUnits <= 0n || parsed.targetUnits > MAX_TOKEN_UNITS) return undefined;
 	return parsed;
 }
 
 export interface CreateOrderRequest {
 	side: OrderSide;
 	deltaBps: number;
-	/** PUSD base units: offered (sell) or wanted (buy). */
-	quantityUnits: bigint;
-	/** Buy orders: BCH escrow in satoshis. Ignored for sell orders. */
-	escrowSatoshis?: bigint;
+	/** Ask: satoshis of BCH to sell. Bid: PUSD base units to spend. */
+	amount: bigint;
 }
 
 /**
  * Create an order. Reads the oracle (so the order is indexed with the market),
- * locks the escrow in a fresh order contract and announces its parameters.
+ * locks the escrow in a fresh order contract and announces its terms.
+ * Asks escrow BCH (plus a reserve); bids escrow PUSD (plus the reserve).
  */
 export function buildCreateOrder(
 	market: MarketConfig,
@@ -562,111 +559,121 @@ export function buildCreateOrder(
 	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(makerPkh))) {
 		throw new Error('Maker hash does not match the connected P2PKH address.');
 	}
-	assertSideDelta(request.side, request.deltaBps);
-	if (request.quantityUnits <= 0n || request.quantityUnits > MAX_TOKEN_UNITS) {
-		throw new Error('Order quantity must be positive.');
-	}
-	const order = describeOrder(market, {
-		side: request.side,
-		deltaBps: request.deltaBps,
-		targetUnits: request.quantityUnits,
-		makerPkh
-	});
+	assertOrderDelta(request.side, request.deltaBps);
+	const terms = { side: request.side, deltaBps: request.deltaBps, makerPkh };
+	const order = describeOrder(market, terms);
 	const oracleRead = oracleReadInput(oracle, market);
 	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [oracleRead.input], outputs: [oracleRead.output] };
 	const sources: WcSourceOutput[] = [oracleRead.source];
 	const used = new Set<string>();
 	const orderLocking = hexToBin(order.lockingBytecodeHex);
+	const limit = (oracle.state.price * (10_000n + BigInt(request.deltaBps))) / 10_000n;
 	const summary: string[] = [];
 
-	if (request.side === 'sell-pusd') {
+	if (request.side === 'bid') {
+		if (request.amount <= 0n || request.amount > MAX_TOKEN_UNITS) throw new Error('Enter a positive PUSD amount.');
 		let gathered = 0n;
 		for (const utxo of pusdUtxos(walletUtxos, market.pusdCategory)) {
-			if (gathered >= request.quantityUnits) break;
+			if (gathered >= request.amount) break;
 			const input = utxoToInput(utxo, new Uint8Array());
 			tx.inputs.push(input);
 			sources.push(source(input, utxoToOutput(utxo, walletLocking)));
 			used.add(`${utxo.txid}:${utxo.vout}`);
 			gathered += utxo.token!.amount;
 		}
-		if (gathered < request.quantityUnits) {
-			throw new Error('Insufficient PUSD in the connected wallet for this sell order.');
-		}
+		if (gathered < request.amount) throw new Error('Insufficient PUSD in the connected wallet for this bid.');
 		tx.outputs.push({
 			lockingBytecode: orderLocking,
-			valueSatoshis: TOKEN_OUTPUT_SATOSHIS,
-			token: { category: hexToBin(market.pusdCategory), amount: request.quantityUnits }
+			valueSatoshis: ORDER_RESERVE_SATOSHIS,
+			token: { category: hexToBin(market.pusdCategory), amount: request.amount }
 		});
-		tx.outputs.push(announcement(order));
-		if (gathered > request.quantityUnits) {
+		tx.outputs.push(announcement(terms));
+		if (gathered > request.amount) {
 			tx.outputs.push({
 				lockingBytecode: walletLocking,
 				valueSatoshis: TOKEN_OUTPUT_SATOSHIS,
-				token: { category: hexToBin(market.pusdCategory), amount: gathered - request.quantityUnits }
+				token: { category: hexToBin(market.pusdCategory), amount: gathered - request.amount }
 			});
 		}
-		summary.push(`Escrow ${request.quantityUnits.toString()} PUSD units in sell order ${order.address}`);
+		summary.push(
+			`Bid: buy BCH with ${formatUnits(request.amount)} PUSD at ${request.deltaBps} BPS (limit now ${formatPrice(limit)} PUSD/BCH)`,
+			`Escrows ${formatUnits(request.amount)} PUSD in order contract ${order.address.slice(0, 24)}…`
+		);
 	} else {
-		const escrow = request.escrowSatoshis ?? 0n;
-		if (escrow < MIN_BUY_ESCROW_SATOSHIS) {
-			throw new Error(`Buy orders need at least ${MIN_BUY_ESCROW_SATOSHIS.toString()} sats of BCH escrow.`);
+		if (request.amount < MIN_TRADE_SATOSHIS) {
+			throw new Error(`Asks must sell at least ${MIN_TRADE_SATOSHIS.toString()} sats of BCH.`);
 		}
-		tx.outputs.push({ lockingBytecode: orderLocking, valueSatoshis: escrow });
-		tx.outputs.push(announcement(order));
-		summary.push(`Escrow ${escrow.toString()} sats BCH in buy order ${order.address}`);
+		tx.outputs.push({ lockingBytecode: orderLocking, valueSatoshis: request.amount + ORDER_RESERVE_SATOSHIS });
+		tx.outputs.push(announcement(terms));
+		summary.push(
+			`Ask: sell ${formatSats(request.amount)} BCH at +${request.deltaBps} BPS (limit now ${formatPrice(limit)} PUSD/BCH)`,
+			`Escrows ${formatSats(request.amount + ORDER_RESERVE_SATOSHIS)} BCH (incl. ${ORDER_RESERVE_SATOSHIS} sats reserve) in ${order.address.slice(0, 24)}…`
+		);
 	}
-	summary.unshift(
-		`${request.side === 'buy-pusd' ? 'Buy' : 'Sell'} ${request.quantityUnits.toString()} PUSD units at ${request.deltaBps >= 0 ? '+' : ''}${request.deltaBps} BPS from the oracle reference`
-	);
+	summary.push('Reads the oracle (input 0) and announces the order terms in an OP_RETURN');
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('order-create', tx, sources, fee, summary, { order });
 }
 
-/** A live order UTXO with its decoded parameters. */
+/** A live order UTXO with its decoded terms and balances. */
 export interface OpenOrder extends AnnouncedOrder {
 	utxo: ChainUtxo;
-	/** PUSD units held by the order UTXO. */
+	/** PUSD base units held by the order UTXO (bid escrow, or ask proceeds). */
 	heldUnits: bigint;
-	/** PUSD units still fillable. */
-	remainingUnits: bigint;
+	/** Ask: BCH still for sale (sats). Bid: 0. */
+	availableSats: bigint;
+	/** Bid: PUSD still available to buy BCH with. Ask: 0. */
+	availableUnits: bigint;
+	/** Maker proceeds collected so far: ask → PUSD units, bid → sats. */
+	proceeds: bigint;
+	/** True when nothing more can be traded against this order. */
+	exhausted: boolean;
 }
 
 export function toOpenOrder(order: AnnouncedOrder, utxo: ChainUtxo, market: MarketConfig): OpenOrder | undefined {
 	if (utxo.token && (utxo.token.category !== market.pusdCategory || utxo.token.nft)) return undefined;
 	const heldUnits = utxo.token?.amount ?? 0n;
-	const remainingUnits =
-		order.side === 'sell-pusd' ? heldUnits : order.targetUnits > heldUnits ? order.targetUnits - heldUnits : 0n;
-	return { ...order, utxo, heldUnits, remainingUnits };
+	const spare = utxo.satoshis > ORDER_RESERVE_SATOSHIS ? utxo.satoshis - ORDER_RESERVE_SATOSHIS : 0n;
+	if (order.side === 'ask') {
+		return { ...order, utxo, heldUnits, availableSats: spare, availableUnits: 0n, proceeds: heldUnits, exhausted: spare < MIN_TRADE_SATOSHIS };
+	}
+	return { ...order, utxo, heldUnits, availableSats: 0n, availableUnits: heldUnits, proceeds: spare, exhausted: heldUnits === 0n };
 }
 
+/** A taker leg: trade `sats` of BCH with one order (buy from an ask, sell to a bid). */
 export interface FillLeg {
 	order: OpenOrder;
-	units: bigint;
+	sats: bigint;
 }
 
-/** Quote one leg against the current oracle rate (exact covenant rounding). */
-export function quoteLeg(leg: FillLeg, oracleRate: bigint): { satoshis: bigint; nextValue: bigint; nextUnits: bigint } {
-	const { order, units } = leg;
-	if (units <= 0n || units > order.remainingUnits) throw new Error('Fill quantity exceeds the order’s remaining quantity.');
-	if (order.side === 'sell-pusd') {
-		const pay = sellFillPaymentSats(units, oracleRate, order.deltaBps);
-		const nextValue = order.utxo.satoshis + pay;
-		const nextUnits = order.heldUnits - units;
-		if (!settlementSatisfied(pay, -units, oracleRate, order.deltaBps)) throw new Error('Internal settlement check failed.');
-		return { satoshis: pay, nextValue, nextUnits };
+export interface LegQuote {
+	/** PUSD base units the taker pays (ask) or receives (bid). */
+	units: bigint;
+	nextValue: bigint;
+	nextUnits: bigint;
+}
+
+/** Quote one leg at the current oracle price with exact covenant rounding. */
+export function quoteLeg(leg: FillLeg, price: bigint): LegQuote {
+	const { order, sats } = leg;
+	if (sats < MIN_TRADE_SATOSHIS) throw new Error(`Each fill must be at least ${MIN_TRADE_SATOSHIS.toString()} sats.`);
+	if (order.side === 'ask') {
+		if (sats > order.availableSats) throw new Error('That is more BCH than the ask has for sale.');
+		const units = askFillUnitsDue(sats, price, order.deltaBps);
+		const quote = { units, nextValue: order.utxo.satoshis - sats, nextUnits: order.heldUnits + units };
+		if (!settlementSatisfied(-sats, units, price, order.deltaBps)) throw new Error('Internal settlement check failed.');
+		return quote;
 	}
-	const take = buyFillTakeSats(units, oracleRate, order.deltaBps);
-	const nextValue = order.utxo.satoshis - take;
-	if (nextValue < TOKEN_OUTPUT_SATOSHIS) {
-		throw new Error('This buy order’s BCH escrow cannot cover that quantity at the current reference price.');
-	}
-	if (!settlementSatisfied(-take, units, oracleRate, order.deltaBps)) throw new Error('Internal settlement check failed.');
-	return { satoshis: take, nextValue, nextUnits: order.heldUnits + units };
+	const units = bidFillUnitsOut(sats, price, order.deltaBps);
+	if (units <= 0n) throw new Error('Fill too small: it would receive 0 PUSD.');
+	if (units > order.availableUnits) throw new Error('That bid does not hold enough PUSD for this amount of BCH.');
+	if (!settlementSatisfied(sats, -units, price, order.deltaBps)) throw new Error('Internal settlement check failed.');
+	return { units, nextValue: order.utxo.satoshis + sats, nextUnits: order.heldUnits - units };
 }
 
 /**
- * Fill one or more orders on the same side. Taking sell orders buys PUSD with
- * BCH; taking buy orders sells PUSD for BCH.
+ * Fill one or more orders on the same side. Taking asks buys BCH with PUSD;
+ * taking bids sells BCH for PUSD.
  */
 export function buildFillOrders(
 	market: MarketConfig,
@@ -679,7 +686,7 @@ export function buildFillOrders(
 	const side = legs[0]!.order.side;
 	if (legs.some((leg) => leg.order.side !== side)) throw new Error('All filled orders must be on the same side.');
 	const walletLocking = addressToLockingBytecode(takerAddress);
-	const rate = oracle.state.rateSatsPerPusdScaled;
+	const price = oracle.state.price;
 	const oracleRead = oracleReadInput(oracle, market);
 	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [oracleRead.input], outputs: [oracleRead.output] };
 	const sources: WcSourceOutput[] = [oracleRead.source];
@@ -694,9 +701,9 @@ export function buildFillOrders(
 		seen.add(key);
 		const instance = orderContract(orderParams(market, leg.order));
 		if (binToHex(instance.lockingBytecode) !== leg.order.lockingBytecodeHex) {
-			throw new Error('Order parameters do not match its contract address.');
+			throw new Error('Order terms do not match its contract address.');
 		}
-		const quote = quoteLeg(leg, rate);
+		const quote = quoteLeg(leg, price);
 		const input = utxoToInput(leg.order.utxo, orderFillUnlocking(instance));
 		tx.inputs.push(input);
 		sources.push(source(input, utxoToOutput(leg.order.utxo, instance.lockingBytecode), contractInfo(orderArtifact, 'fill', instance)));
@@ -705,19 +712,15 @@ export function buildFillOrders(
 			valueSatoshis: quote.nextValue,
 			...(quote.nextUnits > 0n ? { token: { category: pusd, amount: quote.nextUnits } } : {})
 		});
-		totalUnits += leg.units;
-		totalSats += quote.satoshis;
+		totalUnits += quote.units;
+		totalSats += leg.sats;
 		summary.push(
-			`${side === 'sell-pusd' ? 'Buy' : 'Sell'} ${leg.units.toString()} PUSD units ${side === 'sell-pusd' ? 'from' : 'to'} order ${leg.order.address.slice(0, 22)}… for ${quote.satoshis.toString()} sats`
+			`${side === 'ask' ? 'Buy' : 'Sell'} ${formatSats(leg.sats)} BCH ${side === 'ask' ? 'from ask' : 'to bid'} at ${leg.order.deltaBps > 0 ? '+' : ''}${leg.order.deltaBps} BPS for ${formatUnits(quote.units)} PUSD`
 		);
 	}
 	const used = new Set<string>();
-	if (side === 'sell-pusd') {
-		// Taker receives the PUSD released by the orders; pays BCH from the wallet.
-		tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: pusd, amount: totalUnits } });
-		summary.push(`You receive ${totalUnits.toString()} PUSD units and pay ${totalSats.toString()} sats`);
-	} else {
-		// Taker delivers PUSD from the wallet and receives BCH released by the orders (via change).
+	if (side === 'ask') {
+		// Taker pays PUSD; receives the BCH released by the asks via BCH change.
 		let gathered = 0n;
 		for (const utxo of pusdUtxos(walletUtxos, market.pusdCategory)) {
 			if (gathered >= totalUnits) break;
@@ -727,12 +730,17 @@ export function buildFillOrders(
 			used.add(`${utxo.txid}:${utxo.vout}`);
 			gathered += utxo.token!.amount;
 		}
-		if (gathered < totalUnits) throw new Error('Insufficient PUSD in the connected wallet to fill these buy orders.');
+		if (gathered < totalUnits) throw new Error(`Insufficient PUSD: this purchase costs ${formatUnits(totalUnits)} PUSD.`);
 		if (gathered > totalUnits) {
 			tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: pusd, amount: gathered - totalUnits } });
 		}
-		summary.push(`You deliver ${totalUnits.toString()} PUSD units and receive ${totalSats.toString()} sats (in change)`);
+		summary.push(`Total: you pay ${formatUnits(totalUnits)} PUSD and receive ${formatSats(totalSats)} BCH (in your BCH change)`);
+	} else {
+		// Taker pays BCH from the wallet; receives PUSD from the bids.
+		tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: pusd, amount: totalUnits } });
+		summary.push(`Total: you sell ${formatSats(totalSats)} BCH and receive ${formatUnits(totalUnits)} PUSD`);
 	}
+	summary.push(`Priced against the oracle reference ${formatPrice(price)} PUSD/BCH (sequence #${oracle.state.sequence})`);
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('order-fill', tx, sources, fee, summary);
 }
@@ -765,9 +773,22 @@ export function buildCancelOrder(
 	}
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('order-cancel', tx, sources, fee, [
-		`Cancel order ${order.address}`,
-		`Return ${order.utxo.satoshis.toString()} sats and ${order.heldUnits.toString()} PUSD units to ${makerAddress}`
+		`Cancel ${order.side} at ${order.deltaBps > 0 ? '+' : ''}${order.deltaBps} BPS and withdraw everything it holds`,
+		`Returns ${formatSats(order.utxo.satoshis)} BCH${order.heldUnits > 0n ? ` and ${formatUnits(order.heldUnits)} PUSD` : ''} to your address`,
+		'Authorised by your own address (input 1), signed in Cashonize'
 	]);
+}
+
+export function formatSats(sats: bigint): string {
+	const negative = sats < 0n;
+	const abs = negative ? -sats : sats;
+	return `${negative ? '-' : ''}${abs / 100_000_000n}.${(abs % 100_000_000n).toString().padStart(8, '0')}`;
+}
+
+export function formatUnits(units: bigint): string {
+	const negative = units < 0n;
+	const abs = negative ? -units : units;
+	return `${negative ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
 }
 
 // ---------------------------------------------------------------- signing checks

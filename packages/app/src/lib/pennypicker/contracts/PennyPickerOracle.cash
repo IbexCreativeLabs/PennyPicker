@@ -1,10 +1,10 @@
 pragma cashscript ^0.11.0;
 
-// PennyPicker BCH/PUSD reference-price state.
+// PennyPicker BCH/PUSD reference-price state (price = PUSD per BCH).
 //
 // Holds the single mutable NFT of the oracle category (genesis mints no minting
 // baton). Commitment (16 bytes):
-//   rate:int64le      satoshis per whole PUSD, scaled by 1e8 (> 0)
+//   price:int64le     PUSD per BCH, scaled by 1e8 (> 0)
 //   timestamp:int32le unix seconds claimed by the operator
 //   sequence:int32le  strictly increasing update counter
 //
@@ -25,11 +25,11 @@ contract PennyPickerOracle(bytes20 operatorPkh) {
 
         bytes next = tx.outputs[i].nftCommitment;
         require(next.length == 16);
-        bytes nextRate, bytes nextTail = next.split(8);
+        bytes nextPrice, bytes nextTail = next.split(8);
         bytes nextTime, bytes nextSeq = nextTail.split(4);
         bytes prevTail = tx.inputs[i].nftCommitment.split(8)[1];
         bytes prevTime, bytes prevSeq = prevTail.split(4);
-        require(int(nextRate) > 0);
+        require(int(nextPrice) > 0);
         require(int(nextTime) >= int(prevTime));
         require(int(nextSeq) > int(prevSeq));
     }

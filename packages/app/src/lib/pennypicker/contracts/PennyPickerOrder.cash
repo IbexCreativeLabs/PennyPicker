@@ -1,33 +1,37 @@
 pragma cashscript ^0.11.0;
 
-// PennyPicker oracle-relative BPS limit order (one order per P2SH32 address).
-//
-// Escrow and proceeds live in a single UTXO at this address:
-//   side 0 (buy PUSD):  UTXO holds BCH; fills deliver PUSD into it and remove BCH.
-//   side 1 (sell PUSD): UTXO holds PUSD; fills remove PUSD and add BCH to it.
+// PennyPicker oracle-relative BPS limit order on the BCH/PUSD pair
+// (price = PUSD per BCH). One order per P2SH32 address; escrow and proceeds
+// live in a single UTXO at this address:
+//   side 0 (ask): sells BCH. Holds BCH; fills remove BCH and add PUSD.
+//   side 1 (bid): buys BCH.  Holds PUSD; fills remove PUSD and add BCH.
 //
 // Fills must spend the PennyPicker oracle-state UTXO at input 0. Its mutable NFT
-// commitment starts with rate:int64le = satoshis per whole PUSD, scaled by 1e8.
-// The effective limit is rate * (10000 + deltaBps) / 10000. The settlement check is
-// exact (no rounding): dSat * 1e14 + dUnits * rate * (10000 + deltaBps) >= 0,
-// where 1e14 = 100 PUSD units * 1e8 rate scale * 10000 BPS denominator.
+// commitment starts with price:int64le = PUSD per BCH scaled by 1e8.
+// The limit is price * (10000 + deltaBps) / 10000 (asks use deltaBps >= 0, bids
+// deltaBps <= 0 by app convention). Settlement is exact, with no rounding:
+//   dUnits * 1e18 + dSat * price * (10000 + deltaBps) >= 0
+// where dUnits is the change in PUSD base units (1/100 PUSD) and dSat the change
+// in satoshis held by the order. Derivation: s sats are worth
+// s * limit / 1e14 base units (1e8 sats/BCH * 1e8 price scale / 100 units/PUSD),
+// and limit = price * (10000 + deltaBps) / 10000, giving the 1e18 constant.
 contract PennyPickerOrder(
     bytes32 oracleCategory,
     bytes32 pusdCategory,
     bytes20 makerPkh,
     int side,
-    int deltaBps,
-    int targetUnits
+    int deltaBps
 ) {
     function fill() {
         int i = this.activeInputIndex;
         require(i > 0);
+        require(10000 + deltaBps > 0);
 
         // Authentic current oracle state: the only mutable NFT of its category.
         require(tx.inputs[0].tokenCategory == oracleCategory + 0x01);
-        bytes rateBin = tx.inputs[0].nftCommitment.split(8)[0];
-        int rate = int(rateBin);
-        require(rate > 0);
+        bytes priceBin = tx.inputs[0].nftCommitment.split(8)[0];
+        int price = int(priceBin);
+        require(price > 0);
 
         // The order continues at the same index and address.
         require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);
@@ -46,12 +50,11 @@ contract PennyPickerOrder(
 
         if (side == 0) {
             require(dUnits > 0);
-            require(outUnits <= targetUnits);
         } else {
             require(dUnits < 0);
         }
 
-        require(dSat * 100000000000000 + dUnits * rate * (10000 + deltaBps) >= 0);
+        require(dUnits * 1000000000000000000 + dSat * price * (10000 + deltaBps) >= 0);
     }
 
     // The maker withdraws escrow and proceeds. Authorised by an input from the

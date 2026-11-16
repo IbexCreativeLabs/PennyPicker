@@ -104,81 +104,92 @@ const fund = (owner: ReturnType<typeof key>, seed: number, sats: bigint, pusd?: 
 	...(pusd ? { token: { category: PUSD, amount: pusd } } : {})
 });
 
-// 1. Oracle genesis (500 PUSD/BCH => 200,000 sats per PUSD).
-const RATE = 200_000n * 100_000_000n;
+// 1. Oracle genesis at 500.00 PUSD per BCH.
+const RATE = 500n * 100_000_000n;
 let operatorUtxos = [fund(operator, 1, 1_000_000n)];
-const genesis = buildOracleGenesis(operator.address, operator.pkh, operatorUtxos, { rateSatsPerPusdScaled: RATE, timestamp: 1_800_000_000, sequence: 1 });
+{
+	let threw = false;
+	try { buildOracleGenesis(operator.address, operator.pkh, [{ ...operatorUtxos[0]!, height: 0 }], { price: RATE, timestamp: 1_800_000_000, sequence: 1 }); } catch { threw = true; }
+	check('oracle genesis refuses an unconfirmed vout 0', threw);
+}
+const genesis = buildOracleGenesis(operator.address, operator.pkh, [...operatorUtxos, fund(operator, 99, 5_000n, 7n)], { price: RATE, timestamp: 1_800_000_000, sequence: 1 });
 const g = verify('oracle genesis', genesis, operator);
+check('oracle genesis spends only the vout-0 input', genesis.transaction.inputs.length === 1);
 const market: MarketConfig = { pusdCategory: PUSD, oracleCategory: genesis.createdCategory!, oracleOperatorPkh: operator.pkh };
 const oracleLocking = oracleContract({ operatorPkh: operator.pkh }).lockingBytecode;
 let oracle = findOracleUtxo(outputsTo(g.txid, g.tx, oracleLocking), market)!;
-check('oracle found after genesis', !!oracle && oracle.state.sequence === 1);
+check('oracle found after genesis', !!oracle && oracle.state.sequence === 1 && oracle.state.price === RATE);
 operatorUtxos = outputsTo(g.txid, g.tx, operator.locking);
 
-// 2. Oracle update.
-const upd = buildOracleUpdate(market, oracle, operator.address, operatorUtxos, { rateSatsPerPusdScaled: RATE + 1_000_000n, timestamp: 1_800_000_060, sequence: 2 });
+// 2. Oracle update to 520.00.
+const upd = buildOracleUpdate(market, oracle, operator.address, operatorUtxos, { price: 520n * 100_000_000n, timestamp: 1_800_000_060, sequence: 2 });
 const u = verify('oracle update authorised by operator input', upd, operator);
 oracle = findOracleUtxo(outputsTo(u.txid, u.tx, oracleLocking), market)!;
-const rate = oracle.state.rateSatsPerPusdScaled;
+const price = oracle.state.price;
 {
 	let threw = false;
 	try { buildOracleUpdate(market, oracle, maker.address, [fund(maker, 9, 100_000n)], { ...oracle.state, sequence: 3 }); } catch { threw = true; }
 	check('non-operator cannot build an oracle update', threw);
 }
 
-// 3. Maker creates a sell order (60.00 PUSD at +100 BPS).
-let makerUtxos = [fund(maker, 2, 2_000_000n), fund(maker, 3, 1_000n, 10_000n)];
-const create = buildCreateOrder(market, oracle, maker.address, maker.pkh, makerUtxos, { side: 'sell-pusd', deltaBps: 100, quantityUnits: 6_000n });
-const c = verify('create sell order', create, maker);
-oracle = findOracleUtxo(outputsTo(c.txid, c.tx, oracleLocking), market)!;
-const announced = c.tx.outputs.map((o) => parseAnnouncement(o.lockingBytecode)).find(Boolean);
-check('announcement parses and matches', !!announced && describeOrder(market, announced).lockingBytecodeHex === create.order!.lockingBytecodeHex);
-makerUtxos = [...outputsTo(c.txid, c.tx, maker.locking)];
-const sellLocking = hexToBin(create.order!.lockingBytecodeHex);
-let sellOrder = toOpenOrder(create.order!, outputsTo(c.txid, c.tx, sellLocking)[0]!, market)!;
-check('sell order open with 6000 units', sellOrder.remainingUnits === 6_000n);
+// 3. Maker posts an ask: sell 0.1 BCH at +50 BPS.
+let makerUtxos = [fund(maker, 2, 20_000_000n), fund(maker, 3, 1_000n, 10_000n)];
+const createAsk = buildCreateOrder(market, oracle, maker.address, maker.pkh, makerUtxos, { side: 'ask', deltaBps: 50, amount: 10_000_000n });
+const ca = verify('create ask (sell BCH)', createAsk, maker);
+oracle = findOracleUtxo(outputsTo(ca.txid, ca.tx, oracleLocking), market)!;
+const announced = ca.tx.outputs.map((o) => parseAnnouncement(o.lockingBytecode)).find(Boolean);
+check('announcement parses and re-derives the same contract', !!announced && describeOrder(market, announced).lockingBytecodeHex === createAsk.order!.lockingBytecodeHex);
+const spent = (tx: TransactionCommon, u: ChainUtxo) => tx.inputs.some((i) => binToHex(i.outpointTransactionHash) === u.txid && i.outpointIndex === u.vout);
+makerUtxos = [...makerUtxos.filter((u) => !spent(ca.tx, u)), ...outputsTo(ca.txid, ca.tx, maker.locking)];
+let askOrder = toOpenOrder(createAsk.order!, outputsTo(ca.txid, ca.tx, hexToBin(createAsk.order!.lockingBytecodeHex))[0]!, market)!;
+check('ask has 0.1 BCH available', askOrder.availableSats === 10_000_000n);
 
-// 4. Maker creates a buy order (wants 40.00 PUSD at -50 BPS, 0.1 BCH escrow).
+// 4. Maker posts a bid: buy BCH with 60.00 PUSD at -40 BPS.
 {
 	let threw = false;
-	try { buildCreateOrder(market, oracle, maker.address, maker.pkh, makerUtxos, { side: 'buy-pusd', deltaBps: -50, quantityUnits: 4_000n, escrowSatoshis: 10_000_000n }); } catch { threw = true; }
-	check('buy order creation refuses insufficient BCH', threw);
+	try { buildCreateOrder(market, oracle, maker.address, maker.pkh, makerUtxos, { side: 'bid', deltaBps: -40, amount: 1_000_000n }); } catch { threw = true; }
+	check('bid creation refuses insufficient PUSD', threw);
+	threw = false;
+	try { buildCreateOrder(market, oracle, maker.address, maker.pkh, makerUtxos, { side: 'ask', deltaBps: -1, amount: 10_000_000n }); } catch { threw = true; }
+	check('ask below the reference is rejected', threw);
 }
-const makerUtxos2 = [...makerUtxos, fund(maker, 4, 20_000_000n)];
-const createBuy2 = buildCreateOrder(market, oracle, maker.address, maker.pkh, makerUtxos2, { side: 'buy-pusd', deltaBps: -50, quantityUnits: 4_000n, escrowSatoshis: 10_000_000n });
-const cb = verify('create buy order', createBuy2, maker);
+const createBid = buildCreateOrder(market, oracle, maker.address, maker.pkh, makerUtxos, { side: 'bid', deltaBps: -40, amount: 6_000n });
+const cb = verify('create bid (buy BCH)', createBid, maker);
 oracle = findOracleUtxo(outputsTo(cb.txid, cb.tx, oracleLocking), market)!;
-let buyOrder = toOpenOrder(createBuy2.order!, outputsTo(cb.txid, cb.tx, hexToBin(createBuy2.order!.lockingBytecodeHex))[0]!, market)!;
+let bidOrder = toOpenOrder(createBid.order!, outputsTo(cb.txid, cb.tx, hexToBin(createBid.order!.lockingBytecodeHex))[0]!, market)!;
+check('bid holds 60.00 PUSD', bidOrder.availableUnits === 6_000n);
 
-// 5. Taker buys 25.00 PUSD from the sell order (partial fill).
-const takerUtxos = [fund(taker, 5, 50_000_000n), fund(taker, 6, 1_000n, 5_000n)];
-const fill1 = buildFillOrders(market, oracle, taker.address, takerUtxos, [{ order: sellOrder, units: 2_500n }]);
-const f1 = verify('taker partial-fills sell order', fill1, taker);
+// 5. Taker buys 0.03 BCH from the ask (pays PUSD).
+const takerUtxos = [fund(taker, 5, 50_000_000n), fund(taker, 6, 1_000n, 50_000n)];
+const fill1 = buildFillOrders(market, oracle, taker.address, takerUtxos, [{ order: askOrder, sats: 3_000_000n }]);
+const f1 = verify('taker buys BCH from ask', fill1, taker);
 oracle = findOracleUtxo(outputsTo(f1.txid, f1.tx, oracleLocking), market)!;
-sellOrder = toOpenOrder(sellOrder, outputsTo(f1.txid, f1.tx, sellLocking)[0]!, market)!;
-check('sell order remaining 3500', sellOrder.remainingUnits === 3_500n, `proceeds held ${sellOrder.utxo.satoshis} sats`);
+askOrder = toOpenOrder(askOrder, outputsTo(f1.txid, f1.tx, hexToBin(askOrder.lockingBytecodeHex))[0]!, market)!;
+// 0.03 BCH × 520 × 1.005 = 15.678 → 15.68 PUSD (rounded up for the maker)
+check('ask received 15.68 PUSD and has 0.07 BCH left', askOrder.heldUnits === 1_568n && askOrder.availableSats === 7_000_000n, `held ${askOrder.heldUnits}, avail ${askOrder.availableSats}`);
 
-// 6. Taker sells 30.00 PUSD into the buy order.
-const takerAfter = outputsTo(f1.txid, f1.tx, taker.locking).concat(takerUtxos.filter((u) => !f1.tx.inputs.some((i) => binToHex(i.outpointTransactionHash) === u.txid)));
-const fill2 = buildFillOrders(market, oracle, taker.address, takerAfter, [{ order: buyOrder, units: 3_000n }]);
-const f2 = verify('taker fills buy order with PUSD', fill2, taker);
-buyOrder = toOpenOrder(buyOrder, outputsTo(f2.txid, f2.tx, hexToBin(buyOrder.lockingBytecodeHex))[0]!, market)!;
-check('buy order remaining 1000', buyOrder.remainingUnits === 1_000n);
+// 6. Taker sells 0.05 BCH to the bid (receives PUSD).
+const takerAfter = [...takerUtxos.filter((u) => !spent(f1.tx, u)), ...outputsTo(f1.txid, f1.tx, taker.locking)];
+const fill2 = buildFillOrders(market, oracle, taker.address, takerAfter, [{ order: bidOrder, sats: 5_000_000n }]);
+const f2 = verify('taker sells BCH to bid', fill2, taker);
+bidOrder = toOpenOrder(bidOrder, outputsTo(f2.txid, f2.tx, hexToBin(bidOrder.lockingBytecodeHex))[0]!, market)!;
+// 0.05 × 520 × 0.996 = 25.896 → 25.89 PUSD (rounded down for the maker)
+check('bid paid 25.89 PUSD for 0.05 BCH', bidOrder.availableUnits === 6_000n - 2_589n && bidOrder.proceeds === 5_000_000n, `left ${bidOrder.availableUnits}`);
 {
 	let threw = false;
-	try { buildFillOrders(market, oracle, taker.address, takerAfter, [{ order: buyOrder, units: 2_000n }]); } catch { threw = true; }
-	check('cannot overfill buy order target', threw);
+	try { buildFillOrders(market, oracle, taker.address, takerAfter, [{ order: bidOrder, sats: 20_000_000n }]); } catch { threw = true; }
+	check('cannot sell more BCH than the bid can pay for', threw);
 }
 
-// 7. Maker cancels the partially filled sell order (placeholder signature).
-const cancel = buildCancelOrder(market, sellOrder, maker.address, makerUtxos2);
-verify('maker cancels sell order', cancel, maker);
+// 7. Maker cancels the partially filled ask (authorised by maker input).
+const cancel = buildCancelOrder(market, askOrder, maker.address, outputsTo(cb.txid, cb.tx, maker.locking));
+verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 {
 	let threw = false;
-	try { buildCancelOrder(market, sellOrder, taker.address, takerUtxos); } catch { threw = true; }
+	try { buildCancelOrder(market, askOrder, taker.address, takerUtxos); } catch { threw = true; }
 	check('non-maker cannot build cancel', threw);
 }
-void orderContract; void orderParams; void encodeOracleCommitment;
+void orderContract; void orderParams; void encodeOracleCommitment; void price;
 
 console.log(failures === 0 ? '\nAll exchange builder checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

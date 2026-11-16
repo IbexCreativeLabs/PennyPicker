@@ -20,10 +20,6 @@
     {
       "name": "deltaBps",
       "type": "int"
-    },
-    {
-      "name": "targetUnits",
-      "type": "int"
     }
   ],
   "abi": [
@@ -36,56 +32,56 @@
       "inputs": []
     }
   ],
-  "bytecode": "OP_6 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_INPUTINDEX OP_DUP OP_0 OP_GREATERTHAN OP_VERIFY OP_0 OP_UTXOTOKENCATEGORY OP_ROT OP_1 OP_CAT OP_EQUALVERIFY OP_0 OP_UTXOTOKENCOMMITMENT OP_8 OP_SPLIT OP_DROP OP_BIN2NUM OP_DUP OP_0 OP_GREATERTHAN OP_VERIFY OP_OVER OP_OUTPUTBYTECODE OP_2 OP_PICK OP_UTXOBYTECODE OP_EQUALVERIFY OP_OVER OP_UTXOTOKENAMOUNT OP_2 OP_PICK OP_OUTPUTTOKENAMOUNT OP_OVER OP_0 OP_GREATERTHAN OP_IF OP_3 OP_PICK OP_UTXOTOKENCATEGORY OP_5 OP_PICK OP_EQUALVERIFY OP_ENDIF OP_DUP OP_0 OP_GREATERTHAN OP_IF OP_3 OP_PICK OP_OUTPUTTOKENCATEGORY OP_5 OP_PICK OP_EQUALVERIFY OP_ENDIF OP_DUP OP_ROT OP_SUB OP_3 OP_PICK OP_OUTPUTVALUE OP_4 OP_ROLL OP_UTXOVALUE OP_SUB OP_6 OP_ROLL OP_0 OP_NUMEQUAL OP_IF OP_OVER OP_0 OP_GREATERTHAN OP_VERIFY OP_2 OP_PICK OP_8 OP_PICK OP_LESSTHANOREQUAL OP_VERIFY OP_ELSE OP_OVER OP_0 OP_LESSTHAN OP_VERIFY OP_ENDIF 00407a10f35a OP_MUL OP_SWAP OP_3 OP_ROLL OP_MUL 1027 OP_6 OP_ROLL OP_ADD OP_MUL OP_ADD OP_0 OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_DROP OP_1 OP_ELSE OP_6 OP_ROLL OP_1 OP_NUMEQUALVERIFY OP_INPUTINDEX OP_1ADD OP_UTXOBYTECODE 76a914 OP_4 OP_ROLL OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_2DROP OP_2DROP OP_DROP OP_1 OP_ENDIF",
-  "source": "pragma cashscript ^0.11.0;\n\n// PennyPicker oracle-relative BPS limit order (one order per P2SH32 address).\n//\n// Escrow and proceeds live in a single UTXO at this address:\n//   side 0 (buy PUSD):  UTXO holds BCH; fills deliver PUSD into it and remove BCH.\n//   side 1 (sell PUSD): UTXO holds PUSD; fills remove PUSD and add BCH to it.\n//\n// Fills must spend the PennyPicker oracle-state UTXO at input 0. Its mutable NFT\n// commitment starts with rate:int64le = satoshis per whole PUSD, scaled by 1e8.\n// The effective limit is rate * (10000 + deltaBps) / 10000. The settlement check is\n// exact (no rounding): dSat * 1e14 + dUnits * rate * (10000 + deltaBps) >= 0,\n// where 1e14 = 100 PUSD units * 1e8 rate scale * 10000 BPS denominator.\ncontract PennyPickerOrder(\n    bytes32 oracleCategory,\n    bytes32 pusdCategory,\n    bytes20 makerPkh,\n    int side,\n    int deltaBps,\n    int targetUnits\n) {\n    function fill() {\n        int i = this.activeInputIndex;\n        require(i > 0);\n\n        // Authentic current oracle state: the only mutable NFT of its category.\n        require(tx.inputs[0].tokenCategory == oracleCategory + 0x01);\n        bytes rateBin = tx.inputs[0].nftCommitment.split(8)[0];\n        int rate = int(rateBin);\n        require(rate > 0);\n\n        // The order continues at the same index and address.\n        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);\n\n        int inUnits = tx.inputs[i].tokenAmount;\n        int outUnits = tx.outputs[i].tokenAmount;\n        if (inUnits > 0) {\n            require(tx.inputs[i].tokenCategory == pusdCategory);\n        }\n        if (outUnits > 0) {\n            require(tx.outputs[i].tokenCategory == pusdCategory);\n        }\n\n        int dUnits = outUnits - inUnits;\n        int dSat = tx.outputs[i].value - tx.inputs[i].value;\n\n        if (side == 0) {\n            require(dUnits > 0);\n            require(outUnits <= targetUnits);\n        } else {\n            require(dUnits < 0);\n        }\n\n        require(dSat * 100000000000000 + dUnits * rate * (10000 + deltaBps) >= 0);\n    }\n\n    // The maker withdraws escrow and proceeds. Authorised by an input from the\n    // maker's P2PKH address directly after the order input; the maker's wallet\n    // signs that ordinary input, committing to all outputs.\n    function cancel() {\n        require(tx.inputs[this.activeInputIndex + 1].lockingBytecode == new LockingBytecodeP2PKH(makerPkh));\n    }\n}\n",
+  "bytecode": "OP_5 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_INPUTINDEX OP_DUP OP_0 OP_GREATERTHAN OP_VERIFY 1027 OP_6 OP_PICK OP_ADD OP_0 OP_GREATERTHAN OP_VERIFY OP_0 OP_UTXOTOKENCATEGORY OP_ROT OP_1 OP_CAT OP_EQUALVERIFY OP_0 OP_UTXOTOKENCOMMITMENT OP_8 OP_SPLIT OP_DROP OP_BIN2NUM OP_DUP OP_0 OP_GREATERTHAN OP_VERIFY OP_OVER OP_OUTPUTBYTECODE OP_2 OP_PICK OP_UTXOBYTECODE OP_EQUALVERIFY OP_OVER OP_UTXOTOKENAMOUNT OP_2 OP_PICK OP_OUTPUTTOKENAMOUNT OP_OVER OP_0 OP_GREATERTHAN OP_IF OP_3 OP_PICK OP_UTXOTOKENCATEGORY OP_5 OP_PICK OP_EQUALVERIFY OP_ENDIF OP_DUP OP_0 OP_GREATERTHAN OP_IF OP_3 OP_PICK OP_OUTPUTTOKENCATEGORY OP_5 OP_PICK OP_EQUALVERIFY OP_ENDIF OP_SWAP OP_SUB OP_2 OP_PICK OP_OUTPUTVALUE OP_3 OP_ROLL OP_UTXOVALUE OP_SUB OP_5 OP_ROLL OP_0 OP_NUMEQUAL OP_IF OP_OVER OP_0 OP_GREATERTHAN OP_VERIFY OP_ELSE OP_OVER OP_0 OP_LESSTHAN OP_VERIFY OP_ENDIF OP_SWAP 000064a7b3b6e00d OP_MUL OP_SWAP OP_ROT OP_MUL 1027 OP_5 OP_ROLL OP_ADD OP_MUL OP_ADD OP_0 OP_GREATERTHANOREQUAL OP_NIP OP_NIP OP_NIP OP_ELSE OP_5 OP_ROLL OP_1 OP_NUMEQUALVERIFY OP_INPUTINDEX OP_1ADD OP_UTXOBYTECODE 76a914 OP_4 OP_ROLL OP_CAT 88ac OP_CAT OP_EQUALVERIFY OP_2DROP OP_2DROP OP_1 OP_ENDIF",
+  "source": "pragma cashscript ^0.11.0;\n\n// PennyPicker oracle-relative BPS limit order on the BCH/PUSD pair\n// (price = PUSD per BCH). One order per P2SH32 address; escrow and proceeds\n// live in a single UTXO at this address:\n//   side 0 (ask): sells BCH. Holds BCH; fills remove BCH and add PUSD.\n//   side 1 (bid): buys BCH.  Holds PUSD; fills remove PUSD and add BCH.\n//\n// Fills must spend the PennyPicker oracle-state UTXO at input 0. Its mutable NFT\n// commitment starts with price:int64le = PUSD per BCH scaled by 1e8.\n// The limit is price * (10000 + deltaBps) / 10000 (asks use deltaBps >= 0, bids\n// deltaBps <= 0 by app convention). Settlement is exact, with no rounding:\n//   dUnits * 1e18 + dSat * price * (10000 + deltaBps) >= 0\n// where dUnits is the change in PUSD base units (1/100 PUSD) and dSat the change\n// in satoshis held by the order. Derivation: s sats are worth\n// s * limit / 1e14 base units (1e8 sats/BCH * 1e8 price scale / 100 units/PUSD),\n// and limit = price * (10000 + deltaBps) / 10000, giving the 1e18 constant.\ncontract PennyPickerOrder(\n    bytes32 oracleCategory,\n    bytes32 pusdCategory,\n    bytes20 makerPkh,\n    int side,\n    int deltaBps\n) {\n    function fill() {\n        int i = this.activeInputIndex;\n        require(i > 0);\n        require(10000 + deltaBps > 0);\n\n        // Authentic current oracle state: the only mutable NFT of its category.\n        require(tx.inputs[0].tokenCategory == oracleCategory + 0x01);\n        bytes priceBin = tx.inputs[0].nftCommitment.split(8)[0];\n        int price = int(priceBin);\n        require(price > 0);\n\n        // The order continues at the same index and address.\n        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);\n\n        int inUnits = tx.inputs[i].tokenAmount;\n        int outUnits = tx.outputs[i].tokenAmount;\n        if (inUnits > 0) {\n            require(tx.inputs[i].tokenCategory == pusdCategory);\n        }\n        if (outUnits > 0) {\n            require(tx.outputs[i].tokenCategory == pusdCategory);\n        }\n\n        int dUnits = outUnits - inUnits;\n        int dSat = tx.outputs[i].value - tx.inputs[i].value;\n\n        if (side == 0) {\n            require(dUnits > 0);\n        } else {\n            require(dUnits < 0);\n        }\n\n        require(dUnits * 1000000000000000000 + dSat * price * (10000 + deltaBps) >= 0);\n    }\n\n    // The maker withdraws escrow and proceeds. Authorised by an input from the\n    // maker's P2PKH address directly after the order input; the maker's wallet\n    // signs that ordinary input, committing to all outputs.\n    function cancel() {\n        require(tx.inputs[this.activeInputIndex + 1].lockingBytecode == new LockingBytecodeP2PKH(makerPkh));\n    }\n}\n",
   "debug": {
-    "bytecode": "5679009c63c07600a06900ce7b517e8800cf587f75817600a06978cd5279c78878d05279d37800a0635379ce557988687600a0635379d155798868767b945379cc547ac694567a009c637800a06952795879a1696778009f69680600407a10f35a957c537a95021027567a93959300a2696d6d755167567a519dc08bc70376a914547a7e0288ac7e886d6d755168",
-    "sourceMap": "22:4:55:5;;;;;23:16:23:37;24::24:17;:20::21;:16:::1;:8::23;27:26:27:27:0;:16::42:1;:46::60:0;:63::67;:46:::1;:8::69;28:34:28:35:0;:24::50:1;:57::58:0;:24::59:1;:::62;29:19:29:31;30:16:30:20:0;:23::24;:16:::1;:8::26;33:27:33:28:0;:16::45:1;:59::60:0;;:49::77:1;:8::79;35:32:35:33:0;:22::46:1;36:34:36:35:0;;:23::48:1;37:12:37:19:0;:22::23;:12:::1;:25:39:9:0;38:30:38:31;;:20::46:1;:50::62:0;;:12::64:1;37:25:39:9;40:12:40:20:0;:23::24;:12:::1;:26:42:9:0;41:31:41:32;;:20::47:1;:51::63:0;;:12::65:1;40:26:42:9;44:21:44:29:0;:32::39;:21:::1;45:30:45:31:0;;:19::38:1;:51::52:0;;:41::59:1;:19;47:12:47:16:0;;:20::21;:12:::1;:23:50:9:0;48:20:48:26;:29::30;:20:::1;:12::32;49:20:49:28:0;;:32::43;;:20:::1;:12::45;50:15:52:9:0;51:20:51:26;:29::30;:20:::1;:12::32;50:15:52:9;54:23:54:38:0;:16:::1;:41::47:0;:50::54;;:41:::1;:58::63:0;:66::74;;:58:::1;:41::75;:16;:79::80:0;:16:::1;:8::82;22:4:55:5;;;;;60::62::0;;;;61:26:61:47;:::51:1;:16::68;:72::106:0;:97::105;;:72::106:1;;;:8::108;60:4:62:5;;;;14:0:63:1",
+    "bytecode": "5579009c63c07600a06902102756799300a06900ce7b517e8800cf587f75817600a06978cd5279c78878d05279d37800a0635379ce557988687600a0635379d1557988687c945279cc537ac694557a009c637800a0696778009f69687c08000064a7b3b6e00d957c7b95021027557a93959300a277777767557a519dc08bc70376a914547a7e0288ac7e886d6d5168",
+    "sourceMap": "25:4:58:5;;;;;26:16:26:37;27::27:17;:20::21;:16:::1;:8::23;28:16:28:21:0;:24::32;;:16:::1;:35::36:0;:16:::1;:8::38;31:26:31:27:0;:16::42:1;:46::60:0;:63::67;:46:::1;:8::69;32:35:32:36:0;:25::51:1;:58::59:0;:25::60:1;:::63;33:20:33:33;34:16:34:21:0;:24::25;:16:::1;:8::27;37:27:37:28:0;:16::45:1;:59::60:0;;:49::77:1;:8::79;39:32:39:33:0;:22::46:1;40:34:40:35:0;;:23::48:1;41:12:41:19:0;:22::23;:12:::1;:25:43:9:0;42:30:42:31;;:20::46:1;:50::62:0;;:12::64:1;41:25:43:9;44:12:44:20:0;:23::24;:12:::1;:26:46:9:0;45:31:45:32;;:20::47:1;:51::63:0;;:12::65:1;44:26:46:9;48:32:48:39:0;:21:::1;49:30:49:31:0;;:19::38:1;:51::52:0;;:41::59:1;:19;51:12:51:16:0;;:20::21;:12:::1;:23:53:9:0;52:20:52:26;:29::30;:20:::1;:12::32;53:15:55:9:0;54:20:54:26;:29::30;:20:::1;:12::32;53:15:55:9;57:16:57:22:0;:25::44;:16:::1;:47::51:0;:54::59;:47:::1;:63::68:0;:71::79;;:63:::1;:47::80;:16;:84::85:0;:8::87:1;25:4:58:5;;;;63::65::0;;;;64:26:64:47;:::51:1;:16::68;:72::106:0;:97::105;;:72::106:1;;;:8::108;63:4:65:5;;;18:0:66:1",
     "logs": [],
     "requires": [
       {
-        "ip": 15,
-        "line": 24
-      },
-      {
-        "ip": 21,
+        "ip": 14,
         "line": 27
       },
       {
-        "ip": 31,
-        "line": 30
+        "ip": 21,
+        "line": 28
+      },
+      {
+        "ip": 27,
+        "line": 31
       },
       {
         "ip": 37,
-        "line": 33
+        "line": 34
       },
       {
-        "ip": 52,
-        "line": 38
+        "ip": 43,
+        "line": 37
       },
       {
-        "ip": 63,
-        "line": 41
+        "ip": 58,
+        "line": 42
       },
       {
-        "ip": 83,
-        "line": 48
+        "ip": 69,
+        "line": 45
       },
       {
-        "ip": 89,
-        "line": 49
+        "ip": 88,
+        "line": 52
       },
       {
-        "ip": 94,
-        "line": 51
-      },
-      {
-        "ip": 110,
+        "ip": 93,
         "line": 54
       },
       {
-        "ip": 129,
-        "line": 61
+        "ip": 109,
+        "line": 57
+      },
+      {
+        "ip": 126,
+        "line": 64
       }
     ]
   },
@@ -93,5 +89,5 @@
     "name": "cashc",
     "version": "0.11.5"
   },
-  "updatedAt": "2026-11-16T19:16:48.784Z"
+  "updatedAt": "2026-11-16T19:23:03.346Z"
 }

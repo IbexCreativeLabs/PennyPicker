@@ -2,6 +2,11 @@
  * PennyPicker covenant instantiation: oracle-state contract and per-order BPS
  * limit-order contracts, compiled with cashc 0.11.5 from `contracts/*.cash`.
  *
+ * Pair convention: BCH/PUSD, price = PUSD per BCH.
+ *   ask = sells BCH for PUSD (escrows BCH),  deltaBps >= 0
+ *   bid = buys BCH with PUSD (escrows PUSD), deltaBps <= 0
+ *   limit = reference * (10000 + deltaBps) / 10000
+ *
  * Encoding follows CashScript conventions: the redeem script is the constructor
  * arguments pushed in reverse order followed by the compiled bytecode; unlocking
  * bytecode is the function arguments in reverse order, the function selector
@@ -18,11 +23,20 @@ import {
 } from '@bitauth/libauth';
 import orderArtifact from './contracts/PennyPickerOrder.json';
 import oracleArtifact from './contracts/PennyPickerOracle.json';
-import { MAX_TOKEN_UNITS, assertSideDelta, type OrderSide } from './market';
 
+export type OrderSide = 'ask' | 'bid';
+
+/** Oracle price: PUSD per BCH scaled by 1e8. */
+export const PRICE_SCALE = 100_000_000n;
+export const BPS_DENOMINATOR = 10_000n;
+export const SATS_PER_BCH = 100_000_000n;
+export const PUSD_UNITS_PER_PUSD = 100n;
+/** dUnits * SETTLEMENT_SCALE + dSat * price * (10000 + delta) >= 0 */
+export const SETTLEMENT_SCALE = 1_000_000_000_000_000_000n;
+export const MIN_DELTA_BPS = -9_999;
+export const MAX_DELTA_BPS = 100_000;
+export const MAX_TOKEN_UNITS = (1n << 63n) - 1n;
 export const ORACLE_COMMITMENT_BYTES = 16;
-/** dSat * SETTLEMENT_SCALE + dUnits * rate * (10000 + delta) >= 0 */
-export const SETTLEMENT_SCALE = 100_000_000_000_000n;
 export const ORDER_FUNCTION = { fill: 0, cancel: 1 } as const;
 export const ORACLE_FUNCTION = { update: 0, read: 1 } as const;
 
@@ -85,17 +99,10 @@ export function categoryToVmBytes(categoryDisplayHex: string): Uint8Array {
 export interface ContractInstance {
 	redeemScript: Uint8Array;
 	lockingBytecode: Uint8Array;
-	scriptHashHex: string;
 }
 
 function instance(redeem: Uint8Array): ContractInstance {
-	const lockingBytecode = p2sh32LockingBytecode(redeem);
-	return {
-		redeemScript: redeem,
-		lockingBytecode,
-		// Electrum script hash: sha256 of the locking bytecode, byte-reversed.
-		scriptHashHex: ''
-	};
+	return { redeemScript: redeem, lockingBytecode: p2sh32LockingBytecode(redeem) };
 }
 
 export interface OracleContractParams {
@@ -113,15 +120,20 @@ export interface OrderContractParams {
 	makerPkh: string;
 	side: OrderSide;
 	deltaBps: number;
-	/** Buy orders: PUSD base units to acquire. Sell orders: PUSD base units offered (informational). */
-	targetUnits: bigint;
+}
+
+/** App convention: asks at or above the reference, bids at or below. */
+export function assertOrderDelta(side: OrderSide, deltaBps: number): void {
+	if (side !== 'ask' && side !== 'bid') throw new Error('Order side must be ask or bid.');
+	if (!Number.isSafeInteger(deltaBps) || deltaBps < MIN_DELTA_BPS || deltaBps > MAX_DELTA_BPS) {
+		throw new Error(`BPS must be a whole number between ${MIN_DELTA_BPS} and ${MAX_DELTA_BPS}.`);
+	}
+	if (side === 'ask' && deltaBps < 0) throw new Error('An ask (sell BCH) must be at or above the reference: BPS ≥ 0.');
+	if (side === 'bid' && deltaBps > 0) throw new Error('A bid (buy BCH) must be at or below the reference: BPS ≤ 0.');
 }
 
 export function validateOrderParams(params: OrderContractParams): void {
-	assertSideDelta(params.side, params.deltaBps);
-	if (params.targetUnits <= 0n || params.targetUnits > MAX_TOKEN_UNITS) {
-		throw new Error('Order quantity must be positive and fit the CashToken amount range.');
-	}
+	assertOrderDelta(params.side, params.deltaBps);
 	bytesOf(params.makerPkh, 20, 'Maker hash');
 	bytesOf(params.oracleCategory, 32, 'Oracle category');
 	bytesOf(params.pusdCategory, 32, 'PUSD category');
@@ -134,9 +146,8 @@ export function orderContract(params: OrderContractParams): ContractInstance {
 			categoryToVmBytes(params.oracleCategory),
 			categoryToVmBytes(params.pusdCategory),
 			bytesOf(params.makerPkh, 20, 'Maker hash'),
-			bigIntToVmNumber(params.side === 'buy-pusd' ? 0n : 1n),
-			bigIntToVmNumber(BigInt(params.deltaBps)),
-			bigIntToVmNumber(params.targetUnits)
+			bigIntToVmNumber(params.side === 'ask' ? 0n : 1n),
+			bigIntToVmNumber(BigInt(params.deltaBps))
 		])
 	);
 }
@@ -160,8 +171,8 @@ export function oracleUpdateUnlocking(oracle: ContractInstance): Uint8Array {
 }
 
 export interface OracleState {
-	/** Satoshis per whole PUSD, scaled by 1e8. */
-	rateSatsPerPusdScaled: bigint;
+	/** PUSD per BCH, scaled by 1e8. */
+	price: bigint;
 	/** Operator-claimed unix seconds; not enforced on-chain. */
 	timestamp: number;
 	sequence: number;
@@ -191,8 +202,8 @@ const MAX_INT32 = 0x7fffffff;
  * reads them as the same positive integers.
  */
 export function encodeOracleCommitment(state: OracleState): Uint8Array {
-	if (state.rateSatsPerPusdScaled <= 0n || state.rateSatsPerPusdScaled > MAX_INT64) {
-		throw new Error('Oracle rate must be positive and fit a signed 64-bit integer.');
+	if (state.price <= 0n || state.price > MAX_INT64) {
+		throw new Error('Oracle price must be positive and fit a signed 64-bit integer.');
 	}
 	for (const [label, value] of [
 		['timestamp', state.timestamp],
@@ -202,54 +213,86 @@ export function encodeOracleCommitment(state: OracleState): Uint8Array {
 			throw new Error(`Oracle ${label} must fit a positive signed 32-bit integer.`);
 		}
 	}
-	return concat([
-		intLE(state.rateSatsPerPusdScaled, 8),
-		intLE(BigInt(state.timestamp), 4),
-		intLE(BigInt(state.sequence), 4)
-	]);
+	return concat([intLE(state.price, 8), intLE(BigInt(state.timestamp), 4), intLE(BigInt(state.sequence), 4)]);
 }
 
 export function decodeOracleCommitment(commitment: Uint8Array): OracleState {
 	if (commitment.length !== ORACLE_COMMITMENT_BYTES) {
 		throw new Error('Oracle commitment must be 16 bytes.');
 	}
-	const rate = readLE(commitment.slice(0, 8));
+	const price = readLE(commitment.slice(0, 8));
 	const timestamp = Number(readLE(commitment.slice(8, 12)));
 	const sequence = Number(readLE(commitment.slice(12, 16)));
-	if (rate <= 0n || rate > MAX_INT64 || timestamp > MAX_INT32 || sequence > MAX_INT32) {
+	if (price <= 0n || price > MAX_INT64 || timestamp > MAX_INT32 || sequence > MAX_INT32) {
 		throw new Error('Oracle commitment contains an invalid field.');
 	}
-	return { rateSatsPerPusdScaled: rate, timestamp, sequence };
+	return { price, timestamp, sequence };
 }
 
 export function makerPkhFromPublicKey(publicKey: Uint8Array): string {
 	return binToHex(hash160(publicKey));
 }
 
-/**
- * Exact covenant settlement inequality, mirrored off-chain.
- * Returns true when the contract's fill check would pass for these deltas.
- */
-export function settlementSatisfied(
-	dSat: bigint,
-	dUnits: bigint,
-	oracleRate: bigint,
-	deltaBps: number
-): boolean {
-	return dSat * SETTLEMENT_SCALE + dUnits * oracleRate * (10_000n + BigInt(deltaBps)) >= 0n;
+// ------------------------------------------------------------ pricing math
+
+/** Limit price (PUSD per BCH × 1e8), floored for display. Settlement uses the exact rational. */
+export function limitPrice(price: bigint, deltaBps: number): bigint {
+	return (price * (BPS_DENOMINATOR + BigInt(deltaBps))) / BPS_DENOMINATOR;
 }
 
-/** Minimum BCH a taker must add to a sell order for `units` PUSD (rounded up). */
-export function sellFillPaymentSats(units: bigint, oracleRate: bigint, deltaBps: number): bigint {
-	if (units <= 0n) throw new Error('Fill quantity must be positive.');
-	const numerator = units * oracleRate * (10_000n + BigInt(deltaBps));
-	return (numerator + SETTLEMENT_SCALE - 1n) / SETTLEMENT_SCALE;
+/** Exact covenant settlement inequality, mirrored off-chain. */
+export function settlementSatisfied(dSat: bigint, dUnits: bigint, price: bigint, deltaBps: number): boolean {
+	return dUnits * SETTLEMENT_SCALE + dSat * price * (BPS_DENOMINATOR + BigInt(deltaBps)) >= 0n;
 }
 
-/** Maximum BCH a taker may remove from a buy order for `units` PUSD (rounded down). */
-export function buyFillTakeSats(units: bigint, oracleRate: bigint, deltaBps: number): bigint {
-	if (units <= 0n) throw new Error('Fill quantity must be positive.');
-	return (units * oracleRate * (10_000n + BigInt(deltaBps))) / SETTLEMENT_SCALE;
+function valueNumerator(sats: bigint, price: bigint, deltaBps: number): bigint {
+	return sats * price * (BPS_DENOMINATOR + BigInt(deltaBps));
+}
+
+/** PUSD base units a taker must pay an ask for `sats` BCH (rounded up). */
+export function askFillUnitsDue(sats: bigint, price: bigint, deltaBps: number): bigint {
+	if (sats <= 0n) throw new Error('Fill amount must be positive.');
+	return (valueNumerator(sats, price, deltaBps) + SETTLEMENT_SCALE - 1n) / SETTLEMENT_SCALE;
+}
+
+/** PUSD base units a taker may take from a bid for `sats` BCH (rounded down). */
+export function bidFillUnitsOut(sats: bigint, price: bigint, deltaBps: number): bigint {
+	if (sats <= 0n) throw new Error('Fill amount must be positive.');
+	return valueNumerator(sats, price, deltaBps) / SETTLEMENT_SCALE;
+}
+
+/** Largest BCH amount (sats) whose bid payout fits within `units` PUSD. */
+export function bidSatsForUnits(units: bigint, price: bigint, deltaBps: number): bigint {
+	const perSat = price * (BPS_DENOMINATOR + BigInt(deltaBps));
+	return (units * SETTLEMENT_SCALE) / perSat;
+}
+
+/** PUSD base units equal to `sats` at a reference price (floor). */
+export function satsToUnits(sats: bigint, price: bigint): bigint {
+	return (sats * price) / (SATS_PER_BCH * PRICE_SCALE / PUSD_UNITS_PER_PUSD);
+}
+
+/** Satoshis equal to `units` PUSD base units at a reference price (floor). */
+export function unitsToSats(units: bigint, price: bigint): bigint {
+	return (units * (SATS_PER_BCH * PRICE_SCALE / PUSD_UNITS_PER_PUSD)) / price;
+}
+
+/** Parse "512.34" PUSD per BCH (up to 8 decimals) to the scaled integer. */
+export function parsePrice(input: string): bigint {
+	const match = /^(\d+)(?:\.(\d{1,8}))?$/.exec(input.trim());
+	if (!match) throw new Error('Enter a price in PUSD per BCH (up to 8 decimals).');
+	const value = BigInt(match[1]!) * PRICE_SCALE + BigInt((match[2] ?? '').padEnd(8, '0') || '0');
+	if (value <= 0n) throw new Error('Price must be positive.');
+	return value;
+}
+
+/** Format a scaled price with `decimals` places (rounded half up). */
+export function formatPrice(price: bigint, decimals = 2): string {
+	const step = 10n ** BigInt(8 - decimals);
+	const rounded = (price + step / 2n) / step;
+	const unit = 10n ** BigInt(decimals);
+	const whole = rounded / unit;
+	return decimals === 0 ? `${whole}` : `${whole}.${(rounded % unit).toString().padStart(decimals, '0')}`;
 }
 
 export const contractArtifacts = {

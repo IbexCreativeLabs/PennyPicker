@@ -1,106 +1,102 @@
 /**
  * Peer-to-peer liquidation and market-based redemption, priced from the BPS
- * orderbook. Integer arithmetic only.
+ * orderbook (BCH/PUSD, price = PUSD per BCH). Integer arithmetic only.
  *
  * PennyPicker has no collateralised-debt (vault) covenant: PUSD is a
  * fixed-supply test token. These functions model how a vault system would use
- * the orderbook instead of fixed parameters, and every quote they return is
- * made of fills that the exchange covenants can actually execute.
+ * the orderbook instead of fixed parameters. Every leg they return is a fill
+ * the exchange covenants can actually execute at the current reference.
  *
- * Liquidation: an under-collateralised vault must repay `debtUnits` PUSD using
- * its BCH collateral. Instead of a fixed penalty, the debt is bought from the
- * ask side (sell-PUSD orders at +BPS). Each ask is a standing, competing
- * liquidation offer; the lowest premium wins, and the effective penalty is the
- * volume-weighted premium actually paid.
+ * Liquidation: an under-collateralised vault must buy back `debtUnits` PUSD
+ * with its BCH collateral. It sells BCH into the bids (buy-BCH orders at
+ * -BPS). Each bid is a standing, competing liquidation offer: the bid with the
+ * smallest discount wins, and the effective penalty is the discount paid.
  *
- * Redemption: a PUSD holder exchanges PUSD for BCH. Instead of a fixed
- * base-rate fee, the holder sells into the bid side (buy-PUSD orders at -BPS),
- * posted by vault owners or market makers who want PUSD at a discount. The
- * highest bid is the cheapest redemption; the effective fee is the
- * volume-weighted discount.
+ * Redemption: a PUSD holder exchanges PUSD for BCH by buying from the asks
+ * (sell-BCH orders at +BPS), posted by vault owners or market makers. The
+ * cheapest ask is the cheapest redemption; the effective fee is the premium.
  */
-import { buyFillTakeSats, sellFillPaymentSats } from './contracts';
-import { BPS_DENOMINATOR, PUSD_UNITS_PER_TOKEN, RATE_SCALE } from './market';
+import {
+	askFillUnitsDue,
+	bidFillUnitsOut,
+	BPS_DENOMINATOR,
+	SETTLEMENT_SCALE,
+	satsToUnits,
+	unitsToSats
+} from './contracts';
 
 export interface BookOffer {
 	id: string;
-	side: 'buy-pusd' | 'sell-pusd';
+	side: 'ask' | 'bid';
 	deltaBps: number;
-	remainingUnits: bigint;
-	/** Buy orders only: BCH escrow available (satoshis). */
-	escrowSats?: bigint;
+	/** Ask: BCH for sale (sats). */
+	availableSats?: bigint;
+	/** Bid: PUSD available (base units). */
+	availableUnits?: bigint;
 }
 
 export interface RoutedLeg {
 	offerId: string;
-	units: bigint;
-	satoshis: bigint;
 	deltaBps: number;
+	sats: bigint;
+	units: bigint;
 }
 
 export interface Route {
 	legs: RoutedLeg[];
-	filledUnits: bigint;
-	satoshis: bigint;
-	unfilledUnits: bigint;
-	/** Value of the filled units at the reference, in satoshis (floor). */
-	referenceSats: bigint;
-	/** Signed volume-weighted deviation from the reference, in BPS (rounded toward zero). */
+	sats: bigint;
+	units: bigint;
+	/** Signed volume-weighted deviation of the routed price from the reference, in BPS. */
 	effectiveBps: number;
 }
 
-function referenceValue(units: bigint, rate: bigint): bigint {
-	return (units * rate) / (PUSD_UNITS_PER_TOKEN * RATE_SCALE);
+function perSat(price: bigint, deltaBps: number): bigint {
+	return price * (BPS_DENOMINATOR + BigInt(deltaBps));
 }
 
-function finishRoute(legs: RoutedLeg[], want: bigint, rate: bigint): Route {
-	const filledUnits = legs.reduce((sum, leg) => sum + leg.units, 0n);
-	const satoshis = legs.reduce((sum, leg) => sum + leg.satoshis, 0n);
-	const referenceSats = referenceValue(filledUnits, rate);
-	const effectiveBps =
-		referenceSats > 0n ? Number(((satoshis - referenceSats) * BPS_DENOMINATOR) / referenceSats) : 0;
-	return { legs, filledUnits, satoshis, unfilledUnits: want - filledUnits, referenceSats, effectiveBps };
+function effectiveBps(sats: bigint, units: bigint, price: bigint): number {
+	const referenceUnits = satsToUnits(sats, price);
+	if (referenceUnits === 0n) return 0;
+	return Number(((units - referenceUnits) * BPS_DENOMINATOR) / referenceUnits);
 }
 
-/** Buy `units` PUSD from the cheapest asks (liquidation debt purchase). */
-export function routeBuyPusd(asks: BookOffer[], units: bigint, rate: bigint): Route {
-	const sorted = asks.filter((o) => o.side === 'sell-pusd' && o.remainingUnits > 0n).sort((a, b) => a.deltaBps - b.deltaBps);
+/** Sell BCH into the best bids until `wantUnits` PUSD is obtained. */
+export function routeSellBchForUnits(book: BookOffer[], wantUnits: bigint, price: bigint): Route & { unfilledUnits: bigint } {
+	const bids = book.filter((o) => o.side === 'bid' && (o.availableUnits ?? 0n) > 0n).sort((a, b) => b.deltaBps - a.deltaBps);
 	const legs: RoutedLeg[] = [];
-	let want = units;
-	for (const offer of sorted) {
+	let want = wantUnits;
+	for (const bid of bids) {
 		if (want <= 0n) break;
-		const take = offer.remainingUnits < want ? offer.remainingUnits : want;
-		legs.push({ offerId: offer.id, units: take, satoshis: sellFillPaymentSats(take, rate, offer.deltaBps), deltaBps: offer.deltaBps });
+		const take = bid.availableUnits! < want ? bid.availableUnits! : want;
+		// Smallest sats whose payout (rounded down) reaches `take`.
+		const sats = (take * SETTLEMENT_SCALE + perSat(price, bid.deltaBps) - 1n) / perSat(price, bid.deltaBps);
+		const units = bidFillUnitsOut(sats, price, bid.deltaBps);
+		legs.push({ offerId: bid.id, deltaBps: bid.deltaBps, sats, units: units > take ? take : units });
 		want -= take;
 	}
-	return finishRoute(legs, units, rate);
+	const sats = legs.reduce((s, l) => s + l.sats, 0n);
+	const units = legs.reduce((s, l) => s + l.units, 0n);
+	return { legs, sats, units, effectiveBps: effectiveBps(sats, units, price), unfilledUnits: want > 0n ? want : 0n };
 }
 
-/** Sell `units` PUSD into the highest bids (redemption). Respects bid escrow. */
-export function routeSellPusd(bids: BookOffer[], units: bigint, rate: bigint, dustSats = 1_000n): Route {
-	const sorted = bids.filter((o) => o.side === 'buy-pusd' && o.remainingUnits > 0n).sort((a, b) => b.deltaBps - a.deltaBps);
+/** Spend up to `budgetUnits` PUSD buying BCH from the cheapest asks. */
+export function routeBuyBchWithUnits(book: BookOffer[], budgetUnits: bigint, price: bigint): Route & { unspentUnits: bigint } {
+	const asks = book.filter((o) => o.side === 'ask' && (o.availableSats ?? 0n) > 0n).sort((a, b) => a.deltaBps - b.deltaBps);
 	const legs: RoutedLeg[] = [];
-	let want = units;
-	for (const offer of sorted) {
-		if (want <= 0n) break;
-		let take = offer.remainingUnits < want ? offer.remainingUnits : want;
-		const escrow = offer.escrowSats;
-		if (escrow !== undefined) {
-			// Largest quantity the remaining escrow can pay for (binary search).
-			let lo = 0n;
-			let hi = take;
-			while (lo < hi) {
-				const mid = (lo + hi + 1n) / 2n;
-				if (buyFillTakeSats(mid, rate, offer.deltaBps) <= escrow - dustSats) lo = mid;
-				else hi = mid - 1n;
-			}
-			take = lo;
-		}
-		if (take <= 0n) continue;
-		legs.push({ offerId: offer.id, units: take, satoshis: buyFillTakeSats(take, rate, offer.deltaBps), deltaBps: offer.deltaBps });
-		want -= take;
+	let budget = budgetUnits;
+	for (const ask of asks) {
+		if (budget <= 0n) break;
+		let sats = (budget * SETTLEMENT_SCALE) / perSat(price, ask.deltaBps);
+		if (sats > ask.availableSats!) sats = ask.availableSats!;
+		while (sats > 0n && askFillUnitsDue(sats, price, ask.deltaBps) > budget) sats--;
+		if (sats <= 0n) continue;
+		const units = askFillUnitsDue(sats, price, ask.deltaBps);
+		legs.push({ offerId: ask.id, deltaBps: ask.deltaBps, sats, units });
+		budget -= units;
 	}
-	return finishRoute(legs, units, rate);
+	const sats = legs.reduce((s, l) => s + l.sats, 0n);
+	const units = legs.reduce((s, l) => s + l.units, 0n);
+	return { legs, sats, units, effectiveBps: effectiveBps(sats, units, price), unspentUnits: budget };
 }
 
 export interface Vault {
@@ -108,57 +104,46 @@ export interface Vault {
 	debtUnits: bigint;
 }
 
+export function collateralRatioBps(vault: Vault, price: bigint): bigint {
+	if (vault.debtUnits === 0n) return 0n;
+	return (satsToUnits(vault.collateralSats, price) * BPS_DENOMINATOR) / vault.debtUnits;
+}
+
 export interface LiquidationQuote {
-	/** Collateral ratio in BPS (collateral value / debt value × 10000). */
 	ratioBps: bigint;
 	eligible: boolean;
-	route: Route;
-	/** Collateral consumed buying the debt through the book. */
+	route: Route & { unfilledUnits: bigint };
 	collateralSpentSats: bigint;
-	/** Collateral returned to the vault owner after full repayment. */
 	collateralReturnedSats: bigint;
-	/** Collateral a fixed-penalty liquidation would have taken for comparison. */
+	/** Collateral a fixed-penalty liquidation would take, for comparison. */
 	fixedPenaltySpentSats: bigint;
 	fullyCovered: boolean;
 }
 
-export function collateralRatioBps(vault: Vault, rate: bigint): bigint {
-	const debtValue = referenceValue(vault.debtUnits, rate);
-	if (debtValue === 0n) return 0n;
-	return (vault.collateralSats * BPS_DENOMINATOR) / debtValue;
-}
-
-export function quoteLiquidation(
-	vault: Vault,
-	asks: BookOffer[],
-	rate: bigint,
-	minRatioBps: bigint,
-	fixedPenaltyBps: bigint
-): LiquidationQuote {
-	const ratioBps = collateralRatioBps(vault, rate);
-	const route = routeBuyPusd(asks, vault.debtUnits, rate);
-	const fullyCovered = route.unfilledUnits === 0n && route.satoshis <= vault.collateralSats;
-	const debtValue = referenceValue(vault.debtUnits, rate);
-	const fixed = (debtValue * (BPS_DENOMINATOR + fixedPenaltyBps)) / BPS_DENOMINATOR;
+export function quoteLiquidation(vault: Vault, book: BookOffer[], price: bigint, minRatioBps: bigint, fixedPenaltyBps: bigint): LiquidationQuote {
+	const ratioBps = collateralRatioBps(vault, price);
+	const route = routeSellBchForUnits(book, vault.debtUnits, price);
+	const debtSats = unitsToSats(vault.debtUnits, price);
+	const fixed = (debtSats * (BPS_DENOMINATOR + fixedPenaltyBps)) / BPS_DENOMINATOR;
 	return {
 		ratioBps,
 		eligible: vault.debtUnits > 0n && ratioBps < minRatioBps,
 		route,
-		collateralSpentSats: route.satoshis,
-		collateralReturnedSats: vault.collateralSats > route.satoshis ? vault.collateralSats - route.satoshis : 0n,
+		collateralSpentSats: route.sats,
+		collateralReturnedSats: vault.collateralSats > route.sats ? vault.collateralSats - route.sats : 0n,
 		fixedPenaltySpentSats: fixed < vault.collateralSats ? fixed : vault.collateralSats,
-		fullyCovered
+		fullyCovered: route.unfilledUnits === 0n && route.sats <= vault.collateralSats
 	};
 }
 
 export interface RedemptionQuote {
-	route: Route;
-	/** BCH a fixed base-rate redemption would pay for the same PUSD. */
+	route: Route & { unspentUnits: bigint };
+	/** BCH a fixed-fee redemption would pay for the same PUSD. */
 	fixedFeeSats: bigint;
 }
 
-export function quoteRedemption(units: bigint, bids: BookOffer[], rate: bigint, fixedFeeBps: bigint, dustSats?: bigint): RedemptionQuote {
-	const route = routeSellPusd(bids, units, rate, dustSats);
-	const reference = referenceValue(units, rate);
+export function quoteRedemption(units: bigint, book: BookOffer[], price: bigint, fixedFeeBps: bigint): RedemptionQuote {
+	const route = routeBuyBchWithUnits(book, units, price);
+	const reference = unitsToSats(units, price);
 	return { route, fixedFeeSats: (reference * (BPS_DENOMINATOR - fixedFeeBps)) / BPS_DENOMINATOR };
 }

@@ -3,9 +3,9 @@
  * order discovery and broadcasting. Reads use the app's Electrum Chipnet
  * provider; broadcasting is only ever called from an explicit user action.
  */
-import { binToHex, decodeTransaction, hexToBin } from '@bitauth/libauth';
+import { binToHex, decodeTransaction, hexToBin, type TransactionCommon } from '@bitauth/libauth';
 import { TestNetWatchWallet } from '@unspent/wallet';
-import { oracleContract } from './contracts';
+import { decodeOracleCommitment, oracleContract, type OracleState } from './contracts';
 import {
 	contractAddress,
 	describeOrder,
@@ -94,24 +94,7 @@ export function chipnetProvider(anyAddress: string): Promise<Provider> {
 
 export async function getAddressUtxos(address: string): Promise<ChainUtxo[]> {
 	const provider = await chipnetProvider(address);
-	const utxos = await provider.getUtxos(address);
-	return utxos.map((utxo) => ({
-		txid: utxo.txid,
-		vout: utxo.vout,
-		satoshis: utxo.satoshis,
-		height: utxo.height,
-		...(utxo.token
-			? {
-					token: {
-						category: utxo.token.category,
-						amount: utxo.token.amount,
-						...(utxo.token.nft
-							? { nft: { capability: utxo.token.nft.capability, commitment: utxo.token.nft.commitment ?? '' } }
-							: {})
-					}
-				}
-			: {})
-	}));
+	return (await provider.getUtxos(address)).map(toChainUtxo);
 }
 
 /** Number of transactions Electrum has ever indexed for this address (confirmed + mempool). */
@@ -124,61 +107,121 @@ export async function getOracleState(market: MarketConfig): Promise<OracleUtxo |
 	return findOracleUtxo(await getAddressUtxos(oracleAddress(market.oracleOperatorPkh)), market);
 }
 
+export interface ActivityEvent {
+	txid: string;
+	/** > 0 confirmed height; <= 0 mempool. */
+	height: number;
+}
+
+export interface OracleUpdateEvent extends ActivityEvent {
+	state: OracleState;
+}
+
 export interface DiscoveryResult {
 	orders: OpenOrder[];
-	/** Announced orders whose UTXOs are spent (canceled) or not yet visible. */
-	closed: AnnouncedOrder[];
+	/** Announced orders whose UTXO is gone. Fills always recreate the order, so this means canceled. */
+	canceled: AnnouncedOrder[];
+	/** Oracle-reading transactions that moved an existing order (fills), newest first. */
+	fills: ActivityEvent[];
+	/** Oracle states published in scanned history (genesis and updates), newest first. */
+	oracleUpdates: OracleUpdateEvent[];
+	announcedCount: number;
 	scannedTransactions: number;
 	historyTruncated: boolean;
 }
 
 /**
- * Discover orders: every order-creation transaction reads the oracle, so it is
- * in the oracle address history. Announcements are re-derived into contract
- * addresses (a forged announcement cannot point at a different script), then
- * each address is queried for its live UTXO.
+ * Discover the market from the oracle address history: every order creation,
+ * fill and oracle update spends or recreates the oracle UTXO. Announcements are
+ * re-derived into contract addresses (a forged announcement cannot point at a
+ * different script), then each address is queried for its live UTXO.
  */
 export async function discoverOrders(market: MarketConfig): Promise<DiscoveryResult> {
 	const address = oracleAddress(market.oracleOperatorPkh);
 	const provider = await chipnetProvider(address);
 	const history = await provider.getHistory(address);
 	const recent = history.slice(-DISCOVERY_HISTORY_LIMIT);
-	const announced = new Map<string, AnnouncedOrder>();
+	const decodedTxs: { entry: ActivityEvent; tx: TransactionCommon }[] = [];
 	await inBatches(recent, 10, async (entry) => {
 		const raw = await provider.getRawTransaction(entry.tx_hash);
-		const decoded = decodeTransaction(hexToBin(raw));
-		if (typeof decoded === 'string') return;
-		for (const output of decoded.outputs) {
+		const tx = decodeTransaction(hexToBin(raw));
+		if (typeof tx !== 'string') decodedTxs.push({ entry: { txid: entry.tx_hash, height: entry.height }, tx });
+	});
+	const announced = new Map<string, AnnouncedOrder>();
+	const announcingTxids = new Set<string>();
+	const oracleUpdates: OracleUpdateEvent[] = [];
+	const seenSequences = new Set<number>();
+	for (const { entry, tx } of decodedTxs) {
+		for (const output of tx.outputs) {
 			const parsed = parseAnnouncement(output.lockingBytecode);
-			if (!parsed) continue;
-			const order = describeOrder(market, parsed);
-			const created = decoded.outputs.some((candidate) => binToHex(candidate.lockingBytecode) === order.lockingBytecodeHex);
-			if (created && !announced.has(order.lockingBytecodeHex)) {
-				announced.set(order.lockingBytecodeHex, { ...order, createdTxid: entry.tx_hash });
+			if (parsed) {
+				const order = describeOrder(market, parsed);
+				const created = tx.outputs.some((candidate) => binToHex(candidate.lockingBytecode) === order.lockingBytecodeHex);
+				if (created && !announced.has(order.lockingBytecodeHex)) {
+					announced.set(order.lockingBytecodeHex, { ...order, createdTxid: entry.txid });
+					announcingTxids.add(entry.txid);
+				}
+			}
+			const token = output.token;
+			if (token?.nft?.capability === 'mutable' && binToHex(token.category) === market.oracleCategory) {
+				try {
+					const state = decodeOracleCommitment(token.nft.commitment);
+					if (!seenSequences.has(state.sequence)) {
+						seenSequences.add(state.sequence);
+						oracleUpdates.push({ ...entry, state });
+					}
+				} catch {
+					/* malformed commitment: ignore */
+				}
 			}
 		}
-	});
+	}
+	const orderScripts = new Set(announced.keys());
+	const fills = decodedTxs
+		.filter(({ entry, tx }) => !announcingTxids.has(entry.txid) && tx.outputs.some((o) => orderScripts.has(binToHex(o.lockingBytecode))))
+		.map(({ entry }) => entry);
 	const orders: OpenOrder[] = [];
-	const closed: AnnouncedOrder[] = [];
+	const canceled: AnnouncedOrder[] = [];
 	await inBatches([...announced.values()], 10, async (order) => {
 		const utxos = await provider.getUtxos(order.address);
 		const live = utxos
-			.map((utxo) => toOpenOrder(order, {
-				txid: utxo.txid,
-				vout: utxo.vout,
-				satoshis: utxo.satoshis,
-				height: utxo.height,
-				...(utxo.token ? { token: { category: utxo.token.category, amount: utxo.token.amount, ...(utxo.token.nft ? { nft: { capability: utxo.token.nft.capability, commitment: utxo.token.nft.commitment ?? '' } } : {}) } } : {})
-			}, market))
+			.map((utxo) => toOpenOrder(order, toChainUtxo(utxo), market))
 			.filter((entry): entry is OpenOrder => !!entry);
-		if (live.length === 0) closed.push(order);
+		if (live.length === 0) canceled.push(order);
 		orders.push(...live);
 	});
+	const newestFirst = (a: ActivityEvent, b: ActivityEvent) => heightKey(b.height) - heightKey(a.height);
 	return {
 		orders,
-		closed,
+		canceled,
+		fills: fills.sort(newestFirst),
+		oracleUpdates: oracleUpdates.sort((a, b) => b.state.sequence - a.state.sequence),
+		announcedCount: announced.size,
 		scannedTransactions: recent.length,
 		historyTruncated: history.length > recent.length
+	};
+}
+
+/** Mempool entries (height <= 0) sort as newest. */
+function heightKey(height: number): number {
+	return height > 0 ? height : Number.MAX_SAFE_INTEGER;
+}
+
+function toChainUtxo(utxo: { txid: string; vout: number; satoshis: bigint; height?: number; token?: { category: string; amount: bigint; nft?: { capability: 'none' | 'mutable' | 'minting'; commitment?: string } } }): ChainUtxo {
+	return {
+		txid: utxo.txid,
+		vout: utxo.vout,
+		satoshis: utxo.satoshis,
+		height: utxo.height,
+		...(utxo.token
+			? {
+					token: {
+						category: utxo.token.category,
+						amount: utxo.token.amount,
+						...(utxo.token.nft ? { nft: { capability: utxo.token.nft.capability, commitment: utxo.token.nft.commitment ?? '' } } : {})
+					}
+				}
+			: {})
 	};
 }
 
