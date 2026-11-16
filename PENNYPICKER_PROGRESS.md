@@ -44,6 +44,11 @@
 - Photon is a BCH proof-of-work oracle, not a BCH/PUSD price oracle.
 - No authenticated and manipulation-resistant BCH/PUSD oracle feed is configured.
   Stale or untrusted prices must block order matching and transaction execution.
+- Source review of `packages/cauldron` found contract derivation for a supplied pool
+  public-key hash, but no pool discovery or reserve index. CatDex's `getAllMarketOrders`
+  similarly queries only caller-supplied script hashes. A direct PennyPicker-category
+  spot/TWAP reference therefore needs an explicit indexer plus proof/authentication
+  strategy; arbitrary Electrum UTXO responses are not a production oracle.
 - Current BCH transaction-introspection opcodes expose transaction fields such as
   `nLockTime`, but not current block height or block time. `OP_CHECKLOCKTIMEVERIFY`
   provides a not-before constraint; it cannot make a signed quote unspendable after
