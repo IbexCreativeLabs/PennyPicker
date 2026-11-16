@@ -13,6 +13,7 @@ import {
 	hash256,
 	hashTransaction,
 	hexToBin,
+	lockingBytecodeToCashAddress,
 	secp256k1,
 	SigningSerializationFlag,
 	type TransactionCommon
@@ -24,6 +25,7 @@ import {
 	buildFillOrders,
 	buildOracleGenesis,
 	buildOracleUpdate,
+	buildPusdTransfer,
 	describeOrder,
 	findOracleUtxo,
 	lockingBytecodeToChipnetAddress,
@@ -35,6 +37,8 @@ import {
 	type MarketConfig,
 	type UnsignedExchangeTransaction
 } from '../src/lib/pennypicker/exchange';
+
+import { describeBroadcastError, describeSignError } from '../src/lib/pennypicker/ui/txErrors';
 
 const vm = createVirtualMachineBch2025(false);
 let failures = 0;
@@ -188,6 +192,34 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	let threw = false;
 	try { buildCancelOrder(market, askOrder, taker.address, takerUtxos); } catch { threw = true; }
 	check('non-maker cannot build cancel', threw);
+}
+// 8. PUSD transfer to teammates (token-aware and plain addresses).
+{
+	const sender = key('0d');
+	const genesisReady = fund(sender, 40, 500_000n);
+	const senderUtxos = [genesisReady, fund(sender, 41, 1_000n, 100_000n), fund(sender, 42, 20_000n)];
+	const zAddr = lockingBytecodeToChipnetAddress(maker.locking, true);
+	const send = buildPusdTransfer(PUSD, sender.address, senderUtxos, [{ address: zAddr, units: 2_500n }, { address: taker.address, units: 1_000n }], [`${genesisReady.txid}:0`]);
+	const s1 = verify('send PUSD to two teammates', send, sender);
+	const toMaker = outputsTo(s1.txid, s1.tx, maker.locking)[0];
+	const change = outputsTo(s1.txid, s1.tx, sender.locking).find((u) => u.token);
+	check('recipients and change get the right PUSD', toMaker?.token?.amount === 2_500n && outputsTo(s1.txid, s1.tx, taker.locking)[0]?.token?.amount === 1_000n && change?.token?.amount === 96_500n);
+	check('transfer leaves the reserved vout-0 UTXO unspent', !spent(s1.tx, genesisReady));
+	const throws = (f: () => unknown) => { try { f(); return false; } catch { return true; } };
+	const mainnet = (lockingBytecodeToCashAddress({ prefix: 'bitcoincash', bytecode: taker.locking }) as { address: string }).address;
+	check('transfer refuses mainnet addresses', (() => { try { buildPusdTransfer(PUSD, sender.address, senderUtxos, [{ address: mainnet, units: 1n }]); return false; } catch (e) { return String(e).includes('Only Chipnet'); } })());
+	check('transfer refuses more PUSD than held', throws(() => buildPusdTransfer(PUSD, sender.address, senderUtxos, [{ address: taker.address, units: 100_001n }])));
+	check('transfer explains when only the reserved UTXO could pay the fee', (() => {
+		try { buildPusdTransfer(PUSD, sender.address, [genesisReady, fund(sender, 41, 1_000n, 100_000n)], [{ address: taker.address, units: 1n }], [`${genesisReady.txid}:0`]); return false; }
+		catch (e) { return String(e).includes('oracle genesis'); }
+	})());
+}
+// 9. User-facing error explanations.
+{
+	check('sign rejection explained', describeSignError({ code: 5000, message: 'User rejected' }).startsWith('You declined'));
+	check('expired session explained', describeSignError(new Error('No matching key. session topic doesn\'t exist')).includes('Reconnect'));
+	check('spent input (oracle contention) explained', describeBroadcastError(new Error('the transaction was rejected by network rules.\n\nbad-txns-inputs-missingorspent')).includes('already spent'));
+	check('covenant failure explained', describeBroadcastError(new Error('mandatory-script-verify-flag-failed (Script failed an OP_VERIFY operation)')).includes('covenant rejected'));
 }
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 

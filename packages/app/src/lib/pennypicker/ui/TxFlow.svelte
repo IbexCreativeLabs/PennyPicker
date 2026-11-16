@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { binToHex, stringify } from '@bitauth/libauth';
-	import { requestCashonizeTransactionSignature, describeWalletConnectError } from '$lib/cashonize/walletconnect';
+	import { requestCashonizeTransactionSignature } from '$lib/cashonize/walletconnect';
 	import { lockingBytecodeToChipnetAddress, verifySignedMatchesUnsigned, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 	import { broadcastSignedTransaction, transactionHeight } from '$lib/pennypicker/chain';
 	import { formatBchFromSatoshis } from '$lib/pennypicker/market';
 	import { explorerTx } from './session.svelte';
+	import { describeBroadcastError, describeSignError } from './txErrors';
 	import type { ConnectedWallet } from './wallet';
 
 	interface Props {
@@ -30,7 +31,8 @@
 		'oracle-update': 'Publish reference price',
 		'order-create': 'Place order',
 		'order-fill': 'Fill orders',
-		'order-cancel': 'Cancel order'
+		'order-cancel': 'Cancel order',
+		'pusd-send': 'Send PUSD'
 	};
 
 	const rows = $derived(
@@ -66,9 +68,13 @@
 	const order: Stage[] = ['preview', 'signing', 'signed', 'broadcasting', 'broadcast', 'confirmed'];
 	const stepIndex = $derived(steps.findIndex((s) => s.key.includes(stage)));
 
+	let slow = $state(false);
+	let slowTimer: ReturnType<typeof setTimeout> | undefined;
+
 	async function sign() {
 		stage = 'signing';
 		error = '';
+		slowTimer = setTimeout(() => (slow = true), 45_000);
 		try {
 			const result = await requestCashonizeTransactionSignature(
 				wallet.client,
@@ -81,8 +87,11 @@
 			signedHex = result.signedTransaction;
 			stage = 'signed';
 		} catch (cause) {
-			error = describeWalletConnectError(cause);
+			error = describeSignError(cause);
 			stage = 'preview';
+		} finally {
+			clearTimeout(slowTimer);
+			slow = false;
 		}
 	}
 
@@ -96,13 +105,25 @@
 			onBroadcast(txid, unsigned);
 			poll = setInterval(checkConfirmation, 20_000);
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : String(cause);
+			const explained = describeBroadcastError(cause);
+			if (explained.startsWith('Chipnet already has')) {
+				stage = 'broadcast';
+				onBroadcast(txid, unsigned);
+				poll = setInterval(checkConfirmation, 20_000);
+				return;
+			}
+			error = explained;
 			stage = 'signed';
 		}
 	}
 
 	async function checkConfirmation() {
-		const height = await transactionHeight(wallet.address, txid);
+		let height: number | undefined;
+		try {
+			height = await transactionHeight(wallet.address, txid);
+		} catch {
+			return; // transient network error: the next poll retries
+		}
 		if (height && height > 0) {
 			confirmations = height;
 			stage = 'confirmed';
@@ -110,7 +131,10 @@
 		}
 	}
 
-	onDestroy(() => clearInterval(poll));
+	onDestroy(() => {
+		clearInterval(poll);
+		clearTimeout(slowTimer);
+	});
 	const fmtToken = (token: { amount: bigint; nft?: { capability: string } } | undefined) =>
 		token ? `${token.amount > 0n ? `${token.amount.toString()} units` : ''}${token.nft ? ` ${token.nft.capability} NFT` : ''}` : '';
 	void order;
@@ -163,6 +187,7 @@
 				</button>
 				<button type="button" class="pp-btn pp-btn-ghost" onclick={onDismiss} disabled={stage === 'signing'}>Discard</button>
 			</div>
+			{#if slow}<p class="pp-callout warn small" style="margin-top: 0.6rem">Still waiting. Open Cashonize on the device you paired, make sure it is on Chipnet, and look for the signing request. If the session ended, reconnect on the Wallet page.</p>{/if}
 		{:else if stage === 'signed' || stage === 'broadcasting'}
 			<p class="pp-callout ok small">Signed and checked: the signed transaction spends and creates exactly what was previewed. <strong>Not broadcast yet.</strong></p>
 			<p class="small mono">{txid}</p>

@@ -208,8 +208,11 @@ class PennyPickerSession {
 				if (found) {
 					this.config = { ...this.config, oracleCategory: found, source: { ...this.config.source, oracleCategory: 'discovered' } };
 				}
+				this.marketError = '';
 			} catch (cause) {
 				this.marketError = `Chipnet Electrum server unreachable: ${errorText(cause)}`;
+				this.oracleLoaded = true;
+				return;
 			}
 		}
 		const market = this.market;
@@ -218,12 +221,12 @@ class PennyPickerSession {
 			return;
 		}
 		this.loadingMarket = true;
-		this.marketError = '';
 		try {
 			this.oracle = await getOracleState(market);
 			this.oracleLoaded = true;
 			this.discovery = this.oracle ? await discoverOrders(market) : undefined;
 			this.lastRefreshed = new Date();
+			this.marketError = '';
 		} catch (cause) {
 			this.marketError = errorText(cause);
 		} finally {

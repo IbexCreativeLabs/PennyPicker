@@ -1,5 +1,7 @@
 # Deploying the PennyPicker demo (Cloudflare Pages)
 
+**Status (2026-11-17): live at https://pennypicker.pages.dev.** Project `pennypicker`, production branch `main`, with the settings below. The Reown allowlist is empty and the feedback token is not set yet.
+
 PennyPicker is a **static site**:
 - SvelteKit `adapter-static`, with `ssr = false` and `prerender = true`.
 - The browser talks directly to the BCH **Chipnet** Electrum servers over WSS (`chipnet.imaginary.cash`) and to the WalletConnect relay.

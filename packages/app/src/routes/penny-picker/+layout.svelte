@@ -40,7 +40,7 @@
 				{/each}
 			</nav>
 			<div class="status">
-				<span class="pp-badge accent plain" title="All transactions use BCH Chipnet (test network)">Chipnet</span>
+				<span class="pp-badge {pp.marketError ? 'bad' : 'accent'} plain" title={pp.marketError || 'All transactions use BCH Chipnet (test network)'}>{pp.marketError ? 'Chipnet offline' : 'Chipnet'}</span>
 				<button class="pp-badge warn plain demo" type="button" onclick={() => notice?.show()} title="About this experimental demo">Demo</button>
 				{#if pp.price}
 					<a href="/penny-picker/oracle" class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}" title="Operator-published reference price">
@@ -60,6 +60,14 @@
 				{/if}
 			</div>
 		</div>
+		{#if pp.marketError}
+			<div class="net-strip" role="alert">
+				<div class="bar small">
+					<span><strong>Chipnet connection problem.</strong> {pp.marketError}</span>
+					<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Retrying…' : 'Retry'}</button>
+				</div>
+			</div>
+		{/if}
 		{#if doneCount < pp.setup.length && pp.nextStep}
 			<div class="setup-strip">
 				<div class="bar">
@@ -95,6 +103,8 @@
 	nav a { padding: 0.4rem 0.7rem; border-radius: 8px; color: var(--pp-muted); font-weight: 550; text-decoration: none !important; }
 	nav a:hover { background: var(--pp-surface-2); color: var(--pp-text); }
 	nav a.active { background: var(--pp-accent-soft); color: var(--pp-accent); }
+	.net-strip { background: var(--pp-danger); color: #fff; }
+	.net-strip .bar { justify-content: space-between; padding-block: 0.35rem; }
 	.status { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 	.status a { text-decoration: none !important; }
 	.menu { display: none; margin-left: auto; font-size: 1.2rem; }

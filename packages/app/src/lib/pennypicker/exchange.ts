@@ -19,6 +19,7 @@ import {
 	bigIntToVmNumber,
 	binToHex,
 	cashAddressToLockingBytecode,
+	decodeCashAddress,
 	decodeTransaction,
 	encodeDataPush,
 	encodeTransaction,
@@ -107,7 +108,7 @@ export interface ContractInfo {
 export type WcSourceOutput = Input & Output & { contract?: ContractInfo };
 
 export interface UnsignedExchangeTransaction {
-	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel';
+	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel' | 'pusd-send';
 	transaction: TransactionCommon;
 	unsignedHex: string;
 	sourceOutputs: WcSourceOutput[];
@@ -255,7 +256,7 @@ function fundWithWalletBch(
 		const next = candidates.shift();
 		if (!next) {
 			throw new Error(
-				`Insufficient BCH in the connected wallet: short by ${(-available).toString()} satoshis (including fee).`
+				`Insufficient BCH in the connected wallet: short by ${(-available).toString()} satoshis (including fee). Get Chipnet tBCH from a faucet.`
 			);
 		}
 		alreadyUsed.add(`${next.txid}:${next.vout}`);
@@ -581,7 +582,7 @@ export function buildCreateOrder(
 			used.add(`${utxo.txid}:${utxo.vout}`);
 			gathered += utxo.token!.amount;
 		}
-		if (gathered < request.amount) throw new Error('Insufficient PUSD in the connected wallet for this bid.');
+		if (gathered < request.amount) throw new Error('Insufficient PUSD in the connected wallet for this bid. Get PUSD by selling BCH into a bid, or ask a teammate to send some (Wallet → Send PUSD).');
 		tx.outputs.push({
 			lockingBytecode: orderLocking,
 			valueSatoshis: ORDER_RESERVE_SATOSHIS,
@@ -730,7 +731,7 @@ export function buildFillOrders(
 			used.add(`${utxo.txid}:${utxo.vout}`);
 			gathered += utxo.token!.amount;
 		}
-		if (gathered < totalUnits) throw new Error(`Insufficient PUSD: this purchase costs ${formatUnits(totalUnits)} PUSD.`);
+		if (gathered < totalUnits) throw new Error(`Insufficient PUSD: this purchase costs ${formatUnits(totalUnits)} PUSD. Get PUSD by selling BCH into a bid, or ask a teammate to send some (Wallet → Send PUSD).`);
 		if (gathered > totalUnits) {
 			tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: pusd, amount: gathered - totalUnits } });
 		}
@@ -777,6 +778,89 @@ export function buildCancelOrder(
 		`Returns ${formatSats(order.utxo.satoshis)} BCH${order.heldUnits > 0n ? ` and ${formatUnits(order.heldUnits)} PUSD` : ''} to your address`,
 		'Authorised by your own address (input 1), signed in Cashonize'
 	]);
+}
+
+// ---------------------------------------------------------------- PUSD transfer
+
+export interface PusdRecipient {
+	address: string;
+	units: bigint;
+}
+
+/** Decode a Chipnet (bchtest:) P2PKH/P2SH address; rejects mainnet and other prefixes. */
+export function chipnetRecipientLocking(address: string): { lockingBytecode: Uint8Array; tokenAware: boolean } {
+	const trimmed = address.trim();
+	const withPrefix = trimmed.includes(':') ? trimmed : `${CHIPNET_PREFIX}:${trimmed}`;
+	const decoded = decodeCashAddress(withPrefix);
+	if (typeof decoded === 'string') throw new Error(`Invalid address ${trimmed.slice(0, 20)}…: ${decoded}`);
+	if (decoded.prefix !== CHIPNET_PREFIX) throw new Error(`Only Chipnet (${CHIPNET_PREFIX}:) addresses are accepted.`);
+	return { lockingBytecode: addressToLockingBytecode(withPrefix), tokenAware: decoded.type.endsWith('WithTokens') };
+}
+
+/**
+ * Send PUSD to one or more Chipnet addresses (for seeding teammates' test
+ * wallets). Each recipient output carries the token amount plus 1,000 sats;
+ * token change returns to the sender. `reserved` outpoints (e.g. a confirmed
+ * vout-0 UTXO kept for a pending genesis) are never spent.
+ */
+export function buildPusdTransfer(
+	pusdCategory: string,
+	senderAddress: string,
+	walletUtxos: ChainUtxo[],
+	recipients: PusdRecipient[],
+	reserved: string[] = []
+): UnsignedExchangeTransaction {
+	if (recipients.length === 0) throw new Error('Add at least one recipient.');
+	if (recipients.length > 20) throw new Error('At most 20 recipients per transaction.');
+	const walletLocking = addressToLockingBytecode(senderAddress);
+	const category = hexToBin(pusdCategory);
+	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [], outputs: [] };
+	const sources: WcSourceOutput[] = [];
+	const used = new Set<string>(reserved);
+	const summary: string[] = [];
+	let total = 0n;
+	let plainAddresses = 0;
+	for (const recipient of recipients) {
+		if (recipient.units <= 0n) throw new Error('Every recipient needs a positive PUSD amount.');
+		const { lockingBytecode, tokenAware } = chipnetRecipientLocking(recipient.address);
+		if (binToHex(lockingBytecode) === binToHex(walletLocking)) throw new Error('A recipient is your own address.');
+		if (!tokenAware) plainAddresses += 1;
+		total += recipient.units;
+		tx.outputs.push({ lockingBytecode, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category, amount: recipient.units } });
+		summary.push(`Send ${formatUnits(recipient.units)} PUSD to ${lockingBytecodeToChipnetAddress(lockingBytecode, true)}`);
+	}
+	if (total > MAX_TOKEN_UNITS) throw new Error('Amount too large.');
+	summary.unshift(`Send ${formatUnits(total)} PUSD to ${recipients.length} address${recipients.length === 1 ? '' : 'es'}`);
+	let gathered = 0n;
+	for (const utxo of pusdUtxos(walletUtxos, pusdCategory)) {
+		if (gathered >= total) break;
+		if (used.has(`${utxo.txid}:${utxo.vout}`)) continue;
+		const input = utxoToInput(utxo, new Uint8Array());
+		tx.inputs.push(input);
+		sources.push(source(input, utxoToOutput(utxo, walletLocking)));
+		used.add(`${utxo.txid}:${utxo.vout}`);
+		gathered += utxo.token!.amount;
+	}
+	if (gathered < total) {
+		throw new Error(`Insufficient PUSD: the wallet holds ${formatUnits(gathered)} spendable, ${formatUnits(total)} needed.`);
+	}
+	if (gathered > total) {
+		tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category, amount: gathered - total } });
+		summary.push(`${formatUnits(gathered - total)} PUSD change returns to your address`);
+	}
+	if (plainAddresses > 0) {
+		summary.push(`${plainAddresses} recipient address(es) are not token-aware (z…); the PUSD still arrives at the same key`);
+	}
+	if (reserved.length > 0) summary.push('Leaves your genesis-ready vout-0 UTXO untouched');
+	try {
+		const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
+		return finish('pusd-send', tx, sources, fee, summary);
+	} catch (cause) {
+		if (reserved.length > 0 && cause instanceof Error && cause.message.startsWith('Insufficient BCH')) {
+			throw new Error(`${cause.message} Your only spare BCH is the vout-0 UTXO reserved for oracle genesis. Create the oracle first, then send PUSD from the change.`);
+		}
+		throw cause;
+	}
 }
 
 export function formatSats(sats: bigint): string {

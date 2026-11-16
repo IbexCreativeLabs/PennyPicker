@@ -1,6 +1,8 @@
 # PennyPicker: project status
 
-_Last updated: 2026-11-16. Hackathon deadline: 2026-11-22._
+_Last updated: 2026-11-17. Hackathon deadline: 2026-11-22._
+
+**Public demo: https://pennypicker.pages.dev** (Cloudflare Pages, auto-deploys from `main`).
 
 PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet**. Orders are priced in basis points (BPS)
 relative to an on-chain reference price. PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals) with no USD
@@ -58,6 +60,10 @@ The user performed these steps through Cashonize and the app. All are confirmed,
 - `mechanisms.ts`: liquidation pricing through the bids and redemption pricing through the asks. These are simulations.
 - `ui/session.svelte.ts`: shared app state for wallet session, config, oracle, balances, discovery and setup progress. **Every status is derived from Electrum data.**
 - `ui/TxFlow.svelte`: preview, then Cashonize sign (`broadcast: false`), then signed-vs-preview check, then explicit Broadcast, then confirmation polling with an explorer link.
+  - `ui/txErrors.ts` turns failures into plain language: declined signature, ended session, slow wallet, spent input (oracle contention), covenant rejection, low fee, network.
+- `buildPusdTransfer` (in `exchange.ts`) sends PUSD to up to 20 Chipnet addresses and rejects mainnet addresses.
+  - Before oracle genesis, it never spends the operator's confirmed vout-0 UTXO that is reserved for that genesis.
+- A red **Chipnet offline** banner, with a Retry button, appears when Electrum is unreachable.
 - `ui/theme.css`: PennyPicker design tokens and primitives, scoped under `.pp` with light and dark themes.
 
 **Pages** (`/penny-picker/*`, using their own shell; the root layout skips the Vox chrome for these routes)
@@ -69,17 +75,21 @@ The user performed these steps through Cashonize and the app. All are confirmed,
 | `/penny-picker/oracle` | Current reference, freshness, identity, how the oracle works, genesis and update forms, price history |
 | `/penny-picker/token` | PUSD info, wallet balances, genesis status, BCMR draft, vout-0 self-transfer tool |
 | `/penny-picker/mechanisms` | Liquidation and redemption simulations (live book when available) |
-| `/penny-picker/wallet` | Connect or disconnect Cashonize (QR pairing), balances, UTXO list |
+| `/penny-picker/wallet` | Connect or disconnect Cashonize (QR pairing), token address (copy), balances, **Send PUSD** to teammates, UTXO list |
 | `/penny-picker/simulator` | The original in-memory simulator (legacy sats-per-PUSD convention) |
 
 ## Deployment (public demo)
 
-- **Target:** Cloudflare Pages, deployed from GitHub with auto-deploy on push to `main`. The site is static (`docs/`), plus one Pages Function, `functions/api/feedback.js`, that turns feedback into GitHub issues. Full steps are in `DEPLOYMENT.md`.
-- **Verified locally:** the production build and `wrangler pages dev`, covering every route, the response headers, and every validation path of the feedback function.
-- **Not done yet: the public URL is not live.** It needs the Cloudflare project to be created, the WalletConnect project ID set as a build variable, and, if your Reown allowlist is not empty, the domain added. A GitHub token for the feedback function is optional.
+- **Live at https://pennypicker.pages.dev.** Cloudflare Pages builds from GitHub `main` (build `pnpm app:build`, output `docs`) and redeploys on every push. Full steps are in `DEPLOYMENT.md`.
+- **Checked by the agent on 2026-11-17 (HTTP only):**
+  - Every route returns 200 and the security headers are served.
+  - The bundle is stamped with build `5642333`, embeds the WalletConnect project ID, and uses chain `bch:bchtest` with the Chipnet Electrum host `chipnet.imaginary.cash`. The only mainnet strings are libauth's enum names.
+  - `/api/feedback` is deployed and answers `not-configured`. No GitHub token is set yet, so testers get the copy-report fallback.
+  - The Reown allowlist is empty (checked by you), so every origin is allowed.
+- **Not yet checked: pairing Cashonize from the public domain and signing there.** That needs your wallet.
 - **Committed defaults:** the market identifiers are in `deployment.ts` (PUSD category and operator PKH). The oracle category is discovered on-chain and accepted only if the operator's own address created it.
-- **What visitors see:** `/` redirects to `/penny-picker` (the Vox list is still available at `/?vox`). A first-visit demo notice and a Demo badge appear, and a Feedback button sits on every page.
-- **CI:** the inherited Vox deploy workflows (GitHub Pages to `vox.cash` and `unspent.dev`) were removed. `pennypicker-ci.yml` runs the tests and the build.
+- **What visitors see:** `/` redirects to `/penny-picker` (the Vox list is still at `/?vox`). A first-visit demo notice and a Demo badge appear, and a Feedback button sits on every page.
+- **CI:** `pennypicker-ci.yml` runs the tests and the build. The inherited Vox deploy workflows were removed.
 
 ## Tests
 
@@ -87,7 +97,7 @@ Run from `packages/app`, using libauth's BCH 2025 VM:
 
 ```
 pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 23 covenant checks
-pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 22 builder checks (signed, chained txs)
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 30 builder checks (signed, chained txs, PUSD transfer, error texts)
 pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
 ```
 
@@ -110,11 +120,10 @@ through in a browser by the agent.
 
 1. **Oracle genesis:** `/penny-picker/oracle` → price `500.00` → Review → Sign in Cashonize → Broadcast. Then wait for confirmation.
 2. Optionally put the identifiers in `packages/app/.env` (`VITE_PENNYPICKER_PUSD_CATEGORY`, `…_ORACLE_CATEGORY`, `…_ORACLE_OPERATOR_PKH`).
-3. **Push commits:** `git push ibex-backup main` from your terminal. This shell has no GitHub credentials.
-4. **Testing:** place an ask and a bid. Fill them from a second Cashonize wallet; fund it from a faucet and send it some PUSD. Cancel an order, publish an oracle update, and check that limit prices re-price.
+3. **Push commits:** `git push ibex-backup main` from your terminal. This shell has no GitHub credentials. Each push redeploys the public site.
+4. **Testing:** place an ask and a bid. Fill them from a second Cashonize wallet: fund it from a faucet, then use **Wallet → Send PUSD** from the operator wallet (after oracle genesis) to give it PUSD. Cancel an order, publish an oracle update, and check that limit prices re-price.
 
 ## Remaining tasks
 
 - Run and fix the first live oracle genesis, order, fill, cancel and update. Cashonize behaviour with contract inputs in `sourceOutputs` is the main unknown.
-- Optionally add a PUSD transfer helper, to seed a second test wallet from the UI.
 - Polish after live testing: empty states, mobile tuning, and a price chart from the oracle history.
