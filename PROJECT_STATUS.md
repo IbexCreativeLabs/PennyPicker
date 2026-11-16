@@ -1,109 +1,111 @@
-# PennyPicker — project status
+# PennyPicker: project status
 
 _Last updated: 2026-11-16. Hackathon deadline: 2026-11-22._
 
-PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet** in which
-orders are priced as basis-point deviations from an on-chain oracle reference.
-PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals). It has no USD
-backing or peg. `PENNYPICKER_PROGRESS.md` holds the earlier research log.
+PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet**. Orders are priced in basis points (BPS)
+relative to an on-chain reference price. PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals) with no USD
+backing and no peg. `PENNYPICKER_PROGRESS.md` is the earlier research log.
 
-## What works (code complete, tested in the BCH VM, not yet run on Chipnet)
+## Confirmed on Chipnet
 
-| Area | Where | Status |
+The user performed these steps through Cashonize and the app. All are confirmed, and the IDs were checked against Electrum.
+
+| Step | Transaction | Result |
 | --- | --- | --- |
-| Order covenant (BPS limit order) | `packages/app/src/lib/pennypicker/contracts/PennyPickerOrder.cash` | Compiled (cashc 0.11.5); 18 VM checks |
-| Oracle-state covenant | `contracts/PennyPickerOracle.cash` | Compiled; VM tested |
-| Tx builders: oracle genesis/update, order create/fill/cancel | `lib/pennypicker/exchange.ts` | 16 end-to-end VM checks with signed, chained txs |
-| Chain I/O: oracle state, order discovery, broadcast | `lib/pennypicker/chain.ts` | Untested against a live Electrum server |
-| Exchange UI | `/penny-picker/exchange` | Renders; wallet flows need manual testing |
-| Oracle operator UI | `/penny-picker/oracle` | Renders; needs manual testing |
-| PUSD genesis UI (earlier work) | `/penny-picker/token` | Prepared earlier; not yet broadcast |
-| Liquidation / redemption pricing | `lib/pennypicker/mechanisms.ts`, `/penny-picker/mechanisms` | Simulation over the live or demo book; 8 checks |
-| BPS math, local matching simulator | `lib/pennypicker/market.ts`, `/penny-picker` | Earlier work |
+| Wallet | — | `bchtest:qq3gfs2492tlz2nckgpq6wn28fcd80lucvlxe0nrf0` (PKH `2284c1552a97f12a78b2020d3a6a3a70d3bffcc3`) |
+| Self-transfer #1 | `b9d9ef3c2cd4ad75354119824c79b068501f3f5f4131b4a246274b35d508a2ee` | vout 0 = 516,548 sats (fee 232) |
+| **PUSD genesis** | `46db72c8711ccda28de97e924e5edc12a6f5b1f124fc2df83433c4a2156b61e4` | 100,000,000 base units at vout 0 (1,000 sats). No baton, no NFT |
+| **PUSD category** | — | `b9d9ef3c2cd4ad75354119824c79b068501f3f5f4131b4a246274b35d508a2ee` |
+| Self-transfer #2 | `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602` | vout 0 = 515,057 sats, reserved for oracle genesis |
 
-Run the tests from `packages/app`:
+**Not yet done:** oracle genesis, orders, trades, cancels and oracle updates. The BCMR draft is local only and unpublished.
 
-```
-pnpm dlx tsx scripts/pennypicker-contracts.test.ts
-pnpm dlx tsx scripts/pennypicker-exchange.test.ts
-pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts
-```
+**Next on-chain step:** oracle genesis on `/penny-picker/oracle`, at 500.00 PUSD per BCH.
+- A read-only dry run against the real UTXOs spends only `03f6c31a…:0`.
+- It sends 1,000 sats plus the mutable oracle NFT to `bchtest:rd8cuc0a5yrky7en2en9yqq6mwup6jrs3c653xecpvqxydwsxzaa6pgp8ctn6`.
+- It returns 513,747 sats of change, with a fee of 310 sats.
+- The resulting **oracle category will be `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602`**, and the operator PKH will be your wallet's.
+
+## Pricing convention (protocol v2, changed before any oracle or order existed)
+
+- **Pair:** BCH/PUSD. Price = **PUSD per BCH**. The oracle stores it × 1e8 (`500.00` → `50000000000`).
+- **Limit price:** `reference × (10000 + BPS) / 10000`.
+- **Ask** = sell BCH, with BPS ≥ 0. It escrows BCH and collects PUSD. At +50 BPS with a 500.00 reference, the limit is **502.50**.
+- **Bid** = buy BCH, with BPS ≤ 0. It escrows PUSD and collects BCH. At −25 BPS, the limit is **498.75**.
+- **Exact settlement in the covenant:** `dUnits × 1e18 + dSat × price × (10000 + BPS) ≥ 0`, with no rounding inside the contract.
+  - The app rounds in the maker's favour: an ask taker pays `ceil(...)` PUSD, and a bid taker receives `floor(...)` PUSD.
+- **Why the change:** v1 applied BPS to satoshis per PUSD, so "+50 BPS" came out at 497.51 PUSD/BCH. That contradicted the intended "+50 BPS = 502.50" reading.
 
 ## Architecture
 
-**Units.** PUSD amounts are in base units (100 per PUSD). BCH amounts are in satoshis. The oracle
-rate is **satoshis per whole PUSD × 1e8**, stored as an integer. PUSD per BCH is `1e16 / rate`.
+**Covenants** (`packages/app/src/lib/pennypicker/contracts/*.cash`, cashc 0.11.5)
 
-**BPS convention.** Limit = `rate × (10000 + deltaBps) / 10000`.
-- Sell-PUSD orders (asks) use `deltaBps ≥ 0`: the maker asks for at least the reference.
-- Buy-PUSD orders (bids) use `deltaBps ≤ 0`: the maker pays at most the reference.
-- The contract also accepts deltas of the "wrong" sign. That is only an aggressive price, never a loss of escrow. The app rejects them.
+- **`PennyPickerOracle(operatorPkh)`** holds the single mutable oracle NFT. Its commitment is `price:int64le | timestamp:int32le | sequence:int32le`.
+  - `update()` requires the input directly after the oracle to come from the operator's P2PKH address. The wallet signs that input normally, and SIGHASH_ALL covers the new price. The sequence must strictly increase and the timestamp may not go backwards.
+  - `read()` lets anyone spend the oracle UTXO if it is recreated unchanged. Superseded prices are therefore spent outputs.
+- **`PennyPickerOrder(oracleCat, pusdCat, makerPkh, side, deltaBps)`** gives each order its own P2SH32 address. One UTXO holds the escrow and the proceeds.
+  - `fill()` reads the oracle at input 0, continues the order at the same index, and enforces the side and the exact settlement inequality.
+  - `cancel()` requires the maker's P2PKH input directly after the order input.
+- **Why P2PKH-input authorisation:** it avoids depending on WalletConnect contract-signature placeholders, which Cashonize support could not be verified for. Cashonize already signs P2PKH inputs in practice; the self-transfers and genesis prove it.
 
-**Oracle (`PennyPickerOracle`).**
-- A single mutable NFT, of a category with no minting baton, is locked in the oracle contract.
-- Its commitment is `rate:int64le | timestamp:int32le | sequence:int32le`.
-- `update` requires the operator's signature and a strictly increasing sequence.
-- `read` lets anyone spend the oracle UTXO, provided it is recreated byte-for-byte.
-- Fills and order creation must spend the oracle at input 0. A superseded price is therefore a spent output, and fills can only use the **latest published** price.
+**Library** (`packages/app/src/lib/pennypicker/`)
 
-**Order (`PennyPickerOrder`).** One P2SH32 address per order. Constructor parameters are oracle category, PUSD category, maker PKH, side, deltaBps and targetUnits.
-- Escrow and proceeds live in one UTXO, which continues at the same input/output index after each fill.
-- The settlement check is exact, with no rounding in the contract: `dSat × 1e14 + dUnits × rate × (10000 + deltaBps) ≥ 0`.
-- Off-chain, the taker pays `ceil(...)` when buying from an ask and takes `floor(...)` when selling into a bid.
-- Buy orders cap accumulated PUSD at `targetUnits`. Sell orders can only release PUSD.
-- `cancel` lets the maker withdraw everything with their key.
+- `contracts.ts`: instantiation, commitments, and integer price math (`limitPrice`, `askFillUnitsDue`, `bidFillUnitsOut`, `parsePrice`, `formatPrice`).
+- `exchange.ts`: unsigned builders for oracle genesis/update and order create/fill/cancel.
+  - It also handles OP_RETURN announcements (`PPKR | v2 | side | BPS | makerPkh`), token conservation, and the check that a signed transaction matches its preview.
+- `chain.ts`: Electrum I/O.
+  - Discovery scans the oracle address history, since every create, fill and update touches the oracle. From that it derives open orders, cancels (an order UTXO is gone; fills always recreate it), fills and oracle price history.
+- `mechanisms.ts`: liquidation pricing through the bids and redemption pricing through the asks. These are simulations.
+- `ui/session.svelte.ts`: shared app state for wallet session, config, oracle, balances, discovery and setup progress. **Every status is derived from Electrum data.**
+- `ui/TxFlow.svelte`: preview, then Cashonize sign (`broadcast: false`), then signed-vs-preview check, then explicit Broadcast, then confirmation polling with an explorer link.
+- `ui/theme.css`: PennyPicker design tokens and primitives, scoped under `.pp` with light and dark themes.
 
-**Discovery.**
-- An order-creation tx reads the oracle and includes an OP_RETURN announcement: `"PPKR" | v1 | side | deltaBps | targetUnits | makerPkh`.
-- The indexer scans the oracle address history and re-derives each order's contract address from the announced parameters. A forged announcement cannot point at a different script.
-- It then lists each address's UTXOs.
-- Only standard Electrum calls are needed; there is no indexer server.
+**Pages** (`/penny-picker/*`, using their own shell; the root layout skips the Vox chrome for these routes)
 
-**Signing.**
-- Builders return an unsigned tx plus libauth source outputs.
-- Wallet P2PKH inputs carry empty unlocking bytecode.
-- Contract inputs that need a signature (cancel, oracle update) carry CashScript's 65-byte signature and 33-byte pubkey zero placeholders, plus `contract` info, as defined by wc2-bch-bcr.
-- `TxFlow.svelte`:
-  1. Shows the preview.
-  2. Calls `bch_signTransaction` with `broadcast: false`.
-  3. Checks the signed tx has the same outpoints and outputs as the preview.
-  4. Broadcasts only after an explicit click.
+| Route | Purpose |
+| --- | --- |
+| `/penny-picker` | Overview: reference price, setup and test checklist, pricing explainer, market identifiers |
+| `/penny-picker/exchange` | Market header, orderbook (asks / reference / bids), limit-order and trade-now panels, my orders, activity |
+| `/penny-picker/oracle` | Current reference, freshness, identity, how the oracle works, genesis and update forms, price history |
+| `/penny-picker/token` | PUSD info, wallet balances, genesis status, BCMR draft, vout-0 self-transfer tool |
+| `/penny-picker/mechanisms` | Liquidation and redemption simulations (live book when available) |
+| `/penny-picker/wallet` | Connect or disconnect Cashonize (QR pairing), balances, UTXO list |
+| `/penny-picker/simulator` | The original in-memory simulator (legacy sats-per-PUSD convention) |
 
-## Important decisions and assumptions
+## Tests
 
-- **CatDex is not reused on-chain.** Its two-UTXO order/asset pairing is bound only by input position, and its baton holder can bypass the rules. With a single fungible category, one UTXO can hold both escrow and proceeds, so parameters live in the script and no NFT state is needed.
-- **The oracle is operator-attested.** No authenticated BCH/PUSD market feed exists for a new test token, and BCH/USD is not BCH/PUSD. The operator key (initially your Cashonize key) is a trusted party, and the UI says so.
-- **On-chain freshness is not enforced.** BCH script cannot observe the current time. The guarantee is "latest published state". The UI flags prices older than 15 minutes. A stale price is the main economic risk for makers.
-- **Buy-order escrow can run short.** Escrow is in BCH. If the reference rises, the escrow may cover less than `targetUnits`. Takers then fill less, and the UI's router shrinks the quantity accordingly.
-- **Liquidation and redemption are pricing designs, not a protocol.** The ask book serves as the competing liquidation offers, and the bid book as the redemption market. There is no vault covenant, because fixed-supply PUSD has no minting authority.
+Run from `packages/app`, using libauth's BCH 2025 VM:
+
+```
+pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 23 covenant checks
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 22 builder checks (signed, chained txs)
+pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
+```
+
+The UI was checked by type-checking (no errors in PennyPicker files; 122 pre-existing Vox errors remain) and by
+server-rendering every page, including with the real wallet's Chipnet UTXOs loaded. It has **not** been clicked
+through in a browser by the agent.
 
 ## Known limitations
 
-- Nothing has been signed or broadcast on Chipnet yet. Cashonize's handling of contract-input placeholders follows the spec but is **unverified in practice**.
-- Order creation and fills all spend the single oracle UTXO. Concurrent transactions from different users conflict, and the loser must rebuild. Unconfirmed chaining works.
-- Discovery scans only the last 300 oracle-history transactions and makes one request per announced order.
-- The fee estimate is about 1 sat/byte, using a fixed P2PKH signature allowance.
-- Transaction history is stored per browser (localStorage).
-- The older modules `orderCommitment.ts`, `orderbookIndex.ts`, `electrumOrderbook.ts`, `orderLifecycle.ts` and `executionOracle.ts` belong to the earlier NFT-commitment design. They are superseded by `contracts.ts`, `exchange.ts` and `chain.ts`. `makerPkhFromChipnetAddress` is still used.
-- No independent security review of the covenants has been done.
+- **The oracle is operator-attested.** It does not check prices against any market, and the operator key is trusted. The chain cannot enforce freshness; the UI marks a price stale after 15 minutes.
+- **Oracle contention.** Every create, fill and update spends the single oracle UTXO, so concurrent users conflict and must rebuild. Unconfirmed chaining works.
+- **Order sizing.** An ask's BCH is its size. A bid's PUSD is its size, and its BCH size shown in the UI depends on the current reference.
+- **Discovery limits.** It scans the last 300 oracle-history transactions and makes one Electrum call per announced order.
+- **Fees.** Estimated at about 1 sat/byte. Order outputs keep a 1,000-sat reserve, and the minimum trade is 5,000 sats.
+- **Local state.** Transaction history and config live in localStorage per browser unless set via `VITE_PENNYPICKER_*`.
+- **Legacy modules.** `orderCommitment.ts` (only `makerPkhFromChipnetAddress` is still used), `orderbookIndex.ts`, `electrumOrderbook.ts`, `orderLifecycle.ts`, `executionOracle.ts` and `market.ts` (simulator) belong to earlier designs.
+- **No security review.** The covenants have not been independently reviewed.
 
-## External actions required from you (in order)
+## External actions required (you)
 
-1. **Push the backup.** Commits are local because `git push ibex-backup main` failed with no GitHub credentials in this shell. Run `! git push ibex-backup main` after authenticating (for example `gh auth login`).
-2. **Fund the Cashonize Chipnet address** from a Chipnet faucet.
-3. **PUSD genesis.** On `/penny-picker/token`, run the self-transfer if needed, then genesis. You sign and broadcast it yourself.
-4. **Oracle genesis.** On `/penny-picker/oracle`, enter a reference price (PUSD per BCH) and prepare genesis. This needs another BCH-only vout-0 UTXO, so repeat the self-transfer first. Then sign and broadcast.
-5. Optionally, put the three identifiers in `packages/app/.env` (`VITE_PENNYPICKER_*`) so other browsers see the same market.
-6. **Manual testing.** On `/penny-picker/exchange`:
-   - Place a sell order and a buy order.
-   - Fill them from a second Cashonize wallet.
-   - Cancel an order.
-   - Publish an oracle update and re-check the limit prices.
+1. **Oracle genesis:** `/penny-picker/oracle` → price `500.00` → Review → Sign in Cashonize → Broadcast. Then wait for confirmation.
+2. Optionally put the identifiers in `packages/app/.env` (`VITE_PENNYPICKER_PUSD_CATEGORY`, `…_ORACLE_CATEGORY`, `…_ORACLE_OPERATOR_PKH`).
+3. **Push commits:** `git push ibex-backup main` from your terminal. This shell has no GitHub credentials.
+4. **Testing:** place an ask and a bid. Fill them from a second Cashonize wallet; fund it from a faucet and send it some PUSD. Cancel an order, publish an oracle update, and check that limit prices re-price.
 
 ## Remaining tasks
 
-- Run the flow on Chipnet and fix whatever Cashonize or Electrum reveal.
-- Optionally maintain a market-wide order list (for example, persist discovered orders) to reduce Electrum calls.
-- Allow multi-order fills that mix sides (crossing two makers directly).
-- Polish: explorer links, confirmation polling, price chart.
-- A vault covenant, if liquidation and redemption should become on-chain.
+- Run and fix the first live oracle genesis, order, fill, cancel and update. Cashonize behaviour with contract inputs in `sourceOutputs` is the main unknown.
+- Optionally add a PUSD transfer helper, to seed a second test wallet from the UI.
+- Polish after live testing: empty states, mobile tuning, and a price chart from the oracle history.

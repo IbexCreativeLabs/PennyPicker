@@ -33,6 +33,10 @@
 	let { children } = $props();
 </script>
 
+{#if page.url.pathname.startsWith('/penny-picker')}
+	<!-- PennyPicker renders its own full-width shell (routes/penny-picker/+layout.svelte). -->
+	{@render children()}
+{:else}
 <div class="app">
 	<Header />
 
@@ -60,6 +64,7 @@
 		</div>
 	{/if}
 </div>
+{/if}
 
 <style>
 	.app {

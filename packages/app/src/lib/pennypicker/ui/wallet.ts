@@ -57,21 +57,7 @@ export function balancesOf(utxos: ChainUtxo[], pusdCategory?: string): Balances 
 
 export { getAddressUtxos };
 
-/** PUSD per BCH, two decimals, from satoshis-per-PUSD × 1e8. */
-export function formatPusdPerBch(rateScaled: bigint): string {
-	if (rateScaled <= 0n) return '—';
-	const cents = (10n ** 18n + rateScaled / 2n) / rateScaled;
-	return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
-}
-
-/** Inverse of formatPusdPerBch for operator input ("512.34" PUSD per BCH). */
-export function rateFromPusdPerBch(input: string): bigint {
-	const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(input.trim());
-	if (!match) throw new Error('Enter PUSD per BCH with at most 2 decimals.');
-	const cents = BigInt(match[1]!) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
-	if (cents <= 0n) throw new Error('Price must be positive.');
-	return 10n ** 18n / cents;
-}
+export { formatPrice, parsePrice } from '$lib/pennypicker/contracts';
 
 export function parsePusd(value: string): bigint {
 	const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());

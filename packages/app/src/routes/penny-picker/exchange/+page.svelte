@@ -1,458 +1,437 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
+	import { pp, explorerTx, formatAge } from '$lib/pennypicker/ui/session.svelte';
+	import { errorText, parseBch, parsePusd } from '$lib/pennypicker/ui/wallet';
 	import {
-		balancesOf,
-		connectCashonize,
-		errorText,
-		formatPusdPerBch,
-		parseBch,
-		parsePusd,
-		type Balances,
-		type ConnectedWallet
-	} from '$lib/pennypicker/ui/wallet';
-	import {
-		discoverOrders,
-		getAddressUtxos,
-		getOracleState,
-		isCompleteMarket,
-		loadMarketConfig,
-		loadTxHistory,
-		ORACLE_CATEGORY_STORAGE_KEY,
-		ORACLE_OPERATOR_STORAGE_KEY,
-		saveTxHistory,
-		transactionHeight,
-		writeStorage,
-		type TxRecord
-	} from '$lib/pennypicker/chain';
-	import { PUSD_CATEGORY_STORAGE_KEY } from '$lib/pennypicker/pusdGenesis';
+		askFillUnitsDue,
+		assertOrderDelta,
+		bidSatsForUnits,
+		formatPrice,
+		limitPrice,
+		satsToUnits
+	} from '$lib/pennypicker/contracts';
 	import {
 		buildCancelOrder,
 		buildCreateOrder,
 		buildFillOrders,
+		formatSats,
+		formatUnits,
+		MIN_TRADE_SATOSHIS,
 		quoteLeg,
-		type ChainUtxo,
 		type FillLeg,
-		type MarketConfig,
 		type OpenOrder,
-		type OracleUtxo,
+		type OrderSide,
 		type UnsignedExchangeTransaction
 	} from '$lib/pennypicker/exchange';
-	import { buyFillTakeSats } from '$lib/pennypicker/contracts';
-	import { formatBchFromSatoshis, formatPusd, rateAtDeltaBps, type OrderSide } from '$lib/pennypicker/market';
+	import { getOracleState } from '$lib/pennypicker/chain';
 
-	const STALE_AFTER_SECONDS = 15 * 60;
-
-	let config = $state(loadMarketConfig());
-	let market = $derived<MarketConfig | undefined>(isCompleteMarket(config) ? config : undefined);
-	let wallet = $state<ConnectedWallet | undefined>();
-	let walletUtxos = $state<ChainUtxo[]>([]);
-	let balances = $state<Balances | undefined>();
-	let oracle = $state<OracleUtxo | undefined>();
-	let orders = $state<OpenOrder[]>([]);
-	let discoveryNote = $state('');
 	let pending = $state<UnsignedExchangeTransaction | undefined>();
-	let history = $state<TxRecord[]>([]);
-	let loading = $state(false);
 	let error = $state('');
-	let nowSec = $state(Math.floor(Date.now() / 1000));
+	let mode = $state<'limit' | 'take'>('limit');
 
-	// Manual configuration (when env/local values are missing).
-	let cfgPusd = $state('');
-	let cfgOracle = $state('');
-	let cfgOperator = $state('');
+	// Maker
+	let side = $state<OrderSide>('ask');
+	let bpsInput = $state('50');
+	let amountInput = $state('0.01');
 
-	// Maker form.
-	let side = $state<OrderSide>('sell-pusd');
-	let deltaInput = $state('50');
-	let qtyInput = $state('10.00');
-	let escrowInput = $state('');
-
-	// Taker form.
+	// Taker
 	let takeSide = $state<'buy' | 'sell'>('buy');
-	let takeQtyInput = $state('1.00');
-	let fillInputs = $state<Record<string, string>>({});
+	let takeAmount = $state('0.01');
+	let pinned = $state<OpenOrder | undefined>();
 
-	const rate = $derived(oracle?.state.rateSatsPerPusdScaled);
-	const oracleAge = $derived(oracle ? nowSec - oracle.state.timestamp : undefined);
-	const oracleStale = $derived(oracleAge !== undefined && oracleAge > STALE_AFTER_SECONDS);
+	const price = $derived(pp.price);
+	const myPkh = $derived(pp.wallet?.pkh);
+	const live = $derived((pp.discovery?.orders ?? []).filter((o) => !o.exhausted));
+	const asks = $derived(live.filter((o) => o.side === 'ask').sort((a, b) => b.deltaBps - a.deltaBps));
+	const bids = $derived(live.filter((o) => o.side === 'bid').sort((a, b) => b.deltaBps - a.deltaBps));
+	const bestAsk = $derived(asks.at(-1));
+	const bestBid = $derived(bids[0]);
+	const myOrders = $derived((pp.discovery?.orders ?? []).filter((o) => o.makerPkh === myPkh));
 
-	const limitOf = (order: OpenOrder) => (rate ? rateAtDeltaBps(rate, order.deltaBps) : 0n);
-	const asks = $derived(
-		orders.filter((o) => o.side === 'sell-pusd' && o.remainingUnits > 0n).sort((a, b) => a.deltaBps - b.deltaBps)
-	);
-	const bids = $derived(
-		orders.filter((o) => o.side === 'buy-pusd' && o.remainingUnits > 0n).sort((a, b) => b.deltaBps - a.deltaBps)
-	);
-	const myOrders = $derived(wallet ? orders.filter((o) => o.makerPkh === wallet!.pkh) : []);
+	const bidSizeSats = (o: OpenOrder) => (price ? bidSatsForUnits(o.availableUnits, price, o.deltaBps) : 0n);
+	const sizeSats = (o: OpenOrder) => (o.side === 'ask' ? o.availableSats : bidSizeSats(o));
 
-	const makerPreview = $derived.by(() => {
-		if (!rate) return undefined;
+	function setSide(next: OrderSide) {
+		side = next;
+		const n = Number(bpsInput);
+		if (Number.isFinite(n) && n !== 0) bpsInput = String(next === 'ask' ? Math.abs(n) : -Math.abs(n));
+		amountInput = next === 'ask' ? '0.01' : '5.00';
+	}
+
+	const maker = $derived.by(() => {
+		if (!price) return { error: 'No reference price yet.' };
 		try {
-			const delta = Number(deltaInput);
-			const units = parsePusd(qtyInput);
-			const limit = rateAtDeltaBps(rate, delta);
-			const cost = units > 0n ? buyFillTakeSats(units, rate, delta) : 0n;
-			return { limit, cost, suggestedEscrow: cost + cost / 10n + 2_000n };
-		} catch {
-			return undefined;
+			if (!/^-?\d+$/.test(bpsInput.trim())) throw new Error('BPS must be a whole number.');
+			const delta = Number(bpsInput);
+			assertOrderDelta(side, delta);
+			const limit = limitPrice(price, delta);
+			if (side === 'ask') {
+				const sats = parseBch(amountInput);
+				if (sats < MIN_TRADE_SATOSHIS) throw new Error(`Minimum ask is ${formatSats(MIN_TRADE_SATOSHIS)} BCH.`);
+				return { delta, limit, sats, units: askFillUnitsDue(sats, price, delta) };
+			}
+			const units = parsePusd(amountInput);
+			if (units <= 0n) throw new Error('Enter a PUSD amount.');
+			return { delta, limit, units, sats: bidSatsForUnits(units, price, delta) };
+		} catch (cause) {
+			return { error: errorText(cause) };
 		}
 	});
 
-	/** Greedy best-price route for a taker quantity across one side of the book. */
-	const takerRoute = $derived.by(() => {
-		if (!rate) return undefined;
+	const route = $derived.by(() => {
+		if (!price) return undefined;
 		try {
-			let want = parsePusd(takeQtyInput);
+			let want = parseBch(takeAmount);
 			if (want <= 0n) return undefined;
-			const book = takeSide === 'buy' ? asks : bids;
+			const book = pinned ? [pinned] : takeSide === 'buy' ? [...asks].reverse() : bids;
 			const legs: FillLeg[] = [];
+			let units = 0n;
 			let sats = 0n;
 			for (const order of book) {
-				if (want === 0n) break;
-				if (wallet && order.makerPkh === wallet.pkh) continue;
-				let units = order.remainingUnits < want ? order.remainingUnits : want;
-				// Buy orders may not have enough BCH escrow left at the current price.
-				while (units > 0n) {
+				if (want < MIN_TRADE_SATOSHIS) break;
+				if (order.makerPkh === myPkh) continue;
+				let take = sizeSats(order) < want ? sizeSats(order) : want;
+				if (take < MIN_TRADE_SATOSHIS) continue;
+				let quote;
+				while (take >= MIN_TRADE_SATOSHIS) {
 					try {
-						sats += quoteLeg({ order, units }, rate).satoshis;
+						quote = quoteLeg({ order, sats: take }, price);
 						break;
 					} catch {
-						units = units / 2n;
+						take -= 1n;
 					}
 				}
-				if (units === 0n) continue;
-				legs.push({ order, units });
-				want -= units;
+				if (!quote) continue;
+				legs.push({ order, sats: take });
+				units += quote.units;
+				sats += take;
+				want -= take;
 			}
-			return { legs, sats, unfilled: want };
+			const avg = sats > 0n ? (units * 10n ** 14n) / sats : 0n;
+			return { legs, units, sats, unfilled: want, avg };
 		} catch {
 			return undefined;
 		}
 	});
 
-	onMount(() => {
-		config = loadMarketConfig();
-		cfgPusd = config.pusdCategory ?? '';
-		cfgOracle = config.oracleCategory ?? '';
-		cfgOperator = config.oracleOperatorPkh ?? '';
-		history = loadTxHistory();
-		void refreshMarket();
-		const timer = setInterval(() => (nowSec = Math.floor(Date.now() / 1000)), 5_000);
-		return () => clearInterval(timer);
-	});
-
-	function saveConfig() {
-		writeStorage(PUSD_CATEGORY_STORAGE_KEY, cfgPusd.trim().toLowerCase());
-		writeStorage(ORACLE_CATEGORY_STORAGE_KEY, cfgOracle.trim().toLowerCase());
-		writeStorage(ORACLE_OPERATOR_STORAGE_KEY, cfgOperator.trim().toLowerCase());
-		config = loadMarketConfig();
-		void refreshMarket();
-	}
-
-	async function connect() {
+	async function prepare(build: () => UnsignedExchangeTransaction) {
 		error = '';
 		try {
-			wallet = await connectCashonize();
-			await refreshWallet();
-		} catch (cause) {
-			error = errorText(cause);
-		}
-	}
-
-	async function refreshWallet() {
-		if (!wallet) return;
-		walletUtxos = await getAddressUtxos(wallet.address);
-		balances = balancesOf(walletUtxos, market?.pusdCategory);
-	}
-
-	async function refreshBalancesClicked() {
-		error = '';
-		try {
-			await refreshWallet();
-		} catch (cause) {
-			error = `Balance query failed: ${errorText(cause)}`;
-		}
-	}
-
-	async function refreshMarket() {
-		if (!market) return;
-		loading = true;
-		error = '';
-		try {
-			oracle = await getOracleState(market);
-			const result = await discoverOrders(market);
-			orders = result.orders;
-			discoveryNote = `${result.orders.length} open, ${result.closed.length} closed; scanned ${result.scannedTransactions} oracle transactions${result.historyTruncated ? ' (older history truncated)' : ''}.`;
-			await refreshWallet();
-			await refreshHistory();
-		} catch (cause) {
-			error = errorText(cause);
-		} finally {
-			loading = false;
-		}
-	}
-
-	async function refreshHistory() {
-		if (!wallet) return;
-		let changed = false;
-		for (const record of history.filter((r) => r.status !== 'confirmed').slice(0, 10)) {
-			const height = await transactionHeight(wallet.address, record.txid);
-			const status = height === undefined ? 'unknown' : height > 0 ? 'confirmed' : 'broadcast';
-			if (status !== record.status) {
-				record.status = status;
-				changed = true;
-			}
-		}
-		if (changed) {
-			history = [...history];
-			saveTxHistory(history);
-		}
-	}
-
-	function requireReady(): { market: MarketConfig; oracle: OracleUtxo; wallet: ConnectedWallet } {
-		if (!market) throw new Error('Market is not configured.');
-		if (!wallet) throw new Error('Connect Cashonize first.');
-		if (!oracle) throw new Error('No oracle state found.');
-		return { market, oracle, wallet };
-	}
-
-	async function prepare(build: (ctx: ReturnType<typeof requireReady>) => UnsignedExchangeTransaction) {
-		error = '';
-		try {
-			const ctx = requireReady();
-			// Rebuild against fresh UTXOs and the latest oracle state.
-			await refreshWallet();
-			const latest = await getOracleState(ctx.market);
-			if (!latest) throw new Error('Oracle state disappeared; refresh the market.');
-			oracle = latest;
-			pending = build({ ...ctx, oracle: latest });
+			if (!pp.wallet) throw new Error('Connect Cashonize first.');
+			if (!pp.market) throw new Error('Market is not configured.');
+			await pp.refreshWallet();
+			const latest = await getOracleState(pp.market);
+			if (!latest) throw new Error('Oracle state not found; refresh the market.');
+			pp.oracle = latest;
+			pending = build();
 		} catch (cause) {
 			error = errorText(cause);
 		}
 	}
 
 	function placeOrder() {
-		void prepare(({ market, oracle, wallet }) =>
-			buildCreateOrder(market, oracle, wallet.address, wallet.pkh, walletUtxos, {
+		void prepare(() => {
+			if ('error' in maker) throw new Error(maker.error);
+			return buildCreateOrder(pp.market!, pp.oracle!, pp.wallet!.address, pp.wallet!.pkh, pp.utxos, {
 				side,
-				deltaBps: Number(deltaInput),
-				quantityUnits: parsePusd(qtyInput),
-				escrowSatoshis: side === 'buy-pusd' ? parseBch(escrowInput || formatBchFromSatoshis(makerPreview?.suggestedEscrow ?? 0n)) : undefined
-			})
-		);
-	}
-
-	function takeRoute() {
-		const route = takerRoute;
-		if (!route || route.legs.length === 0) {
-			error = 'No fillable orders for that quantity.';
-			return;
-		}
-		void prepare(({ market, oracle, wallet }) => buildFillOrders(market, oracle, wallet.address, walletUtxos, route.legs));
-	}
-
-	function fillOne(order: OpenOrder) {
-		void prepare(({ market, oracle, wallet }) => {
-			const units = parsePusd(fillInputs[order.address] ?? formatPusd(order.remainingUnits));
-			return buildFillOrders(market, oracle, wallet.address, walletUtxos, [{ order, units }]);
+				deltaBps: maker.delta,
+				amount: side === 'ask' ? maker.sats : maker.units
+			});
 		});
 	}
 
+	function takeRoute() {
+		const r = route;
+		void prepare(() => {
+			if (!r || r.legs.length === 0) throw new Error('No fillable orders for that amount.');
+			return buildFillOrders(pp.market!, pp.oracle!, pp.wallet!.address, pp.utxos, r.legs);
+		});
+	}
+
+	function pin(order: OpenOrder) {
+		mode = 'take';
+		pinned = order;
+		takeSide = order.side === 'ask' ? 'buy' : 'sell';
+		takeAmount = formatSats(sizeSats(order));
+	}
+
 	function cancel(order: OpenOrder) {
-		void prepare(({ market, wallet }) => buildCancelOrder(market, order, wallet.address, walletUtxos));
+		void prepare(() => buildCancelOrder(pp.market!, order, pp.wallet!.address, pp.utxos));
 	}
 
 	function broadcasted(txid: string, unsigned: UnsignedExchangeTransaction) {
-		history = [{ txid, kind: unsigned.kind, summary: unsigned.summary, at: Date.now(), status: 'broadcast' }, ...history];
-		saveTxHistory(history);
-		setTimeout(refreshMarket, 2_500);
+		pp.recordBroadcast(txid, unsigned);
+		pinned = undefined;
 	}
 
-	function short(text: string, n = 10) {
-		return text.length > n * 2 ? `${text.slice(0, n + 8)}…${text.slice(-n)}` : text;
-	}
+	const signed = (n: number) => `${n > 0 ? '+' : ''}${n}`;
+	const pct = (bps: number) => `${(bps / 100).toFixed(2)}%`;
+	const quickBps = $derived(side === 'ask' ? [0, 10, 25, 50, 100] : [0, -10, -25, -50, -100]);
 </script>
 
-<svelte:head><title>PennyPicker exchange (Chipnet)</title></svelte:head>
+<svelte:head><title>Exchange · PennyPicker</title></svelte:head>
 
-<main>
-	<header>
-		<h1>PennyPicker — BCH/PUSD BPS orderbook <small>Chipnet</small></h1>
-		<nav>
-			<a href="/penny-picker">Simulator</a> · <a href="/penny-picker/token">PUSD token</a> ·
-			<a href="/penny-picker/oracle">Oracle operator</a> · <a href="/penny-picker/mechanisms">Liquidation &amp; redemption</a> ·
-			<a href="/cashonize">Cashonize</a>
-		</nav>
-	</header>
-	<p class="notice">
-		Experimental on-chain prototype on BCH <strong>Chipnet</strong>. PUSD is a fixed-supply test token with no USD backing or
-		peg. Prices are an operator-attested reference, not a market feed. Every transaction is built unsigned, shown to you,
-		signed only in Cashonize, and broadcast only when you press Broadcast.
-	</p>
-
-	{#if !market}
-		<section class="panel">
-			<h2>Market configuration</h2>
-			<p>
-				The market is identified by the PUSD category, the oracle category and the oracle operator's key hash. Set them via
-				<code>VITE_PENNYPICKER_*</code> env vars, create them on the token and oracle pages, or paste them here.
-			</p>
-			<label>PUSD category <input bind:value={cfgPusd} size="66" /></label>
-			<label>Oracle category <input bind:value={cfgOracle} size="66" /></label>
-			<label>Oracle operator PKH <input bind:value={cfgOperator} size="42" /></label>
-			<button type="button" onclick={saveConfig}>Save to this browser</button>
-		</section>
-	{/if}
-
-	<div class="grid">
-		<section class="panel">
-			<h2>Reference price</h2>
-			{#if oracle && rate}
-				<p class="big">{formatPusdPerBch(rate)} <small>PUSD per BCH</small></p>
-				<p>{formatBchFromSatoshis((rate + 50_000_000n) / 100_000_000n)} BCH per PUSD · seq #{oracle.state.sequence}</p>
-				<p class:stale={oracleStale}>
-					Published {oracleAge}s ago by operator{oracleStale ? ' — STALE: fills still use this price; consider waiting for an update' : ''}
-					· {(oracle.height ?? 0) > 0 ? 'confirmed' : 'unconfirmed'}
-				</p>
-			{:else if market}
-				<p>{loading ? 'Loading…' : 'No oracle state found. Trading is disabled until one exists.'}</p>
+<main class="pp-container">
+	<!-- Market header -->
+	<section class="pp-card market">
+		<div class="pair">
+			<h1>BCH <span class="faint">/</span> PUSD</h1>
+			<span class="small muted">Oracle-relative BPS orderbook · Chipnet</span>
+		</div>
+		<div class="m-stat">
+			<div class="pp-stat-label">Reference</div>
+			<div class="pp-stat-value">{price ? formatPrice(price) : '—'}</div>
+			<div class="small muted">PUSD per BCH</div>
+		</div>
+		<div class="m-stat">
+			<div class="pp-stat-label">Freshness</div>
+			{#if pp.oracle}
+				<span class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}">{pp.oracleStale ? 'Stale' : 'Fresh'}</span>
+				<div class="small muted">{formatAge(pp.oracleAge)} · #{pp.oracle.state.sequence}</div>
 			{:else}
-				<p>Not configured.</p>
+				<span class="pp-badge warn">No oracle</span>
 			{/if}
-			<button type="button" onclick={refreshMarket} disabled={loading || !market}>{loading ? 'Refreshing…' : 'Refresh market'}</button>
-			{#if discoveryNote}<p class="hint">{discoveryNote}</p>{/if}
+		</div>
+		<div class="m-stat">
+			<div class="pp-stat-label">Best bid / ask</div>
+			<div class="num">
+				<span class="bid-c">{bestBid && price ? formatPrice(limitPrice(price, bestBid.deltaBps)) : '—'}</span>
+				<span class="faint">/</span>
+				<span class="ask-c">{bestAsk && price ? formatPrice(limitPrice(price, bestAsk.deltaBps)) : '—'}</span>
+			</div>
+			<div class="small muted">{bestBid ? signed(bestBid.deltaBps) : '—'} / {bestAsk ? signed(bestAsk.deltaBps) : '—'} BPS</div>
+		</div>
+		<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
+	</section>
+
+	{#if !pp.market}
+		<p class="pp-callout warn">The market is not configured yet. Create PUSD on <a href="/penny-picker/token">Token</a> and the oracle on <a href="/penny-picker/oracle">Oracle</a>, or set <code>VITE_PENNYPICKER_*</code>.</p>
+	{:else if pp.oracleLoaded && !pp.oracle}
+		<p class="pp-callout warn">No oracle state found on-chain. Trading opens once the oracle is created on <a href="/penny-picker/oracle">Oracle</a>.</p>
+	{:else if pp.oracleStale}
+		<p class="pp-callout warn small">The reference price was published {formatAge(pp.oracleAge)}. Fills still settle at this price until the operator publishes a new one.</p>
+	{/if}
+	{#if pp.marketError}<p class="pp-error">{pp.marketError}</p>{/if}
+
+	{#if pending && pp.wallet}
+		<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={broadcasted} onDismiss={() => (pending = undefined)} />
+	{/if}
+	{#if error}<p class="pp-callout bad">{error}</p>{/if}
+
+	<div class="main-grid">
+		<!-- Orderbook -->
+		<section class="pp-card book">
+			<div class="pp-card-head">
+				<h2>Orderbook</h2>
+				<span class="small muted">Limit = reference × (1 + BPS/10000)</span>
+			</div>
+			<div class="pp-table-wrap">
+				<table class="pp-table">
+					<thead><tr><th>BPS</th><th class="r">Price</th><th class="r">Size BCH</th><th class="r">Total PUSD</th><th></th></tr></thead>
+					<tbody>
+						{#each asks as order (order.address)}
+							{@const l = price ? limitPrice(price, order.deltaBps) : 0n}
+							<tr class="ask-row" class:mine={order.makerPkh === myPkh}>
+								<td class="ask-c">{signed(order.deltaBps)}</td>
+								<td class="r ask-c">{price ? formatPrice(l) : '—'}</td>
+								<td class="r">{formatSats(order.availableSats)}</td>
+								<td class="r muted">{price ? formatUnits(satsToUnits(order.availableSats, l)) : '—'}</td>
+								<td class="r">
+									{#if order.makerPkh === myPkh}<span class="pp-badge plain small">yours</span>
+									{:else if pp.wallet}<button class="pp-btn pp-btn-sm" type="button" onclick={() => pin(order)}>Buy</button>{/if}
+								</td>
+							</tr>
+						{:else}
+							<tr><td colspan="5" class="muted small">No asks (nobody selling BCH yet).</td></tr>
+						{/each}
+						<tr class="ref-row">
+							<td colspan="5">
+								<span>Reference <strong class="num">{price ? formatPrice(price) : '—'}</strong> PUSD/BCH</span>
+								{#if bestAsk && bestBid}<span class="muted small"> · spread {bestAsk.deltaBps - bestBid.deltaBps} BPS</span>{/if}
+							</td>
+						</tr>
+						{#each bids as order (order.address)}
+							{@const l = price ? limitPrice(price, order.deltaBps) : 0n}
+							<tr class="bid-row" class:mine={order.makerPkh === myPkh}>
+								<td class="bid-c">{signed(order.deltaBps)}</td>
+								<td class="r bid-c">{price ? formatPrice(l) : '—'}</td>
+								<td class="r">{formatSats(bidSizeSats(order))}</td>
+								<td class="r muted">{formatUnits(order.availableUnits)}</td>
+								<td class="r">
+									{#if order.makerPkh === myPkh}<span class="pp-badge plain small">yours</span>
+									{:else if pp.wallet}<button class="pp-btn pp-btn-sm" type="button" onclick={() => pin(order)}>Sell</button>{/if}
+								</td>
+							</tr>
+						{:else}
+							<tr><td colspan="5" class="muted small">No bids (nobody buying BCH yet).</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if pp.discovery}
+				<p class="small faint">{pp.discovery.announcedCount} orders announced · {pp.discovery.fills.length} fills · {pp.discovery.canceled.length} canceled{pp.discovery.historyTruncated ? ' · older history not scanned' : ''}</p>
+			{/if}
 		</section>
 
-		<section class="panel">
-			<h2>Wallet</h2>
-			{#if wallet}
-				<p><code>{wallet.address}</code></p>
-				{#if balances}
-					<p>BCH {formatBchFromSatoshis(balances.bchSats)} <small>({formatBchFromSatoshis(balances.bchSats - balances.bchConfirmedSats)} pending)</small></p>
-					<p>PUSD {formatPusd(balances.pusdUnits)} <small>({formatPusd(balances.pusdUnits - balances.pusdConfirmedUnits)} pending)</small></p>
-					<p><small>{balances.bchUtxoCount} BCH-only UTXO(s); {balances.tokenUtxoCount} token UTXO(s) carrying {formatBchFromSatoshis(balances.tokenUtxoSats)} BCH (not spendable as plain BCH)</small></p>
-				{/if}
-				<button type="button" onclick={refreshBalancesClicked}>Refresh balances</button>
+		<!-- Trade panel -->
+		<section class="pp-card trade">
+			<div class="pp-seg" role="tablist">
+				<button type="button" class:on={mode === 'limit'} onclick={() => (mode = 'limit')}>Limit order</button>
+				<button type="button" class:on={mode === 'take'} onclick={() => (mode = 'take')}>Trade now</button>
+			</div>
+
+			{#if !pp.wallet}
+				<p class="pp-callout small" style="margin-top: 0.85rem">Connect Cashonize to trade. <a href="/penny-picker/wallet">Wallet →</a></p>
+			{/if}
+
+			{#if mode === 'limit'}
+				<div class="pp-stack form">
+					<div class="pp-seg">
+						<button type="button" class="bid" class:on={side === 'bid'} onclick={() => setSide('bid')}>Buy BCH</button>
+						<button type="button" class="ask" class:on={side === 'ask'} onclick={() => setSide('ask')}>Sell BCH</button>
+					</div>
+					<label class="pp-field">
+						<span>Deviation from reference</span>
+						<div class="pp-input-group"><input class="pp-input" inputmode="numeric" bind:value={bpsInput} /><span class="pp-addon">BPS</span></div>
+					</label>
+					<div class="chips">
+						{#each quickBps as q}<button type="button" class="pp-btn pp-btn-sm" class:sel={String(q) === bpsInput.trim()} onclick={() => (bpsInput = String(q))}>{signed(q)}</button>{/each}
+					</div>
+					<label class="pp-field">
+						<span>{side === 'ask' ? 'Amount of BCH to sell' : 'PUSD to spend'}</span>
+						<div class="pp-input-group"><input class="pp-input" inputmode="decimal" bind:value={amountInput} /><span class="pp-addon">{side === 'ask' ? 'BCH' : 'PUSD'}</span></div>
+					</label>
+
+					{#if 'error' in maker}
+						<p class="pp-error small">{maker.error}</p>
+					{:else if price}
+						<div class="calc">
+							<div><span class="muted">Reference</span><span class="num">{formatPrice(price)}</span></div>
+							<div><span class="muted">Deviation</span><span class="num">{signed(maker.delta)} BPS ({pct(maker.delta)})</span></div>
+							<div class="lim"><span>Limit price now</span><strong class="num {side === 'ask' ? 'ask-c' : 'bid-c'}">{formatPrice(maker.limit, 2)} PUSD/BCH</strong></div>
+							<div><span class="muted">{side === 'ask' ? 'You receive ≈' : 'You buy ≈'}</span><span class="num">{side === 'ask' ? `${formatUnits(maker.units)} PUSD` : `${formatSats(maker.sats)} BCH`}</span></div>
+						</div>
+						<p class="pp-hint">The limit moves with the reference: the order always trades at {pct(Math.abs(maker.delta))} {maker.delta >= 0 ? 'above' : 'below'} the latest published price.</p>
+					{/if}
+					<button type="button" class="pp-btn pp-btn-block {side === 'ask' ? 'pp-btn-ask' : 'pp-btn-bid'}" onclick={placeOrder} disabled={!pp.wallet || !pp.oracle || 'error' in maker}>
+						Review {side === 'ask' ? 'sell' : 'buy'} order
+					</button>
+				</div>
 			{:else}
-				<button type="button" onclick={connect}>Use connected Cashonize wallet</button>
-				<p class="hint">Create the session on <a href="/cashonize">/cashonize</a>.</p>
+				<div class="pp-stack form">
+					<div class="pp-seg">
+						<button type="button" class="bid" class:on={takeSide === 'buy'} onclick={() => { takeSide = 'buy'; pinned = undefined; }}>Buy BCH</button>
+						<button type="button" class="ask" class:on={takeSide === 'sell'} onclick={() => { takeSide = 'sell'; pinned = undefined; }}>Sell BCH</button>
+					</div>
+					<label class="pp-field">
+						<span>Amount of BCH to {takeSide}</span>
+						<div class="pp-input-group"><input class="pp-input" inputmode="decimal" bind:value={takeAmount} /><span class="pp-addon">BCH</span></div>
+					</label>
+					{#if pinned}
+						<p class="small">Filling one order at {signed(pinned.deltaBps)} BPS · <button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={() => (pinned = undefined)}>use best prices instead</button></p>
+					{/if}
+					{#if route && route.legs.length}
+						<div class="calc">
+							<div><span class="muted">Orders matched</span><span class="num">{route.legs.length}</span></div>
+							<div><span class="muted">Average price</span><span class="num">{formatPrice(route.avg)} PUSD/BCH</span></div>
+							<div class="lim"><span>{takeSide === 'buy' ? 'You pay' : 'You receive'}</span><strong class="num">{formatUnits(route.units)} PUSD</strong></div>
+							<div><span class="muted">{takeSide === 'buy' ? 'You receive' : 'You sell'}</span><span class="num">{formatSats(route.sats)} BCH</span></div>
+						</div>
+						{#if route.unfilled >= MIN_TRADE_SATOSHIS}<p class="pp-callout warn small">{formatSats(route.unfilled)} BCH cannot be matched from the current book.</p>{/if}
+					{:else}
+						<p class="small muted">{takeSide === 'buy' ? 'No asks available to buy from.' : 'No bids available to sell into.'}</p>
+					{/if}
+					<p class="pp-hint">Prices settle against the reference at the moment the transaction confirms the oracle state it reads.</p>
+					<button type="button" class="pp-btn pp-btn-block {takeSide === 'buy' ? 'pp-btn-bid' : 'pp-btn-ask'}" onclick={takeRoute} disabled={!pp.wallet || !pp.oracle || !route?.legs.length}>
+						Review trade
+					</button>
+				</div>
 			{/if}
 		</section>
 	</div>
 
-	{#if pending && wallet}
-		<TxFlow unsigned={pending} {wallet} onBroadcast={broadcasted} onDismiss={() => (pending = undefined)} />
-	{/if}
-	{#if error}<p class="error">{error}</p>{/if}
-
-	<section class="panel">
-		<h2>Orderbook</h2>
-		<p class="hint">Limit = reference × (10000 + BPS) / 10000, re-evaluated at every fill against the current oracle state.</p>
-		<div class="book">
-			{#each [{ title: 'Asks — sell PUSD (take to buy PUSD)', list: asks }, { title: 'Bids — buy PUSD (take to sell PUSD)', list: bids }] as half}
-				<div>
-					<h3>{half.title}</h3>
-					<table>
-						<thead><tr><th>BPS</th><th>Limit PUSD/BCH</th><th>Remaining PUSD</th><th>Order holds</th><th></th></tr></thead>
-						<tbody>
-							{#each half.list as order (order.address)}
-								<tr class:mine={wallet && order.makerPkh === wallet.pkh}>
-									<td>{order.deltaBps > 0 ? '+' : ''}{order.deltaBps}</td>
-									<td>{rate ? formatPusdPerBch(limitOf(order)) : '—'}</td>
-									<td>{formatPusd(order.remainingUnits)}</td>
-									<td>{formatBchFromSatoshis(order.utxo.satoshis)} BCH{order.heldUnits > 0n ? ` + ${formatPusd(order.heldUnits)} PUSD` : ''}{(order.utxo.height ?? 0) > 0 ? '' : ' (unconf.)'}</td>
-									<td>
-										{#if wallet && order.makerPkh === wallet.pkh}
-											<button type="button" onclick={() => cancel(order)}>Cancel</button>
-										{:else if wallet}
-											<input class="qty" placeholder={formatPusd(order.remainingUnits)} bind:value={fillInputs[order.address]} />
-											<button type="button" onclick={() => fillOne(order)} disabled={!oracle}>Fill</button>
-										{/if}
-									</td>
-								</tr>
-							{:else}
-								<tr><td colspan="5" class="hint">No open orders.</td></tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			{/each}
-		</div>
-	</section>
-
-	{#if wallet && market}
-		<div class="grid">
-			<section class="panel">
-				<h2>Place order (maker)</h2>
-				<label><input type="radio" bind:group={side} value="sell-pusd" /> Sell PUSD (premium, BPS ≥ 0)</label>
-				<label><input type="radio" bind:group={side} value="buy-pusd" /> Buy PUSD (discount, BPS ≤ 0)</label>
-				<label>BPS from reference <input bind:value={deltaInput} size="8" /></label>
-				<label>Quantity (PUSD) <input bind:value={qtyInput} size="12" /></label>
-				{#if side === 'buy-pusd'}
-					<label>BCH escrow <input bind:value={escrowInput} size="14" placeholder={makerPreview ? formatBchFromSatoshis(makerPreview.suggestedEscrow) : ''} /></label>
-					<p class="hint">Escrow must cover the quantity at the reference price at fill time; the suggestion adds 10% headroom. Unused BCH is returned on cancel.</p>
-				{/if}
-				{#if makerPreview}
-					<p>Limit now: <strong>{formatPusdPerBch(makerPreview.limit)} PUSD/BCH</strong>; {side === 'sell-pusd' ? 'you would receive' : 'you would pay'} ≈ {formatBchFromSatoshis(makerPreview.cost)} BCH at the current reference.</p>
-				{/if}
-				<button type="button" onclick={placeOrder} disabled={!oracle}>Prepare order</button>
-			</section>
-
-			<section class="panel">
-				<h2>Trade now (taker)</h2>
-				<label><input type="radio" bind:group={takeSide} value="buy" /> Buy PUSD with BCH</label>
-				<label><input type="radio" bind:group={takeSide} value="sell" /> Sell PUSD for BCH</label>
-				<label>Quantity (PUSD) <input bind:value={takeQtyInput} size="12" /></label>
-				{#if takerRoute}
-					<p>
-						{takerRoute.legs.length} order(s), {takeSide === 'buy' ? 'pay' : 'receive'} ≈ {formatBchFromSatoshis(takerRoute.sats)} BCH
-						{#if takerRoute.unfilled > 0n}<br /><span class="stale">{formatPusd(takerRoute.unfilled)} PUSD cannot be filled from the book.</span>{/if}
-					</p>
-				{/if}
-				<button type="button" onclick={takeRoute} disabled={!oracle}>Prepare trade</button>
-			</section>
-		</div>
-
-		<section class="panel">
-			<h2>My orders</h2>
-			{#each myOrders as order (order.address)}
-				<p>
-					{order.side === 'sell-pusd' ? 'Sell' : 'Buy'} {formatPusd(order.targetUnits)} PUSD @ {order.deltaBps} BPS — remaining {formatPusd(order.remainingUnits)},
-					holds {formatBchFromSatoshis(order.utxo.satoshis)} BCH + {formatPusd(order.heldUnits)} PUSD
-					<button type="button" onclick={() => cancel(order)}>Cancel &amp; withdraw</button>
-				</p>
-			{:else}
-				<p class="hint">None.</p>
-			{/each}
+	<!-- My orders -->
+	{#if pp.wallet}
+		<section class="pp-card" style="margin-top: 1rem">
+			<div class="pp-card-head"><h2>My orders</h2><span class="small muted">Balances: {formatSats(pp.balances.bchSats)} BCH · {formatUnits(pp.balances.pusdUnits)} PUSD</span></div>
+			<div class="pp-table-wrap">
+				<table class="pp-table">
+					<thead><tr><th>Side</th><th>BPS</th><th class="r">Limit now</th><th class="r">Remaining</th><th class="r">Proceeds</th><th>Status</th><th></th></tr></thead>
+					<tbody>
+						{#each myOrders as order (order.address)}
+							<tr>
+								<td class={order.side === 'ask' ? 'ask-c' : 'bid-c'}>{order.side === 'ask' ? 'Sell BCH' : 'Buy BCH'}</td>
+								<td>{signed(order.deltaBps)}</td>
+								<td class="r">{price ? formatPrice(limitPrice(price, order.deltaBps)) : '—'}</td>
+								<td class="r">{order.side === 'ask' ? `${formatSats(order.availableSats)} BCH` : `${formatUnits(order.availableUnits)} PUSD`}</td>
+								<td class="r">{order.side === 'ask' ? `${formatUnits(order.proceeds)} PUSD` : `${formatSats(order.proceeds)} BCH`}</td>
+								<td>
+									<span class="pp-badge {order.exhausted ? 'plain' : 'ok'}">{order.exhausted ? 'Filled' : 'Open'}</span>
+									{#if (order.utxo.height ?? 0) <= 0}<span class="pp-badge warn">unconfirmed</span>{/if}
+								</td>
+								<td class="r"><button class="pp-btn pp-btn-sm" type="button" onclick={() => cancel(order)}>{order.exhausted ? 'Withdraw' : 'Cancel'}</button></td>
+							</tr>
+						{:else}
+							<tr><td colspan="7" class="muted small">You have no orders on this market.</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
 		</section>
 	{/if}
 
-	<section class="panel">
-		<h2>Transaction history (this browser)</h2>
-		{#each history as record (record.txid)}
-			<p><strong>{record.kind}</strong> <code>{short(record.txid)}</code> — {record.status} · {new Date(record.at).toLocaleString()}<br /><small>{record.summary[0]}</small></p>
-		{:else}
-			<p class="hint">No transactions yet.</p>
-		{/each}
-	</section>
+	<!-- Activity -->
+	<div class="pp-grid-2" style="margin-top: 1rem">
+		<section class="pp-card">
+			<h2>Your transactions</h2>
+			{#each pp.history.slice(0, 8) as record (record.txid)}
+				<div class="tx">
+					<span class="pp-badge {record.status === 'confirmed' ? 'ok' : record.status === 'broadcast' ? 'warn' : 'plain'}">{record.status}</span>
+					<span class="grow"><strong>{record.kind}</strong><br /><span class="small muted">{record.summary[0]}</span></span>
+					<a class="small" href={explorerTx(record.txid)} target="_blank" rel="noopener">{record.txid.slice(0, 8)}… ↗</a>
+				</div>
+			{:else}
+				<p class="small muted">Nothing yet. Transactions you broadcast from this browser appear here.</p>
+			{/each}
+		</section>
+		<section class="pp-card">
+			<h2>Market fills</h2>
+			{#each (pp.discovery?.fills ?? []).slice(0, 8) as fill (fill.txid)}
+				<div class="tx">
+					<span class="pp-badge {fill.height > 0 ? 'ok' : 'warn'}">{fill.height > 0 ? `block ${fill.height}` : 'mempool'}</span>
+					<span class="grow mono small">{fill.txid}</span>
+					<a class="small" href={explorerTx(fill.txid)} target="_blank" rel="noopener">↗</a>
+				</div>
+			{:else}
+				<p class="small muted">No fills observed on this market yet.</p>
+			{/each}
+		</section>
+	</div>
 </main>
 
 <style>
-	main { max-width: 72rem; margin: 0 auto; padding: 1rem; }
-	header nav { font-size: 0.9rem; }
-	.notice { background: #fff4d6; border-left: 4px solid #c08a1e; padding: 0.75rem; }
-	.panel { border: 1px solid #ddd; border-radius: 0.5rem; padding: 0.75rem 1rem; margin: 0.75rem 0; background: #fff; }
-	.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 0 1rem; }
-	.book { display: grid; grid-template-columns: repeat(auto-fit, minmax(28rem, 1fr)); gap: 1rem; overflow-x: auto; }
-	table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-	th, td { text-align: left; padding: 0.25rem 0.4rem; border-bottom: 1px solid #eee; }
-	tr.mine { background: #eef6ff; }
-	.qty { width: 5rem; }
-	.big { font-size: 1.8rem; margin: 0.25rem 0; }
-	.stale { color: #a35200; font-weight: 600; }
-	.hint { font-size: 0.85rem; color: #555; }
-	.error { color: #a00; }
-	label { display: block; margin: 0.3rem 0; }
-	code { word-break: break-all; }
+	.market { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-bottom: 1rem; }
+	.pair { margin-right: auto; }
+	.pair h1 { font-size: 1.5rem; }
+	.m-stat { min-width: 7rem; }
+	.m-stat .pp-stat-value { font-size: 1.4rem; }
+	.main-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 1fr); gap: 1rem; align-items: start; }
+	@media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+	.trade { position: sticky; top: 7rem; }
+	@media (max-width: 900px) { .trade { position: static; } }
+	.form { margin-top: 0.9rem; }
+	.chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+	.chips .sel { border-color: var(--pp-accent); color: var(--pp-accent); }
+	.calc { border: 1px solid var(--pp-border); border-radius: var(--pp-radius-sm); padding: 0.6rem 0.75rem; background: var(--pp-surface-2); font-size: 0.9rem; }
+	.calc > div { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.15rem 0; }
+	.calc .lim { border-top: 1px dashed var(--pp-border-strong); border-bottom: 1px dashed var(--pp-border-strong); margin: 0.25rem 0; padding: 0.35rem 0; }
+	.ask-c { color: var(--pp-ask); }
+	.bid-c { color: var(--pp-bid); }
+	tr.ask-row td:first-child { box-shadow: inset 3px 0 0 var(--pp-ask-soft); }
+	tr.bid-row td:first-child { box-shadow: inset 3px 0 0 var(--pp-bid-soft); }
+	tr.mine { background: var(--pp-accent-soft); }
+	tr.ref-row td { background: var(--pp-surface-2); text-align: center; padding: 0.55rem; }
+	.tx { display: flex; gap: 0.6rem; align-items: center; padding: 0.45rem 0; border-bottom: 1px solid var(--pp-border); }
+	.tx:last-child { border-bottom: 0; }
+	.grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 </style>

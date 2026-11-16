@@ -28,6 +28,7 @@
 	import { createPusdBcmrDraft, type PusdBcmrDraft } from '$lib/pennypicker/bcmrDraft';
 	import { getAddressHistoryCount, getAddressUtxos } from '$lib/pennypicker/chain';
 	import { balancesOf, type Balances } from '$lib/pennypicker/ui/wallet';
+	import { pp, explorerTx } from '$lib/pennypicker/ui/session.svelte';
 	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
 	import { PUSD_CATEGORY_STORAGE_KEY as PUSD_KEY_FOR_BALANCE } from '$lib/pennypicker/pusdGenesis';
 
@@ -177,6 +178,7 @@
 			}
 			selfTransferBroadcastTxid = txid;
 			selfTransferStatus = 'Broadcast accepted. Wait for confirmation, then check for BCH-only output 0.';
+			pp.recordBroadcast(txid, { kind: 'self-transfer', summary: ['BCH-only self-transfer creating a vout-0 genesis input'] });
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : String(cause);
 		} finally {
@@ -279,6 +281,7 @@
 			}
 			broadcastTxid = txid;
 			outputStatus = 'Broadcast accepted by the Chipnet provider; confirmation and token UTXO verification are still pending.';
+			pp.recordBroadcast(txid, { kind: 'pusd-genesis', summary: ['PUSD fixed-supply genesis'] });
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : String(cause);
 		} finally {
@@ -308,6 +311,7 @@
 				outputStatus = 'No PUSD output is indexed yet. The transaction may still be propagating, or it may not have been accepted.';
 			} else if (created.some((utxo) => (utxo.height ?? -1) > 0)) {
 				localStorage.setItem(PUSD_CATEGORY_STORAGE_KEY, genesis.candidateCategory);
+				pp.reloadConfig();
 				bcmrDraft = createPusdBcmrDraft(genesis.candidateCategory);
 				outputStatus = `Confirmed PUSD UTXO found: ${created.map((utxo) => `${broadcastTxid}:${utxo.vout} (${utxo.token!.amount.toString()} base units, ${utxo.satoshis.toString()} sats)`).join(', ')}.`;
 			} else {
@@ -333,169 +337,209 @@
 		URL.revokeObjectURL(url);
 	}
 
+
+	// Adopt the shared Cashonize session (from the app header) without a separate load step.
+	$effect(() => {
+		const w = pp.wallet;
+		if (w && session?.topic !== w.session.topic) {
+			client = w.client;
+			session = w.session;
+			addresses = [w.address];
+			selectedAddress = w.address;
+			void loadBalances();
+		}
+	});
+
+	const pusdCategory = $derived(pp.config.pusdCategory);
+	const pusdUtxos = $derived(pp.utxos.filter((u) => pusdCategory && u.token?.category === pusdCategory));
+	const genesisComplete = $derived(!!pusdCategory && (pusdUtxos.some((u) => (u.height ?? 0) > 0) || pp.balances.pusdUnits > 0n || (pp.discovery?.orders.some((o) => o.heldUnits > 0n) ?? false)));
+
+	function prepareBcmrFromConfig() {
+		if (pusdCategory) bcmrDraft = createPusdBcmrDraft(pusdCategory);
+	}
 </script>
 
 <svelte:head>
-	<title>Prepare PUSD Genesis | PennyPicker</title>
-	<meta name="description" content="Prepare a fixed-supply PUSD CashToken genesis transaction on BCH Chipnet." />
+	<title>Token · PennyPicker</title>
+	<meta name="description" content="PennyPicker USD (PUSD): fixed-supply experimental CashToken on BCH Chipnet." />
 </svelte:head>
 
-<main>
-	<p><a href="/penny-picker">← BCH/PUSD market</a></p>
-	<h1>Prepare the PUSD Chipnet token</h1>
-	<p class="warning"><strong>Experimental token; no USD backing or promised peg.</strong> PennyPicker's PUSD is separate from ParyonUSD, which also uses the PUSD ticker on BCH. Confirm the exact category before sending or trading any PUSD. This flow uses BCH Chipnet. Preparing is read-only apart from fetching public UTXOs. Signing opens Cashonize only after you press the signing button. Broadcasting is a separate action.</p>
+<main class="pp-container">
+	<div class="pp-page-head">
+		<div>
+			<h1>PUSD token</h1>
+			<p>PennyPicker USD is a fixed-supply CashToken for testing on Chipnet. It is <strong>not</strong> backed by USD and has no peg. The ticker is also used by ParyonUSD, so always identify the token by its category.</p>
+		</div>
+		<span class="pp-badge {genesisComplete ? 'ok' : pusdCategory ? 'warn' : 'plain'}">{genesisComplete ? 'Deployed on Chipnet' : pusdCategory ? 'Category set, not yet seen' : 'Not deployed'}</span>
+	</div>
 
-	<section>
-		<h2>Token specification</h2>
-		<dl>
-			<dt>Name</dt><dd>{PUSD_NAME}</dd>
-			<dt>Symbol</dt><dd>{PUSD_SYMBOL}</dd>
-			<dt>Initial supply</dt><dd>{PUSD_INITIAL_SUPPLY.toLocaleString()} PUSD</dd>
-			<dt>Decimals</dt><dd>{PUSD_DECIMALS}</dd>
-			<dt>Minting baton</dt><dd>None; fixed supply</dd>
-			<dt>Network</dt><dd>BCH Chipnet (<code>{CHIPNET_CHAIN}</code>)</dd>
-		</dl>
-	</section>
+	<div class="pp-grid-2">
+		<!-- 1. Token information -->
+		<section class="pp-card">
+			<h2>Token</h2>
+			<dl class="pp-kv">
+				<dt>Name</dt><dd>{PUSD_NAME} ({PUSD_SYMBOL})</dd>
+				<dt>Supply</dt><dd>{PUSD_INITIAL_SUPPLY.toLocaleString()} PUSD, fixed (no minting baton, no NFTs)</dd>
+				<dt>Decimals</dt><dd>{PUSD_DECIMALS} (1 PUSD = 100 base units)</dd>
+				<dt>Network</dt><dd>BCH Chipnet</dd>
+				<dt>Category</dt><dd class="mono">{pusdCategory ?? '—'}</dd>
+			</dl>
+			{#if pusdUtxos.length}
+				<details class="pp-details" style="margin-top: 0.75rem">
+					<summary>PUSD outputs in your wallet ({pusdUtxos.length})</summary>
+					{#each pusdUtxos as u (u.txid + u.vout)}
+						<p class="small mono"><a href={explorerTx(u.txid)} target="_blank" rel="noopener">{u.txid.slice(0, 16)}…:{u.vout} ↗</a> · {formatPusd(u.token!.amount)} PUSD · {(u.height ?? 0) > 0 ? 'confirmed' : 'pending'}</p>
+					{/each}
+				</details>
+			{/if}
+		</section>
 
-	<section>
-		<h2>1. Connect the existing Cashonize session</h2>
-		<p>Use the <a href="/cashonize">Cashonize connection page</a> first if no session is active. The market app creates a watch-only reader from the public address; Vox never loads wallet keys.</p>
-		<button type="button" onclick={loadConnectedWallet} disabled={busy}>Load connected Cashonize address</button>
-		{#if addresses.length}
-			<label>Public Chipnet address
-				<select bind:value={selectedAddress} disabled={busy} onchange={loadBalances}>
-					{#each addresses as address (address)}<option value={address}>{address}</option>{/each}
-				</select>
-			</label>
-		{/if}
-		{#if selectedAddress}
-			<div class="balances">
-				<h3>Chipnet balance (from Electrum, watch-only)</h3>
-				<p>Address queried: <code>{balanceAddress || selectedAddress}</code>{balanceCheckedAt ? ` · checked ${balanceCheckedAt}` : ''}</p>
+		<!-- 2–4. Wallet, balances, UTXO info -->
+		<section class="pp-card">
+			<div class="pp-card-head">
+				<h2>Your wallet</h2>
+				{#if selectedAddress}<button class="pp-btn pp-btn-sm" type="button" onclick={() => { void loadBalances(); void pp.refreshWallet(); }} disabled={balanceLoading}>{balanceLoading ? 'Refreshing…' : 'Refresh'}</button>{/if}
+			</div>
+			{#if !selectedAddress}
+				<p class="muted">Connect Cashonize to see balances and use the tools below.</p>
+				<div class="pp-row">
+					<a class="pp-btn pp-btn-primary" href="/penny-picker/wallet">Connect wallet</a>
+					<button class="pp-btn pp-btn-ghost" type="button" onclick={loadConnectedWallet} disabled={busy}>Use existing session</button>
+				</div>
+			{:else}
 				{#if balances}
-					<dl>
-						<dt>BCH-only UTXOs</dt><dd>{formatBchFromSatoshis(balances.bchSats)} BCH in {balances.bchUtxoCount} UTXO(s) ({formatBchFromSatoshis(balances.bchSats - balances.bchConfirmedSats)} pending)</dd>
-						<dt>Token-bearing UTXOs</dt><dd>{balances.tokenUtxoCount} UTXO(s) carrying {formatBchFromSatoshis(balances.tokenUtxoSats)} BCH (not counted as spendable BCH)</dd>
-						<dt>PUSD</dt><dd>{formatPusd(balances.pusdUnits)} ({formatPusd(balances.pusdUnits - balances.pusdConfirmedUnits)} pending){balances.pusdUnits === 0n ? ' — PUSD category not set or none held' : ''}</dd>
-						<dt>Transactions seen</dt><dd>{historyCount ?? '—'}</dd>
-					</dl>
+					<div class="pp-grid-2 bal">
+						<div><div class="pp-stat-label">BCH</div><div class="pp-stat-value">{formatBchFromSatoshis(balances.bchSats)}</div><div class="small muted">{balances.bchUtxoCount} BCH-only UTXO(s) · {formatBchFromSatoshis(balances.bchSats - balances.bchConfirmedSats)} pending</div></div>
+						<div><div class="pp-stat-label">PUSD</div><div class="pp-stat-value">{formatPusd(balances.pusdUnits)}</div><div class="small muted">{formatPusd(balances.pusdUnits - balances.pusdConfirmedUnits)} pending</div></div>
+					</div>
+					<p class="small muted" style="margin-top: 0.5rem">{balances.tokenUtxoCount} token UTXO(s) carry {formatBchFromSatoshis(balances.tokenUtxoSats)} BCH, which is not counted as spendable BCH.</p>
 					{#if historyCount === 0}
-						<p class="warning">Chipnet Electrum has never seen a transaction for this address. If Cashonize shows a tBCH balance, it is held at a different address (or wallet) than the one Cashonize shared over WalletConnect. Compare this address with Cashonize's receive address.</p>
+						<p class="pp-callout warn small">Chipnet has never seen a transaction for this address. If Cashonize shows a balance, it belongs to a different address or wallet.</p>
 					{/if}
+				{:else}
+					<p class="muted">Loading balances…</p>
 				{/if}
-				<button type="button" onclick={loadBalances} disabled={balanceLoading}>{balanceLoading ? 'Refreshing…' : 'Refresh balance'}</button>
-				{#if balanceError}<p class="error">Balance query failed: {balanceError}</p>{/if}
+				<details class="pp-details" style="margin-top: 0.6rem">
+					<summary>Address details</summary>
+					<dl class="pp-kv">
+						<dt>Address</dt><dd class="mono">{balanceAddress || selectedAddress}</dd>
+						<dt>Transactions</dt><dd>{historyCount ?? '—'}</dd>
+						<dt>Checked</dt><dd>{balanceCheckedAt || '—'}</dd>
+						<dt>Genesis input</dt><dd>{pp.genesisReadyUtxo ? `${pp.genesisReadyUtxo.txid.slice(0, 16)}…:0 (confirmed, BCH-only)` : 'none'}</dd>
+					</dl>
+					{#if addresses.length > 1}
+						<label class="pp-field"><span>Address</span><select class="pp-input" bind:value={selectedAddress} disabled={busy} onchange={loadBalances}>{#each addresses as address (address)}<option value={address}>{address}</option>{/each}</select></label>
+					{/if}
+				</details>
+				{#if balanceError}<p class="pp-error">Balance query failed: {balanceError}</p>{/if}
+			{/if}
+		</section>
+	</div>
+
+	<!-- 5. Genesis status -->
+	<section class="pp-card" style="margin-top: 1rem">
+		<div class="pp-card-head">
+			<h2>Genesis</h2>
+			<span class="pp-badge {genesisComplete ? 'ok' : 'warn'}">{genesisComplete ? 'Complete' : 'Pending'}</span>
+		</div>
+		{#if genesisComplete}
+			<p class="pp-callout ok small">The PUSD category is set and PUSD outputs are visible on Chipnet. Nothing more is needed here.</p>
+			<details class="pp-details" style="margin-top: 0.6rem">
+				<summary>Token metadata (BCMR draft)</summary>
+				<p class="small muted">A local BCMR-v2 file for wallets, marked experimental. It is not published or authenticated.</p>
+				{#if bcmrDraft}
+					<p class="small">SHA-256: <span class="mono">{bcmrDraft.sha256Hex}</span></p>
+					<button class="pp-btn pp-btn-sm" type="button" onclick={downloadBcmrDraft}>Download JSON</button>
+				{:else}
+					<button class="pp-btn pp-btn-sm" type="button" onclick={prepareBcmrFromConfig}>Prepare draft</button>
+				{/if}
+			</details>
+		{:else}
+			<p class="small muted">Creates exactly {PUSD_INITIAL_SUPPLY.toLocaleString()} PUSD ({PUSD_INITIAL_AMOUNT.toString()} base units) with no minting baton. It spends a confirmed BCH-only output at index 0; the category ID becomes that output's transaction ID.</p>
+			<button class="pp-btn pp-btn-primary" type="button" onclick={prepareGenesis} disabled={busy || !selectedAddress}>Prepare genesis</button>
+		{/if}
+
+		{#if genesis}
+			<div class="flow">
+				<h3>6. Transaction preview <span class="pp-badge plain">unsigned</span></h3>
+				<dl class="pp-kv">
+					<dt>Genesis input</dt><dd class="mono">{genesis.genesisInput.txid}:0 · {genesis.genesisInput.satoshis.toString()} sats</dd>
+					<dt>Candidate category</dt><dd class="mono">{genesis.candidateCategory}</dd>
+					<dt>Token output</dt><dd>{PUSD_INITIAL_SUPPLY.toString()} PUSD · {PUSD_TOKEN_OUTPUT_SATOSHIS.toString()} sats · no NFT, no minting baton</dd>
+					<dt>Fee</dt><dd>{genesis.feeSatoshis.toString()} sats · {genesis.outputCount} outputs</dd>
+				</dl>
+				<label class="confirm"><input type="checkbox" bind:checked={autoApproveConfirmed} /> I will check the inputs, outputs and fee in Cashonize before approving.</label>
+				<button class="pp-btn pp-btn-primary" type="button" onclick={requestSignature} disabled={busy || !autoApproveConfirmed}>Sign in Cashonize (no broadcast)</button>
 			</div>
 		{/if}
-		<button type="button" onclick={prepareGenesis} disabled={busy || !selectedAddress}>Prepare unsigned genesis</button>
+		{#if signedTransaction}
+			<div class="flow">
+				<h3>7. Signature <span class="pp-badge ok">signed · matches preview</span></h3>
+				<p class="small mono">{signedTransactionHash}</p>
+				<button class="pp-btn pp-btn-danger" type="button" onclick={broadcastGenesis} disabled={busy || !!broadcastTxid}>Broadcast PUSD genesis to Chipnet</button>
+			</div>
+		{/if}
+		{#if broadcastTxid}
+			<div class="flow">
+				<h3>8. Broadcast <span class="pp-badge warn">sent</span></h3>
+				<p class="small"><a href={explorerTx(broadcastTxid)} target="_blank" rel="noopener">{broadcastTxid} ↗</a></p>
+				<button class="pp-btn pp-btn-sm" type="button" onclick={verifyOutput} disabled={busy}>Check PUSD output &amp; confirmation</button>
+				{#if outputStatus}<p class="small" role="status">{outputStatus}</p>{/if}
+				{#if bcmrDraft && !genesisComplete}<button class="pp-btn pp-btn-sm" type="button" onclick={downloadBcmrDraft}>Download BCMR draft</button>{/if}
+			</div>
+		{/if}
 	</section>
 
-	<section>
-		<h2>Optional prerequisite: create a BCH-only vout 0</h2>
-		<p>CashTokens genesis requires spending a transaction output at index 0. If this address has no confirmed BCH-only vout 0, prepare a one-input self-transfer first. It returns the selected BCH-only UTXO to this same address as its only output. Preparation is unsigned; Cashonize signing and broadcasting each require a separate action.</p>
-		<button type="button" onclick={prepareSelfTransfer} disabled={busy || !selectedAddress}>Prepare unsigned vout-0 self-transfer</button>
+	<!-- Genesis-input tool -->
+	<section class="pp-card" style="margin-top: 1rem">
+		<div class="pp-card-head">
+			<h2>Genesis input (vout 0)</h2>
+			<span class="pp-badge {pp.genesisReadyUtxo ? 'ok' : 'plain'}">{pp.genesisReadyUtxo ? 'Ready' : 'None available'}</span>
+		</div>
+		<p class="small muted">Any CashToken genesis, including PUSD and the oracle, must spend an output at index 0. This tool sends one confirmed BCH-only UTXO back to your own address as the only output, so it lands at index 0. You pay only the network fee.</p>
+		{#if pp.genesisReadyUtxo}
+			<p class="small">Ready: <span class="mono">{pp.genesisReadyUtxo.txid}:0</span> ({formatBchFromSatoshis(pp.genesisReadyUtxo.satoshis)} BCH, confirmed).</p>
+		{:else}
+			<button class="pp-btn" type="button" onclick={prepareSelfTransfer} disabled={busy || !selectedAddress}>Prepare self-transfer</button>
+		{/if}
+		{#if selfTransfer}
+			<div class="flow">
+				<h3>Preview <span class="pp-badge plain">unsigned</span></h3>
+				<dl class="pp-kv">
+					<dt>Spends</dt><dd class="mono">{selfTransfer.input.txid}:{selfTransfer.input.vout} · {selfTransfer.input.satoshis.toString()} sats</dd>
+					<dt>Creates</dt><dd>vout 0 · {selfTransfer.outputSatoshis.toString()} sats · back to your address</dd>
+					<dt>Fee</dt><dd>{selfTransfer.feeSatoshis.toString()} sats</dd>
+				</dl>
+				<label class="confirm"><input type="checkbox" bind:checked={selfTransferReviewConfirmed} /> I will check the source, destination and fee in Cashonize before approving.</label>
+				<button class="pp-btn pp-btn-primary" type="button" onclick={requestSelfTransferSignature} disabled={busy || !selfTransferReviewConfirmed}>Sign in Cashonize (no broadcast)</button>
+			</div>
+		{/if}
+		{#if selfTransferSignedTransaction}
+			<div class="flow">
+				<h3>Signed <span class="pp-badge ok">matches preview</span></h3>
+				<p class="small mono">{selfTransferSignedHash}</p>
+				<button class="pp-btn pp-btn-danger" type="button" onclick={broadcastSelfTransfer} disabled={busy || !!selfTransferBroadcastTxid}>Broadcast self-transfer</button>
+			</div>
+		{/if}
+		{#if selfTransferBroadcastTxid}
+			<div class="flow">
+				<h3>Broadcast</h3>
+				<p class="small"><a href={explorerTx(selfTransferBroadcastTxid)} target="_blank" rel="noopener">{selfTransferBroadcastTxid} ↗</a></p>
+				<button class="pp-btn pp-btn-sm" type="button" onclick={verifySelfTransferOutput} disabled={busy}>Check vout 0 &amp; confirmation</button>
+				{#if selfTransferStatus}<p class="small" role="status">{selfTransferStatus}</p>{/if}
+			</div>
+		{/if}
 	</section>
 
-	{#if selfTransfer}
-		<section class="preview">
-			<h2>Unsigned BCH-only self-transfer</h2>
-			<dl>
-				<dt>Input</dt><dd><code>{selfTransfer.input.txid}:{selfTransfer.input.vout}</code> · {selfTransfer.input.satoshis.toString()} sats · confirmed BCH only</dd>
-				<dt>Output</dt><dd>vout 0 · {selfTransfer.outputSatoshis.toString()} sats · same Cashonize Chipnet address</dd>
-				<dt>Estimated miner fee</dt><dd>{selfTransfer.feeSatoshis.toString()} sats</dd>
-			</dl>
-			<label class="checkbox"><input type="checkbox" bind:checked={selfTransferReviewConfirmed} /> Automatic approval is disabled in Cashonize; I will verify the source UTXO, vout 0 destination and fee in Cashonize before approving.</label>
-			<button type="button" onclick={requestSelfTransferSignature} disabled={busy || !selfTransferReviewConfirmed}>Request Cashonize signature (no broadcast)</button>
-		</section>
-	{/if}
-
-	{#if selfTransferSignedTransaction}
-		<section class="preview">
-			<h2>Self-transfer signed, not broadcast</h2>
-			<p>Cashonize returned a signed transaction. Its input and sole BCH-only output match the preview; it has not been broadcast. Transaction ID: <code>{selfTransferSignedHash}</code></p>
-			<button class="broadcast" type="button" onclick={broadcastSelfTransfer} disabled={busy}>Broadcast self-transfer to Chipnet</button>
-		</section>
-	{/if}
-
-	{#if selfTransferBroadcastTxid}
-		<section>
-			<h2>Self-transfer status</h2>
-			<p>Provider accepted transaction: <code>{selfTransferBroadcastTxid}</code></p>
-			<button type="button" onclick={verifySelfTransferOutput} disabled={busy}>Check BCH-only vout 0 and confirmation</button>
-			<p role="status">{selfTransferStatus}</p>
-		</section>
-	{/if}
-
-	{#if genesis}
-		<section class="preview">
-			<h2>Unsigned transaction preview</h2>
-			<p>This is prepared but unsigned. Category below is only a candidate derived from the genesis input; it does not exist as a deployed token until the transaction is confirmed.</p>
-			<dl>
-				<dt>Genesis input</dt><dd><code>{genesis.genesisInput.txid}:0</code> · {genesis.genesisInput.satoshis.toString()} satoshis · BCH only</dd>
-				<dt>Candidate category</dt><dd><code>{genesis.candidateCategory}</code></dd>
-				<dt>Token output</dt><dd>{PUSD_INITIAL_SUPPLY.toString()} PUSD · {PUSD_TOKEN_OUTPUT_SATOSHIS.toString()} satoshis · no NFT/minting baton</dd>
-				<dt>Estimated transaction fee</dt><dd>{genesis.feeSatoshis.toString()} satoshis</dd>
-				<dt>Transaction outputs</dt><dd>{genesis.outputCount}</dd>
-			</dl>
-			<p class="caution">Review all inputs, outputs, fees and network in Cashonize. Do not sign if the wallet preview differs from this summary.</p>
-			<label class="checkbox"><input type="checkbox" bind:checked={autoApproveConfirmed} /> Automatic approval is disabled in Cashonize; I will verify all inputs, outputs and fees in Cashonize before approving.</label>
-			<button type="button" onclick={requestSignature} disabled={busy || !autoApproveConfirmed}>Request Cashonize signature (no broadcast)</button>
-		</section>
-	{/if}
-
-	{#if signedTransaction}
-		<section class="preview">
-			<h2>Signed, not broadcast</h2>
-			<p>Cashonize returned a signed transaction. The app checked that all outpoints and outputs still match the unsigned preview. It has not been broadcast.</p>
-			<p>Transaction ID: <code>{signedTransactionHash}</code></p>
-			<button class="broadcast" type="button" onclick={broadcastGenesis} disabled={busy}>Broadcast PUSD genesis to Chipnet</button>
-		</section>
-	{/if}
-
-	{#if broadcastTxid}
-		<section>
-			<h2>Broadcast status</h2>
-			<p>Provider accepted transaction: <code>{broadcastTxid}</code></p>
-			<button type="button" onclick={verifyOutput} disabled={busy}>Check PUSD UTXO and confirmation</button>
-			<p role="status">{outputStatus}</p>
-		</section>
-	{/if}
-
-	{#if bcmrDraft}
-		<section class="preview">
-			<h2>BCMR metadata draft</h2>
-			<p>A confirmed PUSD category was found, so PennyPicker prepared a BCMR-v2 JSON file for that category. This local draft is not published or authenticated; wallets will not discover it automatically.</p>
-			<p>SHA-256 of the exact downloaded bytes: <code>{bcmrDraft.sha256Hex}</code></p>
-			<button type="button" onclick={downloadBcmrDraft}>Download BCMR JSON draft</button>
-		</section>
-	{/if}
-
-	{#if currentOperation}<p role="status">{currentOperation}</p>{/if}
-	{#if error}<p class="error" role="alert">{error}</p>{/if}
-
-	<section class="next">
-		<h2>After genesis</h2>
-		<p>The metadata draft is for review or manual import. Public publication still requires hosting the exact JSON bytes and choosing an authenticated registry identity/authchain; this app does not upload or publish it. Genesis does not create or publish an exchange order.</p>
-	</section>
+	{#if currentOperation}<p class="pp-callout small" role="status">{currentOperation}</p>{/if}
+	{#if error}<p class="pp-callout bad" role="alert">{error}</p>{/if}
+	<p class="small faint" style="margin-top: 1rem">Network {CHIPNET_CHAIN}. Preparing only reads public UTXOs. Signing opens Cashonize, and broadcasting is always a separate button.</p>
 </main>
 
 <style>
-	main { max-width: 55rem; margin: 0 auto; padding: 1.25rem; }
-	h1 { font-size: clamp(1.8rem, 4vw, 2.5rem); }
-	section { margin: 1rem 0; padding: 1rem; background: #ffffffd4; border-radius: 0.65rem; }
-	.warning, .caution { background: #fff2d7; border-left: 4px solid #bc7610; padding: 0.8rem; }
-	.caution { border-color: #a11212; }
-	dl { display: grid; grid-template-columns: minmax(9rem, 0.35fr) 1fr; gap: 0.55rem 1rem; }
-	dt { font-weight: 700; }
-	dd { margin: 0; overflow-wrap: anywhere; }
-	button, select { min-height: 2.6rem; padding: 0.5rem 0.8rem; margin: 0.35rem 0.5rem 0.35rem 0; font: inherit; }
-	button { cursor: pointer; }
-	button:disabled { cursor: not-allowed; opacity: 0.55; }
-	label { display: block; margin: 0.8rem 0; }
-	.checkbox { display: flex; align-items: flex-start; gap: 0.5rem; }
-	.checkbox input { margin-top: 0.3rem; }
-	.broadcast { background: #8a291f; color: white; border: 0; border-radius: 0.35rem; }
-	.preview { border: 2px solid #a66b17; }
-	.error { color: #a11212; }
-	.next { opacity: 0.9; }
+	.bal { gap: 0.5rem; }
+	.flow { margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed var(--pp-border-strong); }
+	.flow h3 { margin-bottom: 0.5rem; display: flex; gap: 0.5rem; align-items: center; }
+	.confirm { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.65rem 0; font-size: 0.9rem; }
+	.confirm input { margin-top: 0.25rem; }
 </style>

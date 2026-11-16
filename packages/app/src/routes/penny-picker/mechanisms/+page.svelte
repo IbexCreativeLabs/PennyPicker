@@ -1,187 +1,164 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { discoverOrders, getOracleState, isCompleteMarket, loadMarketConfig } from '$lib/pennypicker/chain';
+	import { pp } from '$lib/pennypicker/ui/session.svelte';
 	import { quoteLiquidation, quoteRedemption, type BookOffer } from '$lib/pennypicker/mechanisms';
-	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
-	import { errorText, formatPusdPerBch, parseBch, parsePusd, rateFromPusdPerBch } from '$lib/pennypicker/ui/wallet';
+	import { formatPrice, parsePrice } from '$lib/pennypicker/contracts';
+	import { formatSats, formatUnits } from '$lib/pennypicker/exchange';
+	import { errorText, parseBch, parsePusd } from '$lib/pennypicker/ui/wallet';
 
-	// Illustrative book used when no Chipnet market is configured.
+	// Illustrative book used when the live market has no orders yet.
 	const demoBook: BookOffer[] = [
-		{ id: 'demo-ask-40', side: 'sell-pusd', deltaBps: 40, remainingUnits: 10_000n },
-		{ id: 'demo-ask-150', side: 'sell-pusd', deltaBps: 150, remainingUnits: 20_000n },
-		{ id: 'demo-ask-400', side: 'sell-pusd', deltaBps: 400, remainingUnits: 50_000n },
-		{ id: 'demo-bid-30', side: 'buy-pusd', deltaBps: -30, remainingUnits: 5_000n, escrowSats: 30_000_000n },
-		{ id: 'demo-bid-120', side: 'buy-pusd', deltaBps: -120, remainingUnits: 50_000n, escrowSats: 500_000_000n }
+		{ id: 'demo bid −40', side: 'bid', deltaBps: -40, availableUnits: 5_000n },
+		{ id: 'demo bid −150', side: 'bid', deltaBps: -150, availableUnits: 20_000n },
+		{ id: 'demo bid −400', side: 'bid', deltaBps: -400, availableUnits: 50_000n },
+		{ id: 'demo ask +30', side: 'ask', deltaBps: 30, availableSats: 3_000_000n },
+		{ id: 'demo ask +120', side: 'ask', deltaBps: 120, availableSats: 50_000_000n }
 	];
 
-	let book = $state<BookOffer[]>(demoBook);
-	let bookSource = $state('Illustrative demo book (no Chipnet market configured).');
-	let priceInput = $state('500.00');
-	let error = $state('');
+	let useDemo = $state(false);
+	let priceOverride = $state('');
+
+	const liveBook = $derived<BookOffer[]>(
+		(pp.discovery?.orders ?? [])
+			.filter((o) => !o.exhausted)
+			.map((o) => ({ id: `${o.side} ${o.deltaBps > 0 ? '+' : ''}${o.deltaBps} · ${o.address.slice(9, 17)}`, side: o.side, deltaBps: o.deltaBps, availableSats: o.availableSats, availableUnits: o.availableUnits }))
+	);
+	const book = $derived(useDemo || liveBook.length === 0 ? demoBook : liveBook);
+	const usingLive = $derived(!useDemo && liveBook.length > 0);
+	const price = $derived.by(() => {
+		try {
+			return priceOverride.trim() ? parsePrice(priceOverride) : (pp.price ?? 500n * 100_000_000n);
+		} catch {
+			return pp.price ?? 500n * 100_000_000n;
+		}
+	});
 
 	let collateralInput = $state('0.25');
 	let debtInput = $state('110.00');
 	let minRatioInput = $state('150');
 	let fixedPenaltyInput = $state('10');
-
 	let redeemInput = $state('100.00');
 	let fixedFeeInput = $state('0.5');
-
-	onMount(async () => {
-		const config = loadMarketConfig();
-		if (!isCompleteMarket(config)) return;
-		try {
-			const oracle = await getOracleState(config);
-			if (oracle) priceInput = formatPusdPerBch(oracle.state.rateSatsPerPusdScaled);
-			const { orders } = await discoverOrders(config);
-			book = orders.map((o) => ({
-				id: o.address,
-				side: o.side,
-				deltaBps: o.deltaBps,
-				remainingUnits: o.remainingUnits,
-				escrowSats: o.side === 'buy-pusd' ? o.utxo.satoshis : undefined
-			}));
-			bookSource = `Live Chipnet orderbook (${orders.length} open orders) and on-chain reference.`;
-		} catch (cause) {
-			error = `Could not load the live book: ${errorText(cause)}. Using the demo book.`;
-		}
-	});
 
 	const pctToBps = (value: string) => {
 		const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
 		if (!match) throw new Error('Percent must be a number with up to 2 decimals.');
 		return BigInt(match[1]!) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
 	};
-
 	const liquidation = $derived.by(() => {
 		try {
-			const rate = rateFromPusdPerBch(priceInput);
-			return {
-				rate,
-				quote: quoteLiquidation(
-					{ collateralSats: parseBch(collateralInput), debtUnits: parsePusd(debtInput) },
-					book,
-					rate,
-					pctToBps(minRatioInput),
-					pctToBps(fixedPenaltyInput)
-				)
-			};
+			return { q: quoteLiquidation({ collateralSats: parseBch(collateralInput), debtUnits: parsePusd(debtInput) }, book, price, pctToBps(minRatioInput), pctToBps(fixedPenaltyInput)) };
 		} catch (cause) {
 			return { error: errorText(cause) };
 		}
 	});
-
 	const redemption = $derived.by(() => {
 		try {
-			const rate = rateFromPusdPerBch(priceInput);
-			return { quote: quoteRedemption(parsePusd(redeemInput), book, rate, pctToBps(fixedFeeInput)) };
+			return { q: quoteRedemption(parsePusd(redeemInput), book, price, pctToBps(fixedFeeInput)) };
 		} catch (cause) {
 			return { error: errorText(cause) };
 		}
 	});
-	const bps = (n: number | bigint) => `${Number(n) > 0 ? '+' : ''}${n} BPS`;
+	const bps = (n: number) => `${n > 0 ? '+' : ''}${n} BPS`;
 </script>
 
-<svelte:head><title>PennyPicker liquidation &amp; redemption</title></svelte:head>
+<svelte:head><title>Mechanisms · PennyPicker</title></svelte:head>
 
-<main>
-	<p><a href="/penny-picker/exchange">← Exchange</a></p>
-	<h1>Peer-to-peer liquidation &amp; market-based redemption</h1>
-	<p class="notice">
-		<strong>Design simulation.</strong> PUSD is a fixed-supply test token. No vault/CDP covenant exists, so nothing here can
-		be liquidated or redeemed on-chain. What is real: the quotes are routed through the BPS orderbook, using the same exact
-		integer settlement rules as the order covenant, so each leg is a fill the exchange could execute today.
+<main class="pp-container">
+	<div class="pp-page-head">
+		<div>
+			<h1>Liquidation &amp; redemption <span class="pp-badge warn plain">Simulation</span></h1>
+			<p>How a stablecoin system could use PennyPicker's orderbook instead of fixed penalties and fees. These are pricing designs, not deployed protocols.</p>
+		</div>
+	</div>
+
+	<p class="pp-callout warn small">
+		PUSD is a fixed-supply test token. There is no vault or debt contract, so nothing on this page can be liquidated or redeemed on-chain.
+		What <em>is</em> real: each quote is routed through the BPS orderbook with the same exact integer settlement rules as the order covenant.
 	</p>
-	<p class="hint">{bookSource}</p>
-	{#if error}<p class="error">{error}</p>{/if}
-	<label>Reference price (PUSD per BCH) <input bind:value={priceInput} size="10" /></label>
 
-	<section>
-		<h2>Liquidation: competing offers replace a fixed penalty</h2>
-		<p>
-			Each <em>ask</em> (sell-PUSD order at +BPS) is a standing offer to supply PUSD for BCH at a premium to the reference. A
-			liquidation must buy back the vault's debt, so it fills the lowest premiums first. Liquidators compete by lowering their
-			premium; the market sets the penalty. There is no protocol-chosen penalty.
-		</p>
-		<div class="form">
-			<label>Collateral (BCH) <input bind:value={collateralInput} size="10" /></label>
-			<label>Debt (PUSD) <input bind:value={debtInput} size="10" /></label>
-			<label>Minimum ratio % <input bind:value={minRatioInput} size="5" /></label>
-			<label>Fixed penalty for comparison % <input bind:value={fixedPenaltyInput} size="5" /></label>
+	<section class="pp-card controls">
+		<div class="pp-row">
+			<span class="pp-badge {usingLive ? 'ok' : 'plain'}">{usingLive ? `Live Chipnet book · ${liveBook.length} orders` : 'Illustrative demo book'}</span>
+			{#if liveBook.length > 0}<label class="small"><input type="checkbox" bind:checked={useDemo} /> use demo book</label>{/if}
 		</div>
-		{#if 'quote' in liquidation && liquidation.quote}
-			{@const q = liquidation.quote}
-			<p>
-				Collateral ratio <strong>{(Number(q.ratioBps) / 100).toFixed(2)}%</strong> —
-				{q.eligible ? 'eligible for liquidation' : 'healthy (not eligible)'}.
-			</p>
-			<table>
-				<thead><tr><th>Offer</th><th>Premium</th><th>PUSD</th><th>BCH paid</th></tr></thead>
-				<tbody>
-					{#each q.route.legs as leg}
-						<tr><td>{leg.offerId.slice(0, 24)}</td><td>{bps(leg.deltaBps)}</td><td>{formatPusd(leg.units)}</td><td>{formatBchFromSatoshis(leg.satoshis)}</td></tr>
-					{/each}
-				</tbody>
-			</table>
-			<ul>
-				<li>Market liquidation spends <strong>{formatBchFromSatoshis(q.collateralSpentSats)} BCH</strong> (effective {bps(q.route.effectiveBps)}); returns {formatBchFromSatoshis(q.collateralReturnedSats)} BCH to the owner.</li>
-				<li>Fixed {fixedPenaltyInput}% penalty would spend {formatBchFromSatoshis(q.fixedPenaltySpentSats)} BCH.</li>
-				{#if !q.fullyCovered}<li class="error">The book cannot absorb the full debt ({formatPusd(q.route.unfilledUnits)} PUSD unfilled) or collateral is insufficient — a real system needs a fallback (e.g. partial liquidation and retry).</li>{/if}
-			</ul>
-		{:else if 'error' in liquidation}
-			<p class="error">{liquidation.error}</p>
-		{/if}
+		<label class="pp-field price">
+			<span>Reference price {pp.price && !priceOverride ? '(live oracle)' : ''}</span>
+			<div class="pp-input-group"><input class="pp-input" placeholder={pp.price ? formatPrice(pp.price) : '500.00'} bind:value={priceOverride} /><span class="pp-addon">PUSD/BCH</span></div>
+		</label>
 	</section>
 
-	<section>
-		<h2>Redemption: market bids replace a base-rate fee</h2>
-		<p>
-			Each <em>bid</em> (buy-PUSD order at −BPS) is an offer to take PUSD for BCH at a discount. A redeemer sells into the
-			highest bids, limited by each bid's BCH escrow. Bidders (e.g. vault owners wanting to deleverage) compete by narrowing
-			their discount, so the redemption fee is discovered rather than set by a formula.
-		</p>
-		<div class="form">
-			<label>Redeem (PUSD) <input bind:value={redeemInput} size="10" /></label>
-			<label>Fixed fee for comparison % <input bind:value={fixedFeeInput} size="5" /></label>
-		</div>
-		{#if 'quote' in redemption && redemption.quote}
-			{@const r = redemption.quote}
-			<table>
-				<thead><tr><th>Bid</th><th>Discount</th><th>PUSD</th><th>BCH received</th></tr></thead>
-				<tbody>
-					{#each r.route.legs as leg}
-						<tr><td>{leg.offerId.slice(0, 24)}</td><td>{bps(leg.deltaBps)}</td><td>{formatPusd(leg.units)}</td><td>{formatBchFromSatoshis(leg.satoshis)}</td></tr>
-					{/each}
-				</tbody>
-			</table>
-			<ul>
-				<li>Market redemption pays <strong>{formatBchFromSatoshis(r.route.satoshis)} BCH</strong> for {formatPusd(r.route.filledUnits)} PUSD (effective {bps(r.route.effectiveBps)}).</li>
-				<li>Fixed {fixedFeeInput}% fee would pay {formatBchFromSatoshis(r.fixedFeeSats)} BCH for the full amount.</li>
-				{#if r.route.unfilledUnits > 0n}<li class="error">{formatPusd(r.route.unfilledUnits)} PUSD cannot be redeemed against current bids.</li>{/if}
-			</ul>
-		{:else if 'error' in redemption}
-			<p class="error">{redemption.error}</p>
-		{/if}
-	</section>
+	<div class="pp-grid-2" style="margin-top: 1rem">
+		<section class="pp-card">
+			<h2>Competitive liquidation</h2>
+			<p class="small muted">An under-collateralised vault must buy back its PUSD debt with BCH collateral. It sells into the <strong>bids</strong>. Every bid is a standing liquidation offer, and the smallest discount wins. The penalty is whatever liquidators compete it down to.</p>
+			<div class="pp-grid-2 form">
+				<label class="pp-field"><span>Collateral (BCH)</span><input class="pp-input" bind:value={collateralInput} /></label>
+				<label class="pp-field"><span>Debt (PUSD)</span><input class="pp-input" bind:value={debtInput} /></label>
+				<label class="pp-field"><span>Min. ratio %</span><input class="pp-input" bind:value={minRatioInput} /></label>
+				<label class="pp-field"><span>Fixed penalty % (compare)</span><input class="pp-input" bind:value={fixedPenaltyInput} /></label>
+			</div>
+			{#if 'q' in liquidation && liquidation.q}
+				{@const q = liquidation.q}
+				<p>Collateral ratio <strong>{(Number(q.ratioBps) / 100).toFixed(2)}%</strong> <span class="pp-badge {q.eligible ? 'bad' : 'ok'}">{q.eligible ? 'Liquidatable' : 'Healthy'}</span></p>
+				<div class="pp-table-wrap">
+					<table class="pp-table">
+						<thead><tr><th>Bid</th><th>Discount</th><th class="r">BCH sold</th><th class="r">PUSD bought</th></tr></thead>
+						<tbody>
+							{#each q.route.legs as leg}<tr><td class="small">{leg.offerId}</td><td>{bps(leg.deltaBps)}</td><td class="r">{formatSats(leg.sats)}</td><td class="r">{formatUnits(leg.units)}</td></tr>{/each}
+						</tbody>
+					</table>
+				</div>
+				<div class="compare">
+					<div><span class="muted">Market liquidation</span><strong class="num">{formatSats(q.collateralSpentSats)} BCH</strong><span class="small muted">effective {bps(q.route.effectiveBps)}</span></div>
+					<div><span class="muted">Fixed {fixedPenaltyInput}% penalty</span><strong class="num">{formatSats(q.fixedPenaltySpentSats)} BCH</strong><span class="small muted">protocol-set</span></div>
+				</div>
+				<p class="small">Owner keeps {formatSats(q.collateralReturnedSats)} BCH.</p>
+				{#if !q.fullyCovered}<p class="pp-callout bad small">The book can't absorb the full debt ({formatUnits(q.route.unfilledUnits)} PUSD unfilled), or the collateral isn't enough. A real system would need a fallback, such as partial liquidation and a retry.</p>{/if}
+			{:else if 'error' in liquidation}<p class="pp-error">{liquidation.error}</p>{/if}
+		</section>
 
-	<section>
-		<h2>What an on-chain version would need</h2>
-		<ul>
-			<li>A vault covenant holding BCH collateral against minted debt (requires a PUSD minting authority, which the fixed-supply test token deliberately lacks).</li>
-			<li>A liquidation path that is valid only when the oracle state shows the ratio below the minimum, and that requires the vault's collateral to fill PennyPicker ask covenants in the same transaction, with the bought PUSD burned.</li>
-			<li>A redemption path that lets a holder burn PUSD against bid covenants posted by vault owners.</li>
-			<li>The same oracle trust assumption as the exchange: the operator's latest published state.</li>
+		<section class="pp-card">
+			<h2>Market-based redemption</h2>
+			<p class="small muted">A PUSD holder redeems by buying BCH from the <strong>asks</strong>, which are posted by vault owners or market makers. The cheapest ask is the cheapest redemption. The fee is discovered by competition rather than set by a base-rate formula.</p>
+			<div class="pp-grid-2 form">
+				<label class="pp-field"><span>Redeem (PUSD)</span><input class="pp-input" bind:value={redeemInput} /></label>
+				<label class="pp-field"><span>Fixed fee % (compare)</span><input class="pp-input" bind:value={fixedFeeInput} /></label>
+			</div>
+			{#if 'q' in redemption && redemption.q}
+				{@const r = redemption.q}
+				<div class="pp-table-wrap">
+					<table class="pp-table">
+						<thead><tr><th>Ask</th><th>Premium</th><th class="r">PUSD paid</th><th class="r">BCH received</th></tr></thead>
+						<tbody>
+							{#each r.route.legs as leg}<tr><td class="small">{leg.offerId}</td><td>{bps(leg.deltaBps)}</td><td class="r">{formatUnits(leg.units)}</td><td class="r">{formatSats(leg.sats)}</td></tr>{/each}
+						</tbody>
+					</table>
+				</div>
+				<div class="compare">
+					<div><span class="muted">Market redemption</span><strong class="num">{formatSats(r.route.sats)} BCH</strong><span class="small muted">effective {bps(r.route.effectiveBps)}</span></div>
+					<div><span class="muted">Fixed {fixedFeeInput}% fee</span><strong class="num">{formatSats(r.fixedFeeSats)} BCH</strong><span class="small muted">protocol-set</span></div>
+				</div>
+				{#if r.route.unspentUnits > 1n}<p class="pp-callout warn small">{formatUnits(r.route.unspentUnits)} PUSD can't be redeemed against the current asks.</p>{/if}
+			{:else if 'error' in redemption}<p class="pp-error">{redemption.error}</p>{/if}
+		</section>
+	</div>
+
+	<details class="pp-details" style="margin-top: 1rem">
+		<summary>What an on-chain version would need</summary>
+		<ul class="small">
+			<li>A vault covenant holding BCH collateral against minted debt. That needs a PUSD minting authority, which the fixed-supply test token deliberately lacks.</li>
+			<li>A liquidation path that is valid only when the oracle state puts the ratio below the minimum. It would require the collateral to fill PennyPicker bid covenants in the same transaction and the bought PUSD to be burned.</li>
+			<li>A redemption path that lets a holder burn PUSD against ask covenants posted by vault owners.</li>
+			<li>The same oracle trust assumption as the exchange: the operator's latest published price.</li>
 		</ul>
-	</section>
+	</details>
 </main>
 
 <style>
-	main { max-width: 56rem; margin: 0 auto; padding: 1rem; }
-	.notice { background: #fff4d6; border-left: 4px solid #c08a1e; padding: 0.75rem; }
-	.form { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
-	table { border-collapse: collapse; margin: 0.5rem 0; font-size: 0.9rem; }
-	th, td { text-align: left; padding: 0.2rem 0.6rem; border-bottom: 1px solid #eee; }
-	.error { color: #a00; }
-	.hint { color: #555; font-size: 0.9rem; }
-	section { margin: 1.5rem 0; }
+	.controls { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 1rem; }
+	.price { width: min(100%, 18rem); }
+	.form { margin: 0.75rem 0; gap: 0.6rem; }
+	.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0.75rem 0 0.25rem; }
+	.compare > div { display: flex; flex-direction: column; border: 1px solid var(--pp-border); border-radius: var(--pp-radius-sm); padding: 0.5rem 0.65rem; background: var(--pp-surface-2); }
+	.compare > div:first-child { border-color: var(--pp-accent); }
 </style>
