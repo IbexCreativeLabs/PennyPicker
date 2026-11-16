@@ -188,7 +188,7 @@
 <main>
 	<p><a href="/penny-picker">← BCH/PUSD market</a></p>
 	<h1>Prepare the PUSD Chipnet token</h1>
-	<p class="warning"><strong>Experimental token; no USD backing or promised peg.</strong> This flow uses BCH Chipnet. Preparing is read-only apart from fetching public UTXOs. Signing opens Cashonize only after you press the signing button. Broadcasting is a separate action.</p>
+	<p class="warning"><strong>Experimental token; no USD backing or promised peg.</strong> PennyPicker's PUSD is separate from ParyonUSD, which also uses the PUSD ticker on BCH. Confirm the exact category before sending or trading any PUSD. This flow uses BCH Chipnet. Preparing is read-only apart from fetching public UTXOs. Signing opens Cashonize only after you press the signing button. Broadcasting is a separate action.</p>
 
 	<section>
 		<h2>Token specification</h2>

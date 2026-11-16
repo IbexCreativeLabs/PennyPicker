@@ -37,6 +37,10 @@
 - Photon is a BCH proof-of-work oracle, not a BCH/PUSD price oracle.
 - No authenticated and manipulation-resistant BCH/PUSD oracle feed is configured.
   Stale or untrusted prices must block order matching and transaction execution.
+- ParyonUSD also uses the `PUSD` symbol on BCH mainnet. PennyPicker's planned Chipnet
+  category is a separate experimental token, so the ticker is not a unique identifier;
+  UIs and market data must identify assets by category. ParyonUSD prices are not a
+  valid proxy for this token's price. Reference: [ParyonUSD token identity](https://paryonusd.com/).
 - Oracles.cash exposes signed BCH/USD data and provides a way to validate freshness,
   but that feed cannot establish a BCH/PUSD price while PUSD is an experimental token
   without a USD peg. Do not convert BCH/USD into BCH/PUSD by assuming PUSD equals USD.

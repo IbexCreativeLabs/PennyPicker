@@ -160,7 +160,7 @@
 	<header>
 		<p class="eyebrow">PENNYPICKER · BCH CHIPNET</p>
 		<h1>BCH/PUSD market prototype</h1>
-		<p class="warning"><strong>Local simulation only.</strong> PUSD is experimental, has no USD backing or guaranteed peg. Orders on this page are held only in this browser session; no order has been published to the chain.</p>
+		<p class="warning"><strong>Local simulation only.</strong> PennyPicker PUSD is experimental, has no USD backing or guaranteed peg, and is a separate token from ParyonUSD, which also uses the PUSD ticker on BCH. Always identify a token by its category, not its ticker. Orders on this page are held only in this browser session; no order has been published to the chain.</p>
 	</header>
 
 	<section class="market-card" aria-label="Market reference">
