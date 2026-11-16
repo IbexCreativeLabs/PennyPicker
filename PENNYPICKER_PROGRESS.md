@@ -134,7 +134,10 @@
   to supply the script hash and categories; it is not yet connected to a deployed
   PennyPicker covenant or the market page. Numeric token amounts from Electrum are
   accepted only when JavaScript can represent them as exact safe integers; decimal
-  strings and BigInts remain exact.
+  strings and BigInts remain exact. The adapter fetches each referenced raw transaction
+  and checks its txid, output index, value, token/NFT data and locking-script hash.
+  It still trusts Electrum's report that an output is unspent and its claimed block
+  height; no Merkle or best-chain proof is checked.
 - Added a guarded order lifecycle model covering draft, unsigned, Cashonize-approved,
   broadcast, confirmed, created, discovered, matched, partially filled, filled and
   canceled states. Fill quantity only changes after a matching broadcast is confirmed;
