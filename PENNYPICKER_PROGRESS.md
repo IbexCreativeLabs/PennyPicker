@@ -128,10 +128,11 @@
   underfunded buy order unfillable, but cannot spend beyond its escrow.
 - Added a BPS orderbook indexer for Electrum UTXO batches. It checks even-index
   order/asset thread pairing, auth and PUSD categories, mutable NFT commitments,
-  confirmation consistency, sell-token escrow, and open/filled status. A thin adapter
-  reuses CatDex's existing `getAllMarketOrders` query. It requires the caller to supply
-  the script hash and categories; it is not yet connected to a deployed PennyPicker
-  covenant or the market page.
+  confirmation consistency, side-specific token escrow, and open/filled status. Sell
+  escrow must equal remaining PUSD and buy asset threads must carry no PUSD. A thin
+  adapter reuses CatDex's existing `getAllMarketOrders` query. It requires the caller
+  to supply the script hash and categories; it is not yet connected to a deployed
+  PennyPicker covenant or the market page.
 - Added a guarded order lifecycle model covering draft, unsigned, Cashonize-approved,
   broadcast, confirmed, created, discovered, matched, partially filled, filled and
   canceled states. Fill quantity only changes after a matching broadcast is confirmed;

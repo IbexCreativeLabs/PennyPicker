@@ -171,6 +171,13 @@ export function indexBpsOrderUtxos(
 			});
 			continue;
 		}
+		if (commitment.side === 'buy-pusd' && assetEscrowUnits !== 0n) {
+			ignored.push({
+				outpoint,
+				reason: 'Buy orders must not carry PUSD in the paired asset thread.'
+			});
+			continue;
+		}
 		orders.push({
 			scriptHash,
 			txid: utxo.tx_hash.toLowerCase(),
