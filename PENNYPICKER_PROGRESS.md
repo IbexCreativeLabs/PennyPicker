@@ -110,6 +110,9 @@
   quote is supplied at fill time; the eventual covenant must authenticate it and ensure
   the escrow can cover a changing BCH/PUSD rate. Thirty-four bytes fits CashTokens'
   40-byte NFT commitment limit ([specification](https://cashtokens.org/docs/spec/chip/)).
+- Added public-address conversion for the maker hash. It requires a prefixed Chipnet
+  P2PKH address and rejects P2SH or other-network addresses. It uses only Cashonize's
+  public address and does not derive or load private key material.
 - Added a single-fill preview for this draft format. It requires the typed verified
   oracle, enforces signed side/quantity rules, calculates the BPS limit and BCH amount
   in integer arithmetic, checks buy-side BCH and sell-side PUSD escrow, and returns

@@ -14,9 +14,10 @@ simulated BCH quotes cannot exceed BCH's maximum monetary supply.
 The un-deployed order commitment draft is version 2 and 34 bytes:
 `version:u8 | side:u8 | remaining PUSD units:u64le | delta BPS:i32le | maker P2PKH HASH160:20 bytes`.
 The maker hash is included so a future shared-script covenant can authorize
-cancellation by the order owner. This encoding is not enforced by CatDex and must not
-be used to create an on-chain order until its matching covenant is implemented and
-reviewed.
+cancellation by the order owner. PennyPicker extracts it from a prefixed Chipnet
+P2PKH public address; P2SH and non-Chipnet addresses are rejected. This encoding is
+not enforced by CatDex and must not be used to create an on-chain order until its
+matching covenant is implemented and reviewed.
 
 PUSD is an experimental token with no backing or promised USD peg. The page must not
 be used for trade decisions. Production use needs a reviewed covenant that binds the

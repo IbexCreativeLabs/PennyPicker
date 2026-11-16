@@ -1,4 +1,5 @@
 import { assertSideDelta, MAX_TOKEN_UNITS, type OrderSide } from './market';
+import { binToHex, cashAddressToLockingBytecode } from '@bitauth/libauth';
 export { MAX_TOKEN_UNITS };
 
 export const BPS_ORDER_COMMITMENT_VERSION = 2;
@@ -63,6 +64,27 @@ function validateMakerPkh(makerPkh: string): string {
 		throw new Error('Maker public-key hash cannot be all zeroes.');
 	}
 	return normalized;
+}
+
+/** Extract the maker hash from a public Cashonize Chipnet P2PKH address. */
+export function makerPkhFromChipnetAddress(address: string): string {
+	if (!address.startsWith('bchtest:')) {
+		throw new Error('Maker address must be a prefixed BCH Chipnet address.');
+	}
+	const decoded = cashAddressToLockingBytecode(address);
+	if (typeof decoded === 'string') throw new Error(`Invalid maker address: ${decoded}`);
+	const bytecode = decoded.bytecode;
+	if (
+		bytecode.length !== 25 ||
+		bytecode[0] !== 0x76 ||
+		bytecode[1] !== 0xa9 ||
+		bytecode[2] !== 0x14 ||
+		bytecode[23] !== 0x88 ||
+		bytecode[24] !== 0xac
+	) {
+		throw new Error('Maker address must be a P2PKH address; P2SH addresses are not supported.');
+	}
+	return validateMakerPkh(binToHex(bytecode.slice(3, 23)));
 }
 
 export function encodeBpsOrderCommitment(order: BpsOrderCommitment): Uint8Array {
