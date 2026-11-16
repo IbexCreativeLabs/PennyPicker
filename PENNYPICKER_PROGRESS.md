@@ -49,6 +49,18 @@
   Cashonize source output, requires all input unlocking scripts to be empty, and
   validates the PUSD output value and destination script before presenting the
   unsigned transaction for wallet approval.
+- Added a typed execution-oracle boundary: a future transaction builder must use a
+  fresh observation from a production provider whose adapter authenticates the data.
+  The development mock cannot satisfy this type and is still used only for local
+  arithmetic. No provider currently implements this interface.
+- Chipnet activated BCH's May 2025 BigInt/VM-limits upgrade at height 227,228, so
+  arbitrary-precision contract arithmetic is available there. The open protocol
+  problem is oracle authenticity/freshness, not numeric precision. A covenant can
+  verify a signed oracle statement, but a quote's age cannot be proven solely from
+  its timestamp without a trustworthy current-time reference; the on-chain freshness
+  design still needs a protocol decision. References: [BCHN activation-height
+  documentation](https://docs.bitcoincashnode.org/doc/cli/bitcoind/) and the
+  [BigInt CHIP](https://github.com/bitjson/bch-bigint).
 
 ## Next implementation order
 

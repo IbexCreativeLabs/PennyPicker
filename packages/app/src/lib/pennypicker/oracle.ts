@@ -23,8 +23,9 @@ export class DevelopmentMockOracle implements BchPusdOracleProvider {
 	}
 }
 
-/** Production integrations must implement freshness and authenticity at the adapter boundary. */
-export interface ProductionOracleRequirements {
-	/** Feed-specific signature, quorum, or trusted transport validation. */
+/** Providers that may authorize transaction preparation must authenticate their data. */
+export interface ProductionBchPusdOracleProvider extends BchPusdOracleProvider {
+	readonly confidence: 'production';
+	/** Feed-specific signature, quorum, or equivalent reviewed validation. */
 	validateObservation(observation: OracleObservation): Promise<boolean>;
 }
