@@ -59,6 +59,12 @@
   supplied at fill time; the eventual covenant must authenticate it and ensure the
   escrow can cover a changing BCH/PUSD rate. Fourteen bytes is within CashTokens'
   40-byte NFT commitment limit ([specification](https://cashtokens.org/docs/spec/chip/)).
+- Added a single-fill preview for this draft format. It requires the typed verified
+  oracle, enforces signed side/quantity rules, calculates the BPS limit and BCH amount
+  in integer arithmetic, checks buy-side BCH and sell-side PUSD escrow, and returns
+  the updated remaining commitment. It uses ceil-to-satoshi per fill; repeated partial
+  fills can round higher than one aggregate fill and require matching covenant rules.
+  This calculator is not yet used to build transactions or enforced by CatDex.
 - Chipnet activated BCH's May 2025 BigInt/VM-limits upgrade at height 227,228, so
   arbitrary-precision contract arithmetic is available there. The open protocol
   problem is oracle authenticity/freshness, not numeric precision. A covenant can
