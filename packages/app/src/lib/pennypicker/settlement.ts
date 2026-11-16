@@ -18,6 +18,8 @@ export interface BpsFillPreview {
 	quantityUnits: bigint;
 	remainingUnits: bigint;
 	committedRemaining: Uint8Array;
+	/** Exact CashToken category priced by the authenticated oracle. */
+	oracleAssetCategory: string;
 	oracleReferenceRateSatsPerPusdScaled: bigint;
 	oracleObservedAtMs: number;
 	oracleSource: string;
@@ -85,6 +87,7 @@ export function previewBpsFill(
 		quantityUnits,
 		remainingUnits,
 		committedRemaining,
+		oracleAssetCategory: oracle.assetCategory,
 		oracleReferenceRateSatsPerPusdScaled: oracle.rateSatsPerPusdScaled,
 		oracleObservedAtMs: oracle.observedAtMs,
 		oracleSource: oracle.source,
