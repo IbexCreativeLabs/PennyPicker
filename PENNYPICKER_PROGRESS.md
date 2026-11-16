@@ -102,11 +102,13 @@
   fresh observation from a production provider whose adapter authenticates the data.
   The development mock cannot satisfy this type and is still used only for local
   arithmetic. No provider currently implements this interface.
-- Added a draft 14-byte BPS order commitment codec: version, explicit side, remaining
-  PUSD base units, and signed BPS delta. It is isolated from CatDex because the
-  current covenant does not enforce this format. The reference quote is intentionally
-  supplied at fill time; the eventual covenant must authenticate it and ensure the
-  escrow can cover a changing BCH/PUSD rate. Fourteen bytes is within CashTokens'
+- Added a draft 34-byte BPS order commitment codec: version, explicit side, remaining
+  PUSD base units, signed BPS delta, and maker P2PKH hash. The maker hash can support
+  permissionless cancellation enforcement without embedding each maker in a unique
+  script hash. It is isolated from CatDex because its current covenant does not enforce
+  this format and its minting-baton admin path bypasses order rules. The reference
+  quote is supplied at fill time; the eventual covenant must authenticate it and ensure
+  the escrow can cover a changing BCH/PUSD rate. Thirty-four bytes fits CashTokens'
   40-byte NFT commitment limit ([specification](https://cashtokens.org/docs/spec/chip/)).
 - Added a single-fill preview for this draft format. It requires the typed verified
   oracle, enforces signed side/quantity rules, calculates the BPS limit and BCH amount
