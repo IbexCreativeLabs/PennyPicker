@@ -13,3 +13,12 @@ PUSD is an experimental token with no backing or promised USD peg. The page must
 be used for trade decisions. Production use needs a reviewed covenant that binds the
 oracle and BPS order terms, a fresh authenticated BCH/PUSD oracle, a deployed PUSD
 category, a chain order indexer, and explicit Cashonize transaction approval.
+
+The separate `/penny-picker/token` route can prepare the 1,000,000 PUSD CashToken
+genesis from a connected Cashonize Chipnet address using a watch-only Vox wallet. It
+does not derive or load keys. Signing requires a separate button and sends
+`broadcast: false`; broadcasting is another explicit button. The route verifies the
+signed transaction's inputs, outputs, category, supply and hash before enabling
+broadcast, then checks the address for the resulting token UTXO and confirmation.
+Genesis has not been run. The displayed category before confirmation is only a
+candidate, and token BCMR metadata still requires a separate publication step.

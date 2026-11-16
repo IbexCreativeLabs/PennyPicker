@@ -8,7 +8,9 @@ const BCH_EVENTS = ['addressesChanged'];
 export type CashonizeClient = SignClient;
 export type CashonizeSession = ReturnType<CashonizeClient['session']['getAll']>[number];
 
-export async function createCashonizeClient(): Promise<CashonizeClient> {
+let clientPromise: Promise<CashonizeClient> | undefined;
+
+async function initializeCashonizeClient(): Promise<CashonizeClient> {
 	const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID?.trim();
 	if (!projectId || projectId === 'YOUR_WALLETCONNECT_PROJECT_ID') {
 		throw new Error(
@@ -28,6 +30,24 @@ export async function createCashonizeClient(): Promise<CashonizeClient> {
 			icons: [new URL('/favicon.svg', window.location.origin).toString()]
 		}
 	});
+}
+
+export function createCashonizeClient(): Promise<CashonizeClient> {
+	clientPromise ??= initializeCashonizeClient().catch((error) => {
+		clientPromise = undefined;
+		throw error;
+	});
+	return clientPromise;
+}
+
+export function getApprovedChipnetSession(client: CashonizeClient): CashonizeSession | undefined {
+	return client.session
+		.getAll()
+		.find((session) => {
+			const namespace = session.namespaces.bch;
+			return namespace?.chains?.includes(CHIPNET_CHAIN) === true &&
+				namespace.methods.includes('bch_signTransaction');
+		});
 }
 
 export function requestCashonizeChipnetSession(client: CashonizeClient) {
@@ -67,6 +87,38 @@ export async function requestChipnetAddresses(
 		throw new Error('Cashonize returned no BCH Chipnet address.');
 	}
 	return chipnetAddresses;
+}
+
+export async function requestCashonizeTransactionSignature(
+	client: CashonizeClient,
+	session: CashonizeSession,
+	unsignedTransaction: string,
+	sourceOutputs: unknown
+): Promise<{ signedTransaction: string; signedTransactionHash: string }> {
+	const namespace = session.namespaces.bch;
+	if (!namespace?.chains?.includes(CHIPNET_CHAIN) || !namespace.methods.includes('bch_signTransaction')) {
+		throw new Error('The active session does not allow Chipnet transaction signing.');
+	}
+	const response = await client.request<{ signedTransaction?: string; signedTransactionHash?: string }>({
+		topic: session.topic,
+		chainId: CHIPNET_CHAIN,
+		request: {
+			method: 'bch_signTransaction',
+			params: {
+				transaction: unsignedTransaction,
+				sourceOutputs,
+				broadcast: false,
+				userPrompt: 'Review the PennyPicker USD fixed-supply Chipnet token genesis transaction.'
+			}
+		}
+	});
+	if (!response.signedTransaction || !response.signedTransactionHash) {
+		throw new Error('Cashonize did not return a signed transaction and transaction hash.');
+	}
+	return {
+		signedTransaction: response.signedTransaction,
+		signedTransactionHash: response.signedTransactionHash
+	};
 }
 
 export async function disconnectCashonizeSession(

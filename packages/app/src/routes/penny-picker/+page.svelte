@@ -181,7 +181,9 @@
 	{/if}
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 
-	<section class="next-work"><h2>On-chain status</h2><ul>
+	<section class="next-work"><h2>On-chain status</h2>
+		<p><a href="/penny-picker/token">Prepare PUSD fixed-supply Chipnet genesis</a> uses a watch-only address and separates preparation, Cashonize signing, broadcast and UTXO verification.</p>
+		<ul>
 		<li>Cashonize Chipnet address connection exists at <a href="/cashonize">/cashonize</a>; this market screen does not yet use it.</li>
 		<li>PUSD category is unset. Creating its fixed-supply genesis transaction requires your explicit Cashonize review and approval.</li>
 		<li>CatDex currently stores a fixed absolute price in its order NFT. It cannot enforce this market’s oracle-relative BPS pricing; an updated contract schema and covenant review are required.</li>

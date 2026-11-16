@@ -8,8 +8,15 @@
 - Added an explicitly development-only mock oracle fixture. It is not a market quote,
   does not imply a PUSD peg and cannot be used for chain execution.
 - Added links to the market from the app home page and header.
+- Added a PUSD Chipnet genesis preparation flow using `TestNetWatchWallet` only. It
+  constructs the exact 1,000,000 PUSD supply with no minting NFT, previews the
+  vout 0 input and candidate category, requests signing only after a button click,
+  explicitly sets WalletConnect `broadcast: false`, verifies the signed transaction
+  against the preview, and makes broadcast and post-broadcast UTXO checking separate
+  user actions.
 - Existing `/cashonize` connection remains available. This milestone does not request
-  signing permission, construct transactions, sign or broadcast.
+  keys or initialize a signing wallet. No transaction was built, signed or broadcast
+  during development.
 
 ## Important architecture findings
 
@@ -31,7 +38,9 @@
 2. Design a PennyPicker order covenant/commitment that binds asset category, side,
    quantity, BPS delta, oracle reference policy and partial-fill state. Review script
    invariants and funding/rounding before preparing a transaction builder.
-3. Obtain PUSD category through the explicitly approved Chipnet genesis flow.
+3. Manually review and, if accepted, use `/penny-picker/token` to sign and broadcast
+   the prepared PUSD genesis on Chipnet. Then verify the confirmed output and publish
+   BCMR metadata. This requires an explicit user decision and wallet interaction.
 4. Implement chain indexing/discovery and unsigned order creation/cancellation using
    the reviewed covenant; distinguish created, indexed, matched, signed, broadcast
    and confirmed states.
