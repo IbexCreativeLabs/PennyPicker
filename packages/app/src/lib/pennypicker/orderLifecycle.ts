@@ -1,3 +1,5 @@
+import { MAX_TOKEN_UNITS } from './market';
+
 export type OrderPhase =
 	| 'draft'
 	| 'unsigned'
@@ -72,7 +74,9 @@ export function createOrderLifecycle(
 	quantityUnits: bigint
 ): PennyPickerOrderLifecycle {
 	if (!orderId.trim()) throw new Error('Order ID is required.');
-	if (quantityUnits <= 0n) throw new Error('Order quantity must be positive.');
+	if (quantityUnits <= 0n || quantityUnits > MAX_TOKEN_UNITS) {
+		throw new Error('Order quantity must fit the positive CashToken amount range.');
+	}
 	return {
 		orderId,
 		quantityUnits,
