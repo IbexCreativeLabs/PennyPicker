@@ -68,6 +68,9 @@ export async function buildUnsignedBchSelfTransfer(
 	if (!input) {
 		throw new Error('No confirmed BCH-only UTXO with a nonzero output index is available.');
 	}
+	if (input.address !== address) {
+		throw new Error('The selected BCH-only UTXO is not assigned to the connected Cashonize address.');
+	}
 
 	const response = await wallet.sendMax(address, {
 		buildUnsigned: true,
@@ -89,6 +92,7 @@ export async function buildUnsignedBchSelfTransfer(
 		source.outpointIndex !== input.vout ||
 		swapEndianness(binToHex(source.outpointTransactionHash)) !== input.txid.toLowerCase() ||
 		source.valueSatoshis !== input.satoshis ||
+		binToHex(source.lockingBytecode) !== binToHex(destination.bytecode) ||
 		source.token
 	) {
 		throw new Error('The unsigned transaction does not spend only the selected BCH-only outpoint.');
@@ -153,6 +157,10 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 
 	const wallet = await TestNetWatchWallet.watchOnly(address);
 	const utxos = await wallet.getUtxos();
+	const walletAddress = cashAddressToLockingBytecode(wallet.getDepositAddress());
+	if (typeof walletAddress === 'string') {
+		throw new Error(`Could not validate the Cashonize source address: ${walletAddress}`);
+	}
 	const confirmedBchUtxos = utxos.filter((utxo) => !utxo.token && (utxo.height ?? -1) > 0);
 	const genesisInput = confirmedBchUtxos.find((utxo) => utxo.vout === 0);
 	if (!genesisInput) {
@@ -197,6 +205,19 @@ export async function buildUnsignedPusdGenesis(address: string): Promise<Unsigne
 		}
 		if (input.unlockingBytecode.length !== 0) {
 			throw new Error('The prepared genesis transaction unexpectedly contains a signed input.');
+		}
+		if (
+			source.token ||
+			binToHex(source.lockingBytecode) !== binToHex(walletAddress.bytecode) ||
+			!confirmedBchUtxos.some(
+				(utxo) =>
+					utxo.vout === source.outpointIndex &&
+					utxo.txid === swapEndianness(binToHex(source.outpointTransactionHash)) &&
+					utxo.satoshis === source.valueSatoshis &&
+					utxo.address === address
+			)
+		) {
+			throw new Error('A genesis input source output is not a confirmed BCH-only UTXO at the connected address.');
 		}
 	}
 	const genesisIndex = transaction.inputs.findIndex(

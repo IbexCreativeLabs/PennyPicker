@@ -23,8 +23,10 @@
 - Added an optional BCH-only self-transfer preparation step when the connected address
   lacks a confirmed BCH-only vout 0. It uses `TestNetWatchWallet.sendMax` pinned to one
   confirmed nonzero-vout UTXO and validates the single output returns to the same
-  Chipnet address at vout 0. Cashonize signing, broadcast, and confirmation checking
-  are separate user actions. Genesis now uses only confirmed BCH-only funding UTXOs.
+  Chipnet address at vout 0. It also validates source-output scripts, value and
+  outpoints against confirmed BCH-only UTXOs at that address. Cashonize signing,
+  broadcast, and confirmation checking are separate user actions. Genesis now uses
+  only confirmed BCH-only funding UTXOs.
 - Added an exportable BCMR-v2 draft after the PUSD genesis output is confirmed. It is
   bound to the verified category, marks PUSD as experimental and not USD-backed, and
   reports the SHA-256 of the exact downloaded JSON bytes. It does not alter Vox's
