@@ -1,4 +1,4 @@
-import { assertSideDelta, quoteSatoshis, SATS_PER_BCH } from './market';
+import { assertSideDelta, MAX_BCH_SATOSHIS, quoteSatoshis } from './market';
 import { executionLimitRate, type VerifiedExecutionOracle } from './executionOracle';
 import {
 	encodeBpsOrderCommitment,
@@ -27,8 +27,6 @@ export interface BpsFillPreview {
 	/** Negative spends BCH escrow on buys; positive adds BCH escrow on sells. */
 	orderCashDeltaSatoshis: bigint;
 }
-
-export const MAX_BCH_SATOSHIS = 21_000_000n * SATS_PER_BCH;
 
 /**
  * Calculate one fill against a resting BPS order. Positive trade units fill a

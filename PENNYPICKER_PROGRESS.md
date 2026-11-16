@@ -65,6 +65,12 @@
   the updated remaining commitment. It uses ceil-to-satoshi per fill; repeated partial
   fills can round higher than one aggregate fill and require matching covenant rules.
   This calculator is not yet used to build transactions or enforced by CatDex.
+- Added a BPS orderbook indexer for Electrum UTXO batches. It checks even-index
+  order/asset thread pairing, auth and PUSD categories, mutable NFT commitments,
+  confirmation consistency, sell-token escrow, and open/filled status. A thin adapter
+  reuses CatDex's existing `getAllMarketOrders` query. It requires the caller to supply
+  the script hash and categories; it is not yet connected to a deployed PennyPicker
+  covenant or the market page.
 - Chipnet activated BCH's May 2025 BigInt/VM-limits upgrade at height 227,228, so
   arbitrary-precision contract arithmetic is available there. The open protocol
   problem is oracle authenticity/freshness, not numeric precision. A covenant can

@@ -8,6 +8,7 @@ export const BPS_DENOMINATOR = 10_000n;
 export const PUSD_UNITS_PER_TOKEN = 100n;
 export const RATE_SCALE = 100_000_000n;
 export const SATS_PER_BCH = 100_000_000n;
+export const MAX_BCH_SATOSHIS = 21_000_000n * SATS_PER_BCH;
 export const MAX_ORACLE_AGE_MS = 5 * 60 * 1000;
 export const MIN_ORDER_DELTA_BPS = -9_999;
 export const MAX_ORDER_DELTA_BPS = 1_000_000;
