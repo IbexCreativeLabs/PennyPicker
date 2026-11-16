@@ -17,7 +17,7 @@ import {
 	SigningSerializationFlag,
 	type TransactionCommon
 } from '@bitauth/libauth';
-import { makerPkhFromPublicKey, oracleContract, orderContract, orderCancelUnlocking, oracleUpdateUnlocking, encodeOracleCommitment } from '../src/lib/pennypicker/contracts';
+import { makerPkhFromPublicKey, oracleContract, orderContract, encodeOracleCommitment } from '../src/lib/pennypicker/contracts';
 import {
 	buildCancelOrder,
 	buildCreateOrder,
@@ -70,11 +70,6 @@ function sign(unsigned: UnsignedExchangeTransaction, signer: ReturnType<typeof k
 		if (!entry.contract) {
 			if (binToHex(entry.lockingBytecode) !== binToHex(signer.locking)) throw new Error(`input ${index} not owned by signer`);
 			input.unlockingBytecode = Uint8Array.from([...encodeDataPush(sigFor(index, entry.lockingBytecode)), ...encodeDataPush(signer.pub)]);
-		} else if (entry.contract.abiFunction.inputs.length > 0) {
-			const redeem = entry.contract.redeemScript;
-			const sig = sigFor(index, redeem);
-			const fake = { redeemScript: redeem, lockingBytecode: entry.lockingBytecode, scriptHashHex: '' };
-			input.unlockingBytecode = entry.contract.abiFunction.name === 'cancel' ? orderCancelUnlocking(fake, sig, signer.pub) : oracleUpdateUnlocking(fake, sig, signer.pub);
 		}
 	});
 	return tx;
@@ -122,7 +117,7 @@ operatorUtxos = outputsTo(g.txid, g.tx, operator.locking);
 
 // 2. Oracle update.
 const upd = buildOracleUpdate(market, oracle, operator.address, operatorUtxos, { rateSatsPerPusdScaled: RATE + 1_000_000n, timestamp: 1_800_000_060, sequence: 2 });
-const u = verify('oracle update (placeholder signed by operator)', upd, operator);
+const u = verify('oracle update authorised by operator input', upd, operator);
 oracle = findOracleUtxo(outputsTo(u.txid, u.tx, oracleLocking), market)!;
 const rate = oracle.state.rateSatsPerPusdScaled;
 {

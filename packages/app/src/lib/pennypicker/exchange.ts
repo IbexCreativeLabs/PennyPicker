@@ -258,6 +258,27 @@ function fundWithWalletBch(
 	}
 }
 
+/**
+ * Oracle updates and order cancels are authorised by an ordinary P2PKH input
+ * from the operator/maker placed directly after the contract input. The wallet
+ * signs it like any other input; no contract-signature placeholders are needed.
+ */
+function addAuthorisationInput(
+	tx: TransactionCommon,
+	sources: WcSourceOutput[],
+	walletUtxos: ChainUtxo[],
+	walletLocking: Uint8Array,
+	used: Set<string>,
+	role: string
+): void {
+	const utxo = bchOnly(walletUtxos).find((candidate) => !used.has(`${candidate.txid}:${candidate.vout}`));
+	if (!utxo) throw new Error(`The ${role} needs a BCH-only UTXO in the connected wallet to authorise this transaction.`);
+	used.add(`${utxo.txid}:${utxo.vout}`);
+	const input = utxoToInput(utxo, new Uint8Array());
+	tx.inputs.push(input);
+	sources.push(source(input, utxoToOutput(utxo, walletLocking)));
+}
+
 function finish(
 	kind: UnsignedExchangeTransaction['kind'],
 	tx: TransactionCommon,
@@ -345,9 +366,9 @@ export function buildOracleGenesis(
 	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(operatorPkh))) {
 		throw new Error('Operator hash does not match the connected P2PKH address.');
 	}
-	const genesisInput = bchOnly(walletUtxos).find((utxo) => utxo.vout === 0);
+	const genesisInput = bchOnly(walletUtxos).find((utxo) => utxo.vout === 0 && (utxo.height ?? 0) > 0);
 	if (!genesisInput) {
-		throw new Error('Oracle genesis needs a BCH-only UTXO at output index 0 in the connected wallet.');
+		throw new Error('Oracle genesis needs a confirmed BCH-only UTXO at output index 0 in the connected wallet.');
 	}
 	const category = genesisInput.txid;
 	const instance = oracleContract({ operatorPkh });
@@ -414,8 +435,10 @@ export function buildOracleUpdate(
 			}
 		]
 	};
-	const sources = [source(input, prev, contractInfo(oracleArtifact, 'update', instance))];
-	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, new Set());
+	const sources: WcSourceOutput[] = [source(input, prev, contractInfo(oracleArtifact, 'update', instance))];
+	const used = new Set<string>();
+	addAuthorisationInput(tx, sources, walletUtxos, walletLocking, used, 'oracle operator');
+	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('oracle-update', tx, sources, fee, [
 		`Update reference rate ${oracle.state.rateSatsPerPusdScaled.toString()} → ${next.rateSatsPerPusdScaled.toString()} (sats/PUSD × 1e8)`,
 		`Sequence ${oracle.state.sequence} → ${next.sequence}`
@@ -731,6 +754,8 @@ export function buildCancelOrder(
 	const sources: WcSourceOutput[] = [
 		source(input, utxoToOutput(order.utxo, instance.lockingBytecode), contractInfo(orderArtifact, 'cancel', instance))
 	];
+	const used = new Set<string>();
+	addAuthorisationInput(tx, sources, walletUtxos, walletLocking, used, 'maker');
 	if (order.heldUnits > 0n) {
 		tx.outputs.push({
 			lockingBytecode: walletLocking,
@@ -738,7 +763,7 @@ export function buildCancelOrder(
 			token: { category: hexToBin(market.pusdCategory), amount: order.heldUnits }
 		});
 	}
-	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, new Set());
+	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('order-cancel', tx, sources, fee, [
 		`Cancel order ${order.address}`,
 		`Return ${order.utxo.satoshis.toString()} sats and ${order.heldUnits.toString()} PUSD units to ${makerAddress}`

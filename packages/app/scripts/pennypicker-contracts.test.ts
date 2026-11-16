@@ -5,6 +5,8 @@
  */
 import {
 	createVirtualMachineBch2025,
+	encodeDataPush,
+	hash160,
 	generateSigningSerializationBch,
 	hash256,
 	secp256k1,
@@ -153,38 +155,51 @@ const buyOut = (units: bigint, value: bigint, category = PUSD_CAT): Output => ({
 	check('buy second fill completes target', verify(tx, sources), true);
 }
 
-// --- Cancel by maker signature.
-function signInput(tx: TransactionCommon, sources: Output[], inputIndex: number, redeem: Uint8Array, key: Uint8Array) {
+// --- Cancel / update authorised by a signed P2PKH input at index + 1.
+const p2pkh = (pk: Uint8Array) => Uint8Array.from([0x76, 0xa9, 0x14, ...hash160(pk), 0x88, 0xac]);
+function signP2pkh(tx: TransactionCommon, sources: Output[], inputIndex: number, key: Uint8Array, pk: Uint8Array) {
 	const flags = SigningSerializationFlag.allOutputs | SigningSerializationFlag.utxos | SigningSerializationFlag.forkId;
 	const preimage = generateSigningSerializationBch(
 		{ inputIndex, sourceOutputs: sources, transaction: tx },
-		{ coveredBytecode: redeem, signingSerializationType: Uint8Array.of(flags) }
+		{ coveredBytecode: sources[inputIndex]!.lockingBytecode, signingSerializationType: Uint8Array.of(flags) }
 	);
-	const sig = secp256k1.signMessageHashSchnorr(key, hash256(preimage)) as Uint8Array;
-	return Uint8Array.from([...sig, flags]);
+	const sig = Uint8Array.from([...(secp256k1.signMessageHashSchnorr(key, hash256(preimage)) as Uint8Array), flags]);
+	tx.inputs[inputIndex]!.unlockingBytecode = Uint8Array.from([...encodeDataPush(sig), ...encodeDataPush(pk)]);
 }
+const wallet = (pk: Uint8Array): Output => ({ lockingBytecode: p2pkh(pk), valueSatoshis: 5_000n });
 {
-	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [input(1, new Uint8Array())], outputs: [{ lockingBytecode: OP_TRUE, valueSatoshis: 500n, token: { amount: 10_000n, category: hexToBin(PUSD_CAT) } }] };
-	const sources = [sellIn];
-	tx.inputs[0]!.unlockingBytecode = orderCancelUnlocking(sell, signInput(tx, sources, 0, sell.redeemScript, makerKey), makerPk);
-	check('maker cancel with valid signature', verify(tx, sources), true);
-	tx.inputs[0]!.unlockingBytecode = orderCancelUnlocking(sell, signInput(tx, sources, 0, sell.redeemScript, operatorKey), operatorPk);
-	check('cancel by non-maker key', verify(tx, sources), false);
+	const mk = (authPk: Uint8Array, authKey: Uint8Array, authIndex = 1) => {
+		const tx: TransactionCommon = {
+			version: 2, locktime: 0,
+			inputs: authIndex === 1 ? [input(1, orderCancelUnlocking(sell)), input(9, new Uint8Array())] : [input(9, new Uint8Array()), input(1, orderCancelUnlocking(sell))],
+			outputs: [{ lockingBytecode: OP_TRUE, valueSatoshis: 3_000n, token: { amount: 10_000n, category: hexToBin(PUSD_CAT) } }]
+		};
+		const sources = authIndex === 1 ? [sellIn, wallet(authPk)] : [wallet(authPk), sellIn];
+		signP2pkh(tx, sources, authIndex === 1 ? 1 : 0, authKey, authPk);
+		return verify(tx, sources);
+	};
+	check('maker cancel authorised by maker P2PKH input', mk(makerPk, makerKey), true);
+	check('cancel authorised by another address', mk(operatorPk, operatorKey), false);
+	check('cancel with maker input before (not after) the order', mk(makerPk, makerKey, 0), false);
 }
-
-// --- Oracle update.
 {
 	const next = encodeOracleCommitment({ rateSatsPerPusdScaled: RATE + 1n, timestamp: 1_800_000_060, sequence: 8 });
 	const mk = (commitment: Uint8Array, key: Uint8Array, pk: Uint8Array) => {
-		const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [input(0, new Uint8Array())], outputs: [oracleUtxo(commitment)] };
-		const sources = [oracleUtxo()];
-		tx.inputs[0]!.unlockingBytecode = oracleUpdateUnlocking(operator, signInput(tx, sources, 0, operator.redeemScript, key), pk);
+		const tx: TransactionCommon = {
+			version: 2, locktime: 0,
+			inputs: [input(0, oracleUpdateUnlocking(operator)), input(9, new Uint8Array())],
+			outputs: [oracleUtxo(commitment), { lockingBytecode: p2pkh(pk), valueSatoshis: 4_000n }]
+		};
+		const sources = [oracleUtxo(), wallet(pk)];
+		signP2pkh(tx, sources, 1, key, pk);
 		return verify(tx, sources);
 	};
 	check('oracle update by operator', mk(next, operatorKey, operatorPk), true);
-	check('oracle update by other key', mk(next, makerKey, makerPk), false);
+	check('oracle update by other address', mk(next, makerKey, makerPk), false);
 	const replay = encodeOracleCommitment({ rateSatsPerPusdScaled: RATE + 1n, timestamp: 1_800_000_060, sequence: 7 });
 	check('oracle update without sequence increase', mk(replay, operatorKey, operatorPk), false);
+	const backwards = encodeOracleCommitment({ rateSatsPerPusdScaled: RATE + 1n, timestamp: 1_799_999_999, sequence: 8 });
+	check('oracle update with timestamp moving backwards', mk(backwards, operatorKey, operatorPk), false);
 }
 
 console.log(failures === 0 ? '\nAll covenant checks passed.' : `\n${failures} check(s) failed.`);

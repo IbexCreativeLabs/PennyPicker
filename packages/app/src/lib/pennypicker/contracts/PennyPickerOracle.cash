@@ -13,10 +13,12 @@ pragma cashscript ^0.11.0;
 // age of the current price is the operator's update cadence; the script cannot
 // observe wall-clock time, so it does not enforce a maximum age.
 contract PennyPickerOracle(bytes20 operatorPkh) {
-    function update(pubkey operatorPk, sig operatorSig) {
-        require(hash160(operatorPk) == operatorPkh);
-        require(checkSig(operatorSig, operatorPk));
+    // Authorised by an input from the operator's P2PKH address placed directly
+    // after the oracle input. The operator's wallet signs that ordinary input
+    // (SIGHASH_ALL), which commits to every output, including the new price.
+    function update() {
         int i = this.activeInputIndex;
+        require(tx.inputs[i + 1].lockingBytecode == new LockingBytecodeP2PKH(operatorPkh));
         require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);
         require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
         require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);

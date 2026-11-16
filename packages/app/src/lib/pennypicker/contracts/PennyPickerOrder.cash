@@ -54,9 +54,10 @@ contract PennyPickerOrder(
         require(dSat * 100000000000000 + dUnits * rate * (10000 + deltaBps) >= 0);
     }
 
-    // The maker withdraws escrow and proceeds, closing or replacing the order.
-    function cancel(pubkey makerPk, sig makerSig) {
-        require(hash160(makerPk) == makerPkh);
-        require(checkSig(makerSig, makerPk));
+    // The maker withdraws escrow and proceeds. Authorised by an input from the
+    // maker's P2PKH address directly after the order input; the maker's wallet
+    // signs that ordinary input, committing to all outputs.
+    function cancel() {
+        require(tx.inputs[this.activeInputIndex + 1].lockingBytecode == new LockingBytecodeP2PKH(makerPkh));
     }
 }

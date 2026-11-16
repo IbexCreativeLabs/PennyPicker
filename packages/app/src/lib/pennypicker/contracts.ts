@@ -25,9 +25,6 @@ export const ORACLE_COMMITMENT_BYTES = 16;
 export const SETTLEMENT_SCALE = 100_000_000_000_000n;
 export const ORDER_FUNCTION = { fill: 0, cancel: 1 } as const;
 export const ORACLE_FUNCTION = { update: 0, read: 1 } as const;
-/** CashScript pushes 65-/33-byte zero placeholders that WalletConnect signers replace. */
-export const PLACEHOLDER_SIGNATURE = new Uint8Array(65);
-export const PLACEHOLDER_PUBLIC_KEY = new Uint8Array(33);
 
 const opcodes = OpcodesBch2023 as unknown as Record<string, number>;
 
@@ -148,34 +145,18 @@ export function orderFillUnlocking(order: ContractInstance): Uint8Array {
 	return concat([pushInt(BigInt(ORDER_FUNCTION.fill)), encodeDataPush(order.redeemScript)]);
 }
 
-export function orderCancelUnlocking(
-	order: ContractInstance,
-	signature: Uint8Array = PLACEHOLDER_SIGNATURE,
-	publicKey: Uint8Array = PLACEHOLDER_PUBLIC_KEY
-): Uint8Array {
-	return concat([
-		encodeDataPush(signature),
-		encodeDataPush(publicKey),
-		pushInt(BigInt(ORDER_FUNCTION.cancel)),
-		encodeDataPush(order.redeemScript)
-	]);
+/** Cancel needs no arguments: the maker authorises it with a P2PKH input at index + 1. */
+export function orderCancelUnlocking(order: ContractInstance): Uint8Array {
+	return concat([pushInt(BigInt(ORDER_FUNCTION.cancel)), encodeDataPush(order.redeemScript)]);
 }
 
 export function oracleReadUnlocking(oracle: ContractInstance): Uint8Array {
 	return concat([pushInt(BigInt(ORACLE_FUNCTION.read)), encodeDataPush(oracle.redeemScript)]);
 }
 
-export function oracleUpdateUnlocking(
-	oracle: ContractInstance,
-	signature: Uint8Array = PLACEHOLDER_SIGNATURE,
-	publicKey: Uint8Array = PLACEHOLDER_PUBLIC_KEY
-): Uint8Array {
-	return concat([
-		encodeDataPush(signature),
-		encodeDataPush(publicKey),
-		pushInt(BigInt(ORACLE_FUNCTION.update)),
-		encodeDataPush(oracle.redeemScript)
-	]);
+/** Update needs no arguments: the operator authorises it with a P2PKH input at index + 1. */
+export function oracleUpdateUnlocking(oracle: ContractInstance): Uint8Array {
+	return concat([pushInt(BigInt(ORACLE_FUNCTION.update)), encodeDataPush(oracle.redeemScript)]);
 }
 
 export interface OracleState {
