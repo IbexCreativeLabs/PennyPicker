@@ -56,7 +56,15 @@
   public-key hash, but no pool discovery or reserve index. CatDex's `getAllMarketOrders`
   similarly queries only caller-supplied script hashes. A direct PennyPicker-category
   spot/TWAP reference therefore needs an explicit indexer plus proof/authentication
-  strategy; arbitrary Electrum UTXO responses are not a production oracle.
+  strategy; arbitrary Electrum UTXO responses are not a production oracle. Current
+  Cauldron docs confirm BCH/CashToken constant-product micro-pools can be aggregated,
+  so a future direct BCH/PUSD market reference could be computed from that exact token
+  category after PUSD deployment and actual pool liquidity. A single pool's spot price
+  is manipulable and Cauldron's indexer is not a signed price attestation, so that is
+  only a candidate market-data input, not an execution oracle. Its separate Delphi
+  oracle endpoints document BCH/USD and selected oracle-token prices, not this PUSD
+  category. References: [Cauldron pool model](https://docs.riftenlabs.com/cauldron/liquidity/),
+  [Cauldron oracle endpoints](https://docs.riftenlabs.com/cauldron/API/oracle/).
 - Current BCH transaction-introspection opcodes expose transaction fields such as
   `nLockTime`, but not current block height or block time. `OP_CHECKLOCKTIMEVERIFY`
   provides a not-before constraint; it cannot make a signed quote unspendable after
