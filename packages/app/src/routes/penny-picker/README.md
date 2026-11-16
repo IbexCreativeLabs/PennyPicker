@@ -19,6 +19,11 @@ P2PKH public address; P2SH and non-Chipnet addresses are rejected. This encoding
 not enforced by CatDex and must not be used to create an on-chain order until its
 matching covenant is implemented and reviewed.
 
+The order-funding planner is arithmetic only. It requires a fresh authenticated
+quote and explicit dust and fee reserves, estimates BCH escrow for buy orders, and
+requires the full PUSD quantity for sell orders. It does not build or submit a
+transaction.
+
 PUSD is an experimental token with no backing or promised USD peg. The page must not
 be used for trade decisions. Production use needs a reviewed covenant that binds the
 oracle and BPS order terms, a fresh authenticated BCH/PUSD oracle, a deployed PUSD

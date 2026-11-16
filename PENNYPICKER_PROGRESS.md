@@ -119,6 +119,11 @@
   the updated remaining commitment. It uses ceil-to-satoshi per fill; repeated partial
   fills can round higher than one aggregate fill and require matching covenant rules.
   This calculator is not yet used to build transactions or enforced by CatDex.
+- Added an order-funding planner for the eventual creation builder. It requires a
+  typed verified BCH/PUSD quote and explicit BCH dust/fee policy, calculates buy BCH
+  escrow and sell PUSD escrow, and returns minimum BCH funding. It does not choose dust
+  or fees and does not construct a transaction; future oracle movement can make an
+  underfunded buy order unfillable, but cannot spend beyond its escrow.
 - Added a BPS orderbook indexer for Electrum UTXO batches. It checks even-index
   order/asset thread pairing, auth and PUSD categories, mutable NFT commitments,
   confirmation consistency, sell-token escrow, and open/filled status. A thin adapter
