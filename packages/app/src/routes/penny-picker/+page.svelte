@@ -13,6 +13,13 @@
 		type OrderSide
 	} from '$lib/pennypicker/market';
 	import { DevelopmentMockOracle } from '$lib/pennypicker/oracle';
+	import { TestNetWatchWallet, type Utxo } from '@unspent/wallet';
+	import {
+		createCashonizeClient,
+		getApprovedChipnetSession,
+		requestChipnetAddresses
+	} from '$lib/cashonize/walletconnect';
+	import { PUSD_CATEGORY_STORAGE_KEY } from '$lib/pennypicker/pusdGenesis';
 
 	const mockOracle = new DevelopmentMockOracle();
 	let oracle = $state<OracleObservation | undefined>();
@@ -23,6 +30,14 @@
 	let error = $state('');
 	let latestFills = $state<ReturnType<typeof matchOrders>['fills']>([]);
 	let simulationSequence = 0;
+	let connectedAddress = $state('');
+	let walletUtxos = $state<Utxo[]>([]);
+	let walletLoading = $state(false);
+	let walletError = $state('');
+	let pusdCategory = $state('');
+	let balanceCategory = $state(0n);
+	let balanceSatoshis = $state(0n);
+	let balanceBchOnly = $state(0n);
 
 	function decimalToUnits(value: string): bigint {
 		const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
@@ -49,7 +64,37 @@
 	onMount(async () => {
 		oracle = await mockOracle.getLatest();
 		seedDemoBook(oracle);
+		pusdCategory = localStorage.getItem(PUSD_CATEGORY_STORAGE_KEY) ?? '';
 	});
+
+	async function loadWalletBalances() {
+		walletLoading = true;
+		walletError = '';
+		try {
+			const client = await createCashonizeClient();
+			const session = getApprovedChipnetSession(client);
+			if (!session) throw new Error('Connect Cashonize on BCH Chipnet first.');
+			const addresses = await requestChipnetAddresses(client, session);
+			connectedAddress = addresses[0] ?? '';
+			if (!connectedAddress) throw new Error('Cashonize returned no Chipnet address.');
+			const wallet = await TestNetWatchWallet.watchOnly(connectedAddress);
+			walletUtxos = await wallet.getUtxos();
+			pusdCategory = localStorage.getItem(PUSD_CATEGORY_STORAGE_KEY) ?? '';
+			balanceSatoshis = walletUtxos.reduce((sum, utxo) => sum + utxo.satoshis, 0n);
+			balanceBchOnly = walletUtxos
+				.filter((utxo) => !utxo.token)
+				.reduce((sum, utxo) => sum + utxo.satoshis, 0n);
+			balanceCategory = pusdCategory
+				? walletUtxos
+					.filter((utxo) => utxo.token?.category === pusdCategory)
+					.reduce((sum, utxo) => sum + (utxo.token?.amount ?? 0n), 0n)
+				: 0n;
+		} catch (cause) {
+			walletError = cause instanceof Error ? cause.message : String(cause);
+		} finally {
+			walletLoading = false;
+		}
+	}
 
 	const buyOrders = $derived(
 		orders.filter((order) => order.side === 'buy-pusd' && order.remainingUnits > 0n)
@@ -132,6 +177,27 @@
 
 	<p class="bps-note"><strong>BPS convention:</strong> 1 BPS = 0.01%. The signed delta raises or lowers the limit price from the current BCH/PUSD reference for either side. A buy at −100 BPS pays 1% below reference; a sell at +100 BPS asks 1% above. Matching re-prices deltas against the latest observation and uses the older resting order’s limit price.</p>
 
+	<section class="wallet-card">
+		<div class="section-heading"><div><h2>Cashonize wallet</h2><span class="muted">Public read-only Chipnet balances</span></div>
+			<button type="button" onclick={loadWalletBalances} disabled={walletLoading}>{walletLoading ? 'Loading…' : 'Load wallet balances'}</button>
+		</div>
+		{#if connectedAddress}
+			<p><strong>Connected address:</strong> <code>{connectedAddress}</code></p>
+			<p><strong>BCH total:</strong> {formatBchFromSatoshis(balanceSatoshis)} BCH ({balanceSatoshis.toString()} sats)</p>
+			<p><strong>BCH-only UTXOs:</strong> {formatBchFromSatoshis(balanceBchOnly)} BCH</p>
+			{#if pusdCategory}
+				<p><strong>PUSD balance:</strong> {formatPusd(balanceCategory)} PUSD</p>
+				<p class="muted">Category: <code>{pusdCategory}</code></p>
+			{:else}
+				<p><strong>PUSD balance:</strong> Category not registered on this browser; complete and verify genesis first.</p>
+			{/if}
+			<p class="muted">{walletUtxos.length} UTXOs read. Vox created only a watch-only address reader.</p>
+		{:else}
+			<p>Connect at <a href="/cashonize">/cashonize</a>, then load your public address and balances here.</p>
+		{/if}
+		{#if walletError}<p class="error" role="alert">{walletError}</p>{/if}
+	</section>
+
 	<section class="order-entry">
 		<h2>Create a local order</h2>
 		<div class="form-grid">
@@ -184,8 +250,8 @@
 	<section class="next-work"><h2>On-chain status</h2>
 		<p><a href="/penny-picker/token">Prepare PUSD fixed-supply Chipnet genesis</a> uses a watch-only address and separates preparation, Cashonize signing, broadcast and UTXO verification.</p>
 		<ul>
-		<li>Cashonize Chipnet address connection exists at <a href="/cashonize">/cashonize</a>; this market screen does not yet use it.</li>
-		<li>PUSD category is unset. Creating its fixed-supply genesis transaction requires your explicit Cashonize review and approval.</li>
+		<li>Cashonize Chipnet address and read-only balance loading are available above.</li>
+		<li>PUSD category is stored locally only after a confirmed genesis UTXO is verified. Creating it requires explicit Cashonize review and approval.</li>
 		<li>CatDex currently stores a fixed absolute price in its order NFT. It cannot enforce this market’s oracle-relative BPS pricing; an updated contract schema and covenant review are required.</li>
 		<li>No authenticated BCH/PUSD oracle provider is configured. This demo feed must never be used to publish or execute orders.</li>
 	</ul></section>
@@ -198,7 +264,7 @@
 	h2 { margin-top: 0; }
 	.eyebrow, .label { font-size: 0.78rem; letter-spacing: 0.08em; color: #4d4052; }
 	.warning { background: #fff2d7; border-left: 4px solid #bc7610; padding: 0.8rem 1rem; }
-	.market-card, .order-entry, .book-section, .fills, .next-work { margin: 1rem 0; padding: 1rem; background: #ffffffc9; border-radius: 0.7rem; }
+	.market-card, .wallet-card, .order-entry, .book-section, .fills, .next-work { margin: 1rem 0; padding: 1rem; background: #ffffffc9; border-radius: 0.7rem; }
 	.market-card { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; align-items: center; }
 	.market-card > div:first-child { display: grid; gap: 0.3rem; }
 	.oracle-status { display: flex; align-items: center; gap: 0.65rem; font-size: 0.9rem; }

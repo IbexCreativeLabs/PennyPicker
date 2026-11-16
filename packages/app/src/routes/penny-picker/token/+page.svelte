@@ -12,6 +12,7 @@
 		buildUnsignedPusdGenesis,
 		PUSD_INITIAL_AMOUNT,
 		PUSD_INITIAL_SUPPLY,
+		PUSD_CATEGORY_STORAGE_KEY,
 		PUSD_DECIMALS,
 		PUSD_NAME,
 		PUSD_SYMBOL,
@@ -147,6 +148,7 @@
 			} else if (created.length === 0) {
 				outputStatus = 'No PUSD output is indexed yet. The transaction may still be propagating, or it may not have been accepted.';
 			} else if (created.some((utxo) => (utxo.height ?? -1) > 0)) {
+				localStorage.setItem(PUSD_CATEGORY_STORAGE_KEY, genesis.candidateCategory);
 				outputStatus = `Confirmed PUSD UTXO found: ${created.map((utxo) => `${broadcastTxid}:${utxo.vout} (${utxo.token!.amount.toString()} base units, ${utxo.satoshis.toString()} sats)`).join(', ')}.`;
 			} else {
 				outputStatus = `PUSD UTXO found in the mempool: ${created.map((utxo) => `${broadcastTxid}:${utxo.vout} (${utxo.token!.amount.toString()} base units, ${utxo.satoshis.toString()} sats)`).join(', ')}. It is not confirmed yet.`;

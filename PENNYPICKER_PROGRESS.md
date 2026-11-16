@@ -8,6 +8,9 @@
 - Added an explicitly development-only mock oracle fixture. It is not a market quote,
   does not imply a PUSD peg and cannot be used for chain execution.
 - Added links to the market from the app home page and header.
+- Added Cashonize-connected, watch-only Chipnet balance loading to the market screen.
+  It separates BCH-only funding from total BCH backing UTXOs and shows PUSD only when
+  a locally stored category has been verified after confirmed genesis.
 - Added a PUSD Chipnet genesis preparation flow using `TestNetWatchWallet` only. It
   constructs the exact 1,000,000 PUSD supply with no minting NFT, previews the
   vout 0 input and candidate category, requests signing only after a button click,

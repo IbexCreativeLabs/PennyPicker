@@ -15,6 +15,7 @@ export const PUSD_DECIMALS = 2;
 export const PUSD_INITIAL_SUPPLY = 1_000_000n;
 export const PUSD_INITIAL_AMOUNT = PUSD_INITIAL_SUPPLY * 100n;
 export const PUSD_TOKEN_OUTPUT_SATOSHIS = 1_000n;
+export const PUSD_CATEGORY_STORAGE_KEY = 'pennypicker:chipnet:pusd-category';
 
 export interface UnsignedPusdGenesis {
 	wallet: TestNetWatchWallet;
