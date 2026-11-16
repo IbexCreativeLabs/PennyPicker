@@ -24,6 +24,13 @@
 			disabled: false
 		},
 		{
+			name: 'PennyPicker',
+			description: 'Experimental BCH/PUSD BPS market prototype (Chipnet).',
+			link: '/penny-picker',
+			image: '/cat.svg',
+			disabled: false
+		},
+		{
 			name: 'Drip',
 			description: 'A simple contract for miner extractable value.',
 			image: '/drip.svg',
