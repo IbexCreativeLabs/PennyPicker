@@ -44,6 +44,14 @@
 - Photon is a BCH proof-of-work oracle, not a BCH/PUSD price oracle.
 - No authenticated and manipulation-resistant BCH/PUSD oracle feed is configured.
   Stale or untrusted prices must block order matching and transaction execution.
+- Current BCH transaction-introspection opcodes expose transaction fields such as
+  `nLockTime`, but not current block height or block time. `OP_CHECKLOCKTIMEVERIFY`
+  provides a not-before constraint; it cannot make a signed quote unspendable after
+  an expiry. Therefore a covenant can authenticate the quote but cannot independently
+  enforce a maximum quote age with current BCH script rules. An app-side freshness
+  check would remain a trust assumption because third parties can construct their own
+  fills. References: [BCH native introspection CHIP](https://github.com/bitjson/bch-2022/blob/master/CHIP-2021-02-Add-Native-Introspection-Opcodes.md),
+  [BCH locktime rules](https://documentation.cash/protocol/blockchain/transaction.html).
 - ParyonUSD also uses the `PUSD` symbol on BCH mainnet. PennyPicker's planned Chipnet
   category is a separate experimental token, so the ticker is not a unique identifier;
   UIs and market data must identify assets by category. ParyonUSD prices are not a
