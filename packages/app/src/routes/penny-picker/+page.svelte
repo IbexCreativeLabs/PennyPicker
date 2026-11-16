@@ -37,7 +37,17 @@
 	let pusdCategory = $state('');
 	let balanceCategory = $state(0n);
 	let balanceSatoshis = $state(0n);
+	let balanceConfirmedSatoshis = $state(0n);
+	let balancePendingSatoshis = $state(0n);
 	let balanceBchOnly = $state(0n);
+	let balanceConfirmedBchOnly = $state(0n);
+	let balancePendingBchOnly = $state(0n);
+	let balanceConfirmedCategory = $state(0n);
+	let balancePendingCategory = $state(0n);
+
+	function isConfirmedUtxo(utxo: Utxo): boolean {
+		return Number.isSafeInteger(utxo.height) && (utxo.height ?? 0) > 0;
+	}
 
 	function decimalToUnits(value: string): bigint {
 		const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
@@ -81,14 +91,28 @@
 			walletUtxos = await wallet.getUtxos();
 			pusdCategory = localStorage.getItem(PUSD_CATEGORY_STORAGE_KEY) ?? '';
 			balanceSatoshis = walletUtxos.reduce((sum, utxo) => sum + utxo.satoshis, 0n);
+			balanceConfirmedSatoshis = walletUtxos
+				.filter(isConfirmedUtxo)
+				.reduce((sum, utxo) => sum + utxo.satoshis, 0n);
+			balancePendingSatoshis = balanceSatoshis - balanceConfirmedSatoshis;
 			balanceBchOnly = walletUtxos
 				.filter((utxo) => !utxo.token)
 				.reduce((sum, utxo) => sum + utxo.satoshis, 0n);
+			balanceConfirmedBchOnly = walletUtxos
+				.filter((utxo) => !utxo.token && isConfirmedUtxo(utxo))
+				.reduce((sum, utxo) => sum + utxo.satoshis, 0n);
+			balancePendingBchOnly = balanceBchOnly - balanceConfirmedBchOnly;
 			balanceCategory = pusdCategory
 				? walletUtxos
 					.filter((utxo) => utxo.token?.category === pusdCategory)
 					.reduce((sum, utxo) => sum + (utxo.token?.amount ?? 0n), 0n)
 				: 0n;
+			balanceConfirmedCategory = pusdCategory
+				? walletUtxos
+					.filter((utxo) => utxo.token?.category === pusdCategory && isConfirmedUtxo(utxo))
+					.reduce((sum, utxo) => sum + (utxo.token?.amount ?? 0n), 0n)
+				: 0n;
+			balancePendingCategory = balanceCategory - balanceConfirmedCategory;
 		} catch (cause) {
 			walletError = cause instanceof Error ? cause.message : String(cause);
 		} finally {
@@ -183,10 +207,13 @@
 		</div>
 		{#if connectedAddress}
 			<p><strong>Connected address:</strong> <code>{connectedAddress}</code></p>
-			<p><strong>BCH total:</strong> {formatBchFromSatoshis(balanceSatoshis)} BCH ({balanceSatoshis.toString()} sats)</p>
-			<p><strong>BCH-only UTXOs:</strong> {formatBchFromSatoshis(balanceBchOnly)} BCH</p>
+			<p><strong>Confirmed BCH:</strong> {formatBchFromSatoshis(balanceConfirmedSatoshis)} BCH ({balanceConfirmedSatoshis.toString()} sats)</p>
+			<p><strong>Pending BCH:</strong> {formatBchFromSatoshis(balancePendingSatoshis)} BCH ({balancePendingSatoshis.toString()} sats)</p>
+			<p><strong>Confirmed BCH-only UTXOs:</strong> {formatBchFromSatoshis(balanceConfirmedBchOnly)} BCH</p>
+			<p><strong>Pending BCH-only UTXOs:</strong> {formatBchFromSatoshis(balancePendingBchOnly)} BCH</p>
 			{#if pusdCategory}
-				<p><strong>PUSD balance:</strong> {formatPusd(balanceCategory)} PUSD</p>
+				<p><strong>Confirmed PUSD:</strong> {formatPusd(balanceConfirmedCategory)} PUSD</p>
+				<p><strong>Pending PUSD:</strong> {formatPusd(balancePendingCategory)} PUSD</p>
 				<p class="muted">Category: <code>{pusdCategory}</code></p>
 			{:else}
 				<p><strong>PUSD balance:</strong> Category not registered on this browser; complete and verify genesis first.</p>

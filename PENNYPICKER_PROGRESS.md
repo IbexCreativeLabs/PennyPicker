@@ -10,7 +10,9 @@
 - Added links to the market from the app home page and header.
 - Added Cashonize-connected, watch-only Chipnet balance loading to the market screen.
   It separates BCH-only funding from total BCH backing UTXOs and shows PUSD only when
-  a locally stored category has been verified after confirmed genesis.
+  a locally stored category has been verified after confirmed genesis. BCH and PUSD
+  balances now label confirmed and pending UTXOs separately; pending funds are not
+  presented as confirmed funding.
 - Added a PUSD Chipnet genesis preparation flow using `TestNetWatchWallet` only. It
   constructs the exact 1,000,000 PUSD supply with no minting NFT, previews the
   vout 0 input and candidate category, requests signing only after a button click,
