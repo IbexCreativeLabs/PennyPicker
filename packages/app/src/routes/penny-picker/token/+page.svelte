@@ -26,6 +26,10 @@
 	} from '$lib/pennypicker/pusdGenesis';
 	import type { CashonizeClient, CashonizeSession } from '$lib/cashonize/walletconnect';
 	import { createPusdBcmrDraft, type PusdBcmrDraft } from '$lib/pennypicker/bcmrDraft';
+	import { getAddressHistoryCount, getAddressUtxos } from '$lib/pennypicker/chain';
+	import { balancesOf, type Balances } from '$lib/pennypicker/ui/wallet';
+	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
+	import { PUSD_CATEGORY_STORAGE_KEY as PUSD_KEY_FOR_BALANCE } from '$lib/pennypicker/pusdGenesis';
 
 	let client: CashonizeClient | undefined = $state();
 	let session: CashonizeSession | undefined = $state();
@@ -48,6 +52,38 @@
 	let error = $state('');
 	let currentOperation = $state('');
 
+	let balances = $state<Balances | undefined>();
+	let historyCount = $state<number | undefined>();
+	let balanceAddress = $state('');
+	let balanceCheckedAt = $state('');
+	let balanceLoading = $state(false);
+	let balanceError = $state('');
+
+	/** Re-query Electrum (Chipnet) for the selected address on every call. */
+	async function loadBalances() {
+		const address = selectedAddress;
+		if (!address) return;
+		balanceLoading = true;
+		balanceError = '';
+		try {
+			const [utxos, count] = await Promise.all([getAddressUtxos(address), getAddressHistoryCount(address)]);
+			let pusdCategory = '';
+			try {
+				pusdCategory = localStorage.getItem(PUSD_KEY_FOR_BALANCE) ?? '';
+			} catch {
+				/* storage unavailable */
+			}
+			balances = balancesOf(utxos, pusdCategory || undefined);
+			historyCount = count;
+			balanceAddress = address;
+			balanceCheckedAt = new Date().toLocaleTimeString();
+		} catch (cause) {
+			balanceError = cause instanceof Error ? cause.message : String(cause);
+		} finally {
+			balanceLoading = false;
+		}
+	}
+
 	async function loadConnectedWallet() {
 		busy = true;
 		currentOperation = 'Connecting to the approved session…';
@@ -69,6 +105,9 @@
 			selfTransferBroadcastTxid = '';
 			selfTransferStatus = '';
 			selfTransferReviewConfirmed = false;
+			balances = undefined;
+			historyCount = undefined;
+			void loadBalances();
 		} catch (cause) {
 			error = describeWalletConnectError(cause);
 		} finally {
@@ -324,10 +363,29 @@
 		<button type="button" onclick={loadConnectedWallet} disabled={busy}>Load connected Cashonize address</button>
 		{#if addresses.length}
 			<label>Public Chipnet address
-				<select bind:value={selectedAddress} disabled={busy}>
+				<select bind:value={selectedAddress} disabled={busy} onchange={loadBalances}>
 					{#each addresses as address (address)}<option value={address}>{address}</option>{/each}
 				</select>
 			</label>
+		{/if}
+		{#if selectedAddress}
+			<div class="balances">
+				<h3>Chipnet balance (from Electrum, watch-only)</h3>
+				<p>Address queried: <code>{balanceAddress || selectedAddress}</code>{balanceCheckedAt ? ` · checked ${balanceCheckedAt}` : ''}</p>
+				{#if balances}
+					<dl>
+						<dt>BCH-only UTXOs</dt><dd>{formatBchFromSatoshis(balances.bchSats)} BCH in {balances.bchUtxoCount} UTXO(s) ({formatBchFromSatoshis(balances.bchSats - balances.bchConfirmedSats)} pending)</dd>
+						<dt>Token-bearing UTXOs</dt><dd>{balances.tokenUtxoCount} UTXO(s) carrying {formatBchFromSatoshis(balances.tokenUtxoSats)} BCH (not counted as spendable BCH)</dd>
+						<dt>PUSD</dt><dd>{formatPusd(balances.pusdUnits)} ({formatPusd(balances.pusdUnits - balances.pusdConfirmedUnits)} pending){balances.pusdUnits === 0n ? ' — PUSD category not set or none held' : ''}</dd>
+						<dt>Transactions seen</dt><dd>{historyCount ?? '—'}</dd>
+					</dl>
+					{#if historyCount === 0}
+						<p class="warning">Chipnet Electrum has never seen a transaction for this address. If Cashonize shows a tBCH balance, it is held at a different address (or wallet) than the one Cashonize shared over WalletConnect. Compare this address with Cashonize's receive address.</p>
+					{/if}
+				{/if}
+				<button type="button" onclick={loadBalances} disabled={balanceLoading}>{balanceLoading ? 'Refreshing…' : 'Refresh balance'}</button>
+				{#if balanceError}<p class="error">Balance query failed: {balanceError}</p>{/if}
+			</div>
 		{/if}
 		<button type="button" onclick={prepareGenesis} disabled={busy || !selectedAddress}>Prepare unsigned genesis</button>
 	</section>

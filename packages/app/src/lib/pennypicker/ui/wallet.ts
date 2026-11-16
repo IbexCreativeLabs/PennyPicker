@@ -27,8 +27,13 @@ export async function connectCashonize(): Promise<ConnectedWallet> {
 }
 
 export interface Balances {
+	/** BCH in BCH-only UTXOs (spendable as plain BCH). */
 	bchSats: bigint;
 	bchConfirmedSats: bigint;
+	/** Satoshis carried by token-bearing UTXOs (any category), kept separate. */
+	tokenUtxoSats: bigint;
+	bchUtxoCount: number;
+	tokenUtxoCount: number;
 	pusdUnits: bigint;
 	pusdConfirmedUnits: bigint;
 }
@@ -38,7 +43,11 @@ export function balancesOf(utxos: ChainUtxo[], pusdCategory?: string): Balances 
 	const bch = utxos.filter((utxo) => !utxo.token);
 	const pusd = utxos.filter((utxo) => pusdCategory && utxo.token?.category === pusdCategory && !utxo.token.nft);
 	const sum = (list: ChainUtxo[], f: (u: ChainUtxo) => bigint) => list.reduce((s, u) => s + f(u), 0n);
+	const tokenBearing = utxos.filter((utxo) => !!utxo.token);
 	return {
+		tokenUtxoSats: sum(tokenBearing, (u) => u.satoshis),
+		bchUtxoCount: bch.length,
+		tokenUtxoCount: tokenBearing.length,
 		bchSats: sum(bch, (u) => u.satoshis),
 		bchConfirmedSats: sum(bch.filter(confirmed), (u) => u.satoshis),
 		pusdUnits: sum(pusd, (u) => u.token!.amount),

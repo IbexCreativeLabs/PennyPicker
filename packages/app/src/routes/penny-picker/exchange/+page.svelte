@@ -166,6 +166,15 @@
 		balances = balancesOf(walletUtxos, market?.pusdCategory);
 	}
 
+	async function refreshBalancesClicked() {
+		error = '';
+		try {
+			await refreshWallet();
+		} catch (cause) {
+			error = `Balance query failed: ${errorText(cause)}`;
+		}
+	}
+
 	async function refreshMarket() {
 		if (!market) return;
 		loading = true;
@@ -318,12 +327,13 @@
 		<section class="panel">
 			<h2>Wallet</h2>
 			{#if wallet}
-				<p><code>{short(wallet.address, 8)}</code></p>
+				<p><code>{wallet.address}</code></p>
 				{#if balances}
 					<p>BCH {formatBchFromSatoshis(balances.bchSats)} <small>({formatBchFromSatoshis(balances.bchSats - balances.bchConfirmedSats)} pending)</small></p>
 					<p>PUSD {formatPusd(balances.pusdUnits)} <small>({formatPusd(balances.pusdUnits - balances.pusdConfirmedUnits)} pending)</small></p>
+					<p><small>{balances.bchUtxoCount} BCH-only UTXO(s); {balances.tokenUtxoCount} token UTXO(s) carrying {formatBchFromSatoshis(balances.tokenUtxoSats)} BCH (not spendable as plain BCH)</small></p>
 				{/if}
-				<button type="button" onclick={refreshWallet}>Refresh balances</button>
+				<button type="button" onclick={refreshBalancesClicked}>Refresh balances</button>
 			{:else}
 				<button type="button" onclick={connect}>Use connected Cashonize wallet</button>
 				<p class="hint">Create the session on <a href="/cashonize">/cashonize</a>.</p>

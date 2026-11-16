@@ -82,7 +82,13 @@ let providerPromise: Promise<Provider> | undefined;
 
 /** Shared Electrum Chipnet provider (via the wallet package's testnet network). */
 export function chipnetProvider(anyAddress: string): Promise<Provider> {
-	providerPromise ??= TestNetWatchWallet.watchOnly(anyAddress).then((wallet) => wallet.provider);
+	providerPromise ??= TestNetWatchWallet.watchOnly(anyAddress)
+		.then((wallet) => wallet.provider)
+		.catch((cause) => {
+			// Do not cache a failed connection; the next refresh retries.
+			providerPromise = undefined;
+			throw cause;
+		});
 	return providerPromise;
 }
 
@@ -106,6 +112,12 @@ export async function getAddressUtxos(address: string): Promise<ChainUtxo[]> {
 				}
 			: {})
 	}));
+}
+
+/** Number of transactions Electrum has ever indexed for this address (confirmed + mempool). */
+export async function getAddressHistoryCount(address: string): Promise<number> {
+	const provider = await chipnetProvider(address);
+	return (await provider.getHistory(address)).length;
 }
 
 export async function getOracleState(market: MarketConfig): Promise<OracleUtxo | undefined> {
