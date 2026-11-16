@@ -136,8 +136,10 @@
   accepted only when JavaScript can represent them as exact safe integers; decimal
   strings and BigInts remain exact. The adapter fetches each referenced raw transaction
   and checks its txid, output index, value, token/NFT data and locking-script hash.
-  It still trusts Electrum's report that an output is unspent and its claimed block
-  height; no Merkle or best-chain proof is checked.
+  For confirmed UTXOs, the adapter also checks `get_merkle` inclusion against the
+  returned block header. This confirms inclusion under that header but does not
+  independently validate the header chain, best-chain membership, or current unspent
+  status. Mempool outputs have no inclusion proof.
 - Added a guarded order lifecycle model covering draft, unsigned, Cashonize-approved,
   broadcast, confirmed, created, discovered, matched, partially filled, filled and
   canceled states. Fill quantity only changes after a matching broadcast is confirmed;

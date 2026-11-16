@@ -14,7 +14,8 @@ import { indexBpsOrderUtxos, type OrderbookIndexResult, type ScriptUtxo } from '
 /**
  * Query one reviewed PennyPicker covenant hash using CatDex's existing adapter,
  * then verify each reported UTXO against the raw transaction named by its outpoint.
- * The server's unspent status and claimed block height are not proven here.
+ * Confirmed transactions also get a Merkle inclusion check against the returned
+ * block header. This does not validate that header's chain of work or UTXO status.
  */
 export async function loadBpsOrderbookFromElectrum(
 	electrumClient: Parameters<typeof getAllMarketOrders>[0],
@@ -65,6 +66,7 @@ async function verifyUtxoTransactionOutputs(
 		return [txid, transaction] as const;
 	});
 	const byTxid = new Map(transactions);
+	const confirmed = new Map<string, number>();
 	for (const utxo of utxos) {
 		const txid = utxo.tx_hash.toLowerCase();
 		if (!Number.isSafeInteger(utxo.tx_pos) || utxo.tx_pos < 0) {
@@ -72,6 +74,16 @@ async function verifyUtxoTransactionOutputs(
 		}
 		if (!Number.isSafeInteger(utxo.value) || utxo.value < 0) {
 			throw new Error(`Electrum reported an invalid BCH value for ${txid}:${utxo.tx_pos}.`);
+		}
+		if (!Number.isSafeInteger(utxo.height) || utxo.height < -1) {
+			throw new Error(`Electrum reported an invalid block height for ${txid}:${utxo.tx_pos}.`);
+		}
+		if (utxo.height > 0) {
+			const knownHeight = confirmed.get(txid);
+			if (knownHeight !== undefined && knownHeight !== utxo.height) {
+				throw new Error(`Electrum reported inconsistent confirmation heights for ${txid}.`);
+			}
+			confirmed.set(txid, utxo.height);
 		}
 		const transaction = byTxid.get(txid);
 		if (!transaction) throw new Error(`Raw transaction is missing for ${txid}.`);
@@ -86,6 +98,106 @@ async function verifyUtxoTransactionOutputs(
 		}
 		verifyTokenData(utxo, output.token, txid);
 	}
+	await verifyConfirmedTransactionMerkleProofs(electrumClient, confirmed);
+}
+
+interface ElectrumMerkleProof {
+	block_height: number;
+	merkle: string[];
+	pos: number;
+}
+
+async function verifyConfirmedTransactionMerkleProofs(
+	electrumClient: Parameters<typeof getAllMarketOrders>[0],
+	confirmed: Map<string, number>
+): Promise<void> {
+	const entries = [...confirmed.entries()];
+	const proofs: unknown[] = await promiseAllInBatches(
+		([txid, height]: [string, number]) =>
+			electrumClient.request('blockchain.transaction.get_merkle', txid, height),
+		entries
+	);
+	const parsed = proofs.map((proof, index) => {
+		const [txid, requestedHeight] = entries[index]!;
+		if (!isMerkleProof(proof) || proof.block_height !== requestedHeight) {
+			throw new Error(`Electrum returned an invalid Merkle proof for ${txid}.`);
+		}
+		if (!proof.merkle.every((hash) => /^[0-9a-f]{64}$/i.test(hash))) {
+			throw new Error(`Electrum returned an invalid Merkle branch for ${txid}.`);
+		}
+		return { txid, height: proof.block_height, proof };
+	});
+	const heights = [...new Set(parsed.map(({ height }) => height))];
+	const headers = await Promise.all(
+		heights.map(async (height) => {
+			const response: unknown = await electrumClient.request('blockchain.header.get', height);
+			const header =
+				typeof response === 'string'
+					? response
+					: typeof response === 'object' && response !== null && 'hex' in response
+						? response.hex
+						: undefined;
+			const responseHeight =
+				typeof response === 'object' && response !== null && 'height' in response
+					? response.height
+					: height;
+			if (
+				typeof header !== 'string' ||
+				!/^[0-9a-f]{160}$/i.test(header) ||
+				responseHeight !== height
+			) {
+				throw new Error(`Electrum returned a malformed block header at height ${height}.`);
+			}
+			return [height, header] as const;
+		})
+	);
+	const merkleRoots = new Map(
+		headers.map(([height, header]) => [
+			height,
+			binToHex(hexToBin(header.slice(72, 136)).reverse()).toLowerCase()
+		])
+	);
+	for (const { txid, height, proof } of parsed) {
+		const expectedRoot = merkleRoots.get(height);
+		if (!expectedRoot || calculateMerkleRoot(txid, proof.merkle, proof.pos) !== expectedRoot) {
+			throw new Error(`Electrum's Merkle proof does not match block ${height} for ${txid}.`);
+		}
+	}
+}
+
+function isMerkleProof(value: unknown): value is ElectrumMerkleProof {
+	if (typeof value !== 'object' || value === null) return false;
+	const proof = value as Partial<ElectrumMerkleProof>;
+	return (
+		Number.isSafeInteger(proof.block_height) &&
+		Array.isArray(proof.merkle) &&
+		Number.isSafeInteger(proof.pos) &&
+		(proof.pos as number) >= 0
+	);
+}
+
+/** Hash a displayed txid and Electrum branch (display byte order) to the header root. */
+export function calculateMerkleRoot(txid: string, branch: string[], position: number): string {
+	if (!/^[0-9a-f]{64}$/i.test(txid) || !Number.isSafeInteger(position) || position < 0) {
+		throw new Error('Invalid transaction ID or Merkle position.');
+	}
+	let current = hexToBin(txid).reverse();
+	for (const siblingHex of branch) {
+		if (!/^[0-9a-f]{64}$/i.test(siblingHex)) throw new Error('Invalid Merkle branch hash.');
+		const sibling = hexToBin(siblingHex).reverse();
+		const pair = new Uint8Array(64);
+		if ((position & 1) === 0) {
+			pair.set(current, 0);
+			pair.set(sibling, 32);
+		} else {
+			pair.set(sibling, 0);
+			pair.set(current, 32);
+		}
+		current = hash256(pair);
+		position = Math.floor(position / 2);
+	}
+	if (position !== 0) throw new Error('Merkle branch is too short for the reported position.');
+	return binToHex(current.reverse()).toLowerCase();
 }
 
 function verifyTokenData(
