@@ -7,8 +7,7 @@
 		assertOrderDelta,
 		bidSatsForUnits,
 		formatPrice,
-		limitPrice,
-		satsToUnits
+		limitPrice
 	} from '$lib/pennypicker/contracts';
 	import {
 		buildCancelOrder,
@@ -107,8 +106,8 @@
 				sats += take;
 				want -= take;
 			}
-			const avg = sats > 0n ? (units * 10n ** 14n) / sats : 0n;
-			return { legs, units, sats, unfilled: want, avg };
+			const limits = legs.map((leg) => limitPrice(price, leg.order.deltaBps));
+			return { legs, units, sats, unfilled: want, best: limits[0] ?? 0n, worst: limits[limits.length - 1] ?? 0n };
 		} catch {
 			return undefined;
 		}
@@ -235,7 +234,7 @@
 								<td class="ask-c">{signed(order.deltaBps)}</td>
 								<td class="r ask-c">{price ? formatPrice(l) : '—'}</td>
 								<td class="r">{formatSats(order.availableSats)}</td>
-								<td class="r muted">{price ? formatUnits(satsToUnits(order.availableSats, l)) : '—'}</td>
+								<td class="r muted">{price ? formatUnits(askFillUnitsDue(order.availableSats, price, order.deltaBps)) : '—'}</td>
 								<td class="r">
 									{#if order.makerPkh === myPkh}<span class="pp-badge plain small">yours</span>
 									{:else if pp.wallet}<button class="pp-btn pp-btn-sm" type="button" onclick={() => pin(order)}>Buy</button>{/if}
@@ -333,10 +332,11 @@
 					{#if route && route.legs.length}
 						<div class="calc">
 							<div><span class="muted">Orders matched</span><span class="num">{route.legs.length}</span></div>
-							<div><span class="muted">Average price</span><span class="num">{formatPrice(route.avg)} PUSD/BCH</span></div>
+							<div><span class="muted">Limit price</span><span class="num">{formatPrice(route.best)}{route.worst !== route.best ? ` – ${formatPrice(route.worst)}` : ''} PUSD/BCH</span></div>
 							<div class="lim"><span>{takeSide === 'buy' ? 'You pay' : 'You receive'}</span><strong class="num">{formatUnits(route.units)} PUSD</strong></div>
 							<div><span class="muted">{takeSide === 'buy' ? 'You receive' : 'You sell'}</span><span class="num">{formatSats(route.sats)} BCH</span></div>
 						</div>
+						<p class="small muted">PUSD amounts are rounded to 0.01 in the order maker's favour.</p>
 						{#if route.unfilled >= MIN_TRADE_SATOSHIS}<p class="pp-callout warn small">{formatSats(route.unfilled)} BCH cannot be matched from the current book.</p>{/if}
 					{:else}
 						<p class="small muted">{takeSide === 'buy' ? 'No asks available to buy from.' : 'No bids available to sell into.'}</p>

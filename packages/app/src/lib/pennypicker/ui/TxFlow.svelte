@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { binToHex, stringify } from '@bitauth/libauth';
 	import { requestCashonizeTransactionSignature } from '$lib/cashonize/walletconnect';
 	import { lockingBytecodeToChipnetAddress, verifySignedMatchesUnsigned, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
@@ -25,6 +25,12 @@
 	let error = $state('');
 	let confirmations = $state(0);
 	let poll: ReturnType<typeof setInterval> | undefined;
+	let panel = $state<HTMLElement | undefined>();
+	// The review can open far from the button that started it (e.g. Cancel in "My orders"): bring it into view.
+	onMount(() => {
+		const rect = panel?.getBoundingClientRect();
+		if (panel && rect && (rect.top < 0 || rect.bottom > window.innerHeight)) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	});
 
 	const kindLabel: Record<UnsignedExchangeTransaction['kind'], string> = {
 		'oracle-genesis': 'Create oracle',
@@ -33,7 +39,8 @@
 		'order-fill': 'Fill orders',
 		'order-cancel': 'Cancel order',
 		'pusd-send': 'Send PUSD',
-		'identity-separation': 'Separate PUSD identity'
+		'identity-separation': 'Separate PUSD identity',
+		'pusd-genesis': 'Create PUSD'
 	};
 
 	const rows = $derived(
@@ -141,7 +148,7 @@
 	void order;
 </script>
 
-<section class="pp-card txflow" aria-live="polite">
+<section class="pp-card txflow" aria-live="polite" bind:this={panel}>
 	<div class="pp-card-head">
 		<h2>{title ?? kindLabel[unsigned.kind]}</h2>
 		<ol class="steps">

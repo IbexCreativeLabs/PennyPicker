@@ -71,7 +71,10 @@ class PennyPickerSession {
 	isOperator = $derived(!!this.wallet && !!this.config.oracleOperatorPkh && this.wallet.pkh === this.config.oracleOperatorPkh);
 
 	/** A confirmed BCH-only output at index 0 (needed for a CashToken genesis). */
-	genesisReadyUtxo = $derived(this.utxos.find((u) => u.vout === 0 && !u.token && !u.identityOf && (u.height ?? 0) > 0));
+	genesisReadyUtxo = $derived(
+		this.utxos.find((u) => u.vout === 0 && !u.token && !u.identityOf && (u.height ?? 0) > 0) ??
+			this.utxos.find((u) => u.vout === 0 && !u.token && !u.identityOf)
+	);
 	/** The PUSD identity output, when the connected wallet holds it. */
 	ownIdentityUtxo = $derived(this.pusdIdentity ? this.utxos.find((u) => u.txid === this.pusdIdentity!.txid && u.vout === 0) : undefined);
 
@@ -94,7 +97,7 @@ class PennyPickerSession {
 			step('wallet', 'Wallet connected', this.walletStatus === 'connected', this.wallet ? 'Cashonize on Chipnet' : 'Connect Cashonize', '/penny-picker/wallet'),
 			step('pusd', 'PUSD genesis', !!pusd, pusd ? `Category ${pusd.slice(0, 8)}…` : 'Create the token', '/penny-picker/token'),
 			step('pusd-verified', 'PUSD category verified', pusdSeen, pusdSeen ? 'Seen on-chain' : 'No PUSD UTXO observed yet', '/penny-picker/token', !pusd),
-			step('vout0', 'Oracle genesis input', oracleExists || !!this.genesisReadyUtxo, oracleExists ? 'Used by oracle genesis' : this.genesisReadyUtxo ? `${this.genesisReadyUtxo.txid.slice(0, 8)}…:0 confirmed` : 'Needs a confirmed BCH-only vout 0', '/penny-picker/token'),
+			step('vout0', 'Oracle genesis input', oracleExists || !!this.genesisReadyUtxo, oracleExists ? 'Used by oracle genesis' : this.genesisReadyUtxo ? `${this.genesisReadyUtxo.txid.slice(0, 8)}…:0 ready` : 'Needs a BCH-only output 0', '/penny-picker/token'),
 			step('oracle', 'Oracle genesis', oracleExists, oracleExists ? `Category ${this.config.oracleCategory?.slice(0, 8)}…` : 'Create the oracle', '/penny-picker/oracle'),
 			step('price', 'Reference price published', oracleExists, oracleExists ? `Sequence #${this.oracle!.state.sequence}` : 'Published with oracle genesis', '/penny-picker/oracle', !oracleExists),
 			step('orders', 'First buy & sell orders', sides.has('bid') && sides.has('ask'), `${sides.has('bid') ? '✓' : '·'} bid (buy BCH)  ${sides.has('ask') ? '✓' : '·'} ask (sell BCH)`, '/penny-picker/exchange', !oracleExists),

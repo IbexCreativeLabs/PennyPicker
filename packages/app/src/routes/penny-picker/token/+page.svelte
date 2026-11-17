@@ -30,6 +30,7 @@
 	import { balancesOf, type Balances } from '$lib/pennypicker/ui/wallet';
 	import { pp, explorerTx } from '$lib/pennypicker/ui/session.svelte';
 	import IdentityCard from '$lib/pennypicker/ui/IdentityCard.svelte';
+	import PusdGenesisCard from '$lib/pennypicker/ui/PusdGenesisCard.svelte';
 	import { CHIPNET_DEPLOYMENT } from '$lib/pennypicker/deployment';
 	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
 	import { PUSD_CATEGORY_STORAGE_KEY as PUSD_KEY_FOR_BALANCE } from '$lib/pennypicker/pusdGenesis';
@@ -461,7 +462,7 @@
 			</details>
 		{:else}
 			<p class="small muted">Creates exactly {PUSD_INITIAL_SUPPLY.toLocaleString()} PUSD ({PUSD_INITIAL_AMOUNT.toString()} base units) with no minting baton. It spends a confirmed BCH-only output at index 0; the category ID becomes that output's transaction ID.</p>
-			<button class="pp-btn pp-btn-primary" type="button" onclick={prepareGenesis} disabled={busy || !selectedAddress}>Prepare genesis</button>
+			<PusdGenesisCard />
 		{/if}
 
 		{#if genesis}

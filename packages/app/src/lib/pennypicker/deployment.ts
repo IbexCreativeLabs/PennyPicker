@@ -3,13 +3,16 @@
  * These are on-chain identifiers, not secrets. Precedence in the app:
  * VITE_PENNYPICKER_* env vars > values saved in this browser > these defaults.
  *
- * The oracle category is the confirmed oracle genesis on Chipnet.
+ * Market v3 (2026-11-17): operated by the "PP Operator" Cashonize test wallet.
+ * The v2 market (PUSD b9d9ef3c…, oracle 03f6c31a…, operator qq3gfs…nrf0) was
+ * retired because its operator wallet is no longer available.
+ *
  */
 export const CHIPNET_DEPLOYMENT = {
-	/** PUSD genesis tx 46db72c8711ccda28de97e924e5edc12a6f5b1f124fc2df83433c4a2156b61e4 (confirmed). */
-	pusdCategory: 'b9d9ef3c2cd4ad75354119824c79b068501f3f5f4131b4a246274b35d508a2ee',
-	/** Operator: bchtest:qq3gfs2492tlz2nckgpq6wn28fcd80lucvlxe0nrf0 */
-	oracleOperatorPkh: '2284c1552a97f12a78b2020d3a6a3a70d3bffcc3',
-	/** Oracle genesis tx c530a91072561915dd032da8d491fa98c6b612e27b47b06ee8711ddfcd1cee22 (block 334564). */
-	oracleCategory: '03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602' as string | undefined
+	/** PUSD genesis 9a1a960107d5de533a68659bd3b97b175f548c1d483beb7c7ff285b560316aba (identity at :0, supply at :1). */
+	pusdCategory: '74167994a2d8e1e57188bae9a42035678e3526a1d8650ced756b2ffa4c078ab3' as string | undefined,
+	/** Operator: bchtest:qz6fyv7h46g24nwlqmhua23hqumgj2zgcc0w05m3sx */
+	oracleOperatorPkh: 'b49233d7ae90aacddf06efceaa370736892848c6',
+	/** Oracle genesis a08a39c3d9d8df4274c79ed33864247e118ff2b727edc46981f7eddb3d7a60dc (500.00, sequence 1). */
+	oracleCategory: '88e2a9eebad292fc843ab8cd2f683b6326295dde7de716242041ddfccd3b9a37' as string | undefined
 } as const;

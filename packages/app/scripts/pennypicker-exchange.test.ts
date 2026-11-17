@@ -27,6 +27,7 @@ import {
 	buildOracleUpdate,
 	buildPusdTransfer,
 	buildIdentitySeparation,
+	buildPusdGenesis,
 	describeOrder,
 	findOracleUtxo,
 	lockingBytecodeToChipnetAddress,
@@ -113,9 +114,11 @@ const fund = (owner: ReturnType<typeof key>, seed: number, sats: bigint, pusd?: 
 const RATE = 500n * 100_000_000n;
 let operatorUtxos = [fund(operator, 1, 1_000_000n)];
 {
+	const unconfirmed = buildOracleGenesis(operator.address, operator.pkh, [{ ...operatorUtxos[0]!, height: 0 }], { price: RATE, timestamp: 1_800_000_000, sequence: 1 });
+	check('oracle genesis accepts an unconfirmed vout 0', unconfirmed.createdCategory === operatorUtxos[0]!.txid);
 	let threw = false;
-	try { buildOracleGenesis(operator.address, operator.pkh, [{ ...operatorUtxos[0]!, height: 0 }], { price: RATE, timestamp: 1_800_000_000, sequence: 1 }); } catch { threw = true; }
-	check('oracle genesis refuses an unconfirmed vout 0', threw);
+	try { buildOracleGenesis(operator.address, operator.pkh, [{ ...operatorUtxos[0]!, vout: 1 }], { price: RATE, timestamp: 1_800_000_000, sequence: 1 }); } catch { threw = true; }
+	check('oracle genesis refuses without a vout-0 input', threw);
 }
 const genesis = buildOracleGenesis(operator.address, operator.pkh, [...operatorUtxos, fund(operator, 99, 5_000n, 7n)], { price: RATE, timestamp: 1_800_000_000, sequence: 1 });
 const g = verify('oracle genesis', genesis, operator);
@@ -263,6 +266,28 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	check('after separation, the send leaves the identity unspent', !spent(send.transaction, after.find((u) => u.vout === 0)!));
 	const bid = buildCreateOrder(market, oracle, owner.address, owner.pkh, after, { side: 'bid', deltaBps: -10, amount: 10_000n });
 	check('after separation, a bid leaves the identity unspent', !spent(bid.transaction, after.find((u) => u.vout === 0)!));
+}
+// 11. PUSD genesis with the identity kept apart from the supply.
+{
+	const creator = key('0f');
+	const SUPPLY = 100_000_000n;
+	const g0 = fund(creator, 60, 400_000n);
+	const extra: ChainUtxo = { ...fund(creator, 61, 50_000n), vout: 2 };
+	const gen = buildPusdGenesis(creator.address, [extra, g0], SUPPLY);
+	const gv = verify('PUSD genesis verifies in the VM', gen, creator);
+	check('genesis spends the vout-0 coin first (category = its txid)', binToHex(gv.tx.inputs[0]!.outpointTransactionHash) === g0.txid && gen.createdCategory === g0.txid);
+	check('genesis output 0 is a BCH-only identity output to the creator', !gv.tx.outputs[0]!.token && binToHex(gv.tx.outputs[0]!.lockingBytecode) === binToHex(creator.locking));
+	const tokenOuts = gv.tx.outputs.filter((o) => o.token);
+	check('genesis output 1 holds the entire supply', tokenOuts.length === 1 && gv.tx.outputs[1]!.token?.amount === SUPPLY && binToHex(gv.tx.outputs[1]!.token!.category) === g0.txid && !gv.tx.outputs[1]!.token!.nft);
+	check('genesis pays nobody else', gv.tx.outputs.every((o) => binToHex(o.lockingBytecode) === binToHex(creator.locking)));
+	// After genesis the supply is spendable without touching the identity.
+	const created = outputsTo(gv.txid, gv.tx, creator.locking).map((u) => (u.vout === 0 ? { ...u, identityOf: g0.txid } : u));
+	const send = buildPusdTransfer(g0.txid, creator.address, created, [{ address: taker.address, units: 100_000n }]);
+	verify('first PUSD send after genesis verifies', send, creator);
+	check('first send leaves the identity output unspent', !send.transaction.inputs.some((i) => binToHex(i.outpointTransactionHash) === gv.txid && i.outpointIndex === 0));
+	let refused = false;
+	try { buildPusdGenesis('bitcoincash:qq3gfs2492tlz2nckgpq6wn28fcd80lucvcv23a9ku', [g0], SUPPLY); } catch { refused = true; }
+	check('genesis refuses a mainnet address', refused);
 }
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 

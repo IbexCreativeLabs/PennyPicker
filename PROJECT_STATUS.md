@@ -1,6 +1,6 @@
 # PennyPicker: project status
 
-_Last updated: 2026-11-17. Hackathon deadline: 2026-11-22._
+_Last updated: 2026-11-17 (evening). Hackathon deadline: 2026-11-22._
 
 **Public demo: https://pennypicker.pages.dev** (Cloudflare Pages, auto-deploys from `main`).
 
@@ -8,50 +8,42 @@ PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet**. Orders
 relative to an on-chain reference price. PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals) with no USD
 backing and no peg. `PENNYPICKER_PROGRESS.md` is the earlier research log.
 
-## Confirmed on Chipnet
+## Live market on Chipnet (market v3, 2026-11-17)
 
-The user performed these steps through Cashonize and the app. All are confirmed, and the IDs were checked against Electrum.
+All three wallets are Cashonize single-address **Chipnet development wallets** in the VM's Chrome (seed phrases stay in Cashonize; never exported).
 
-| Step | Transaction | Result |
-| --- | --- | --- |
-| Wallet | — | `bchtest:qq3gfs2492tlz2nckgpq6wn28fcd80lucvlxe0nrf0` (PKH `2284c1552a97f12a78b2020d3a6a3a70d3bffcc3`) |
-| Self-transfer #1 | `b9d9ef3c2cd4ad75354119824c79b068501f3f5f4131b4a246274b35d508a2ee` | vout 0 = 516,548 sats (fee 232) |
-| **PUSD genesis** | `46db72c8711ccda28de97e924e5edc12a6f5b1f124fc2df83433c4a2156b61e4` | 100,000,000 base units at vout 0 (1,000 sats). No baton, no NFT |
-| **PUSD category** | — | `b9d9ef3c2cd4ad75354119824c79b068501f3f5f4131b4a246274b35d508a2ee` |
-| Self-transfer #2 | `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602` | vout 0 = 515,057 sats, reserved for oracle genesis |
+| Role | Address |
+| --- | --- |
+| **PP Operator** (PUSD issuer, oracle operator) | `bchtest:qz6fyv7h46g24nwlqmhua23hqumgj2zgcc0w05m3sx` (PKH `b49233d7ae90aacddf06efceaa370736892848c6`) |
+| PP Trader A | `bchtest:qze7r468d3qk2wnvzt7afwm2g7wzhgv0fgel4t7e50` |
+| PP Trader B | `bchtest:qrxy22p45mzt6tg0e3hjqmy8sz6jgqzjmvw89lgp4t` |
 
-| **Oracle genesis** | `c530a91072561915dd032da8d491fa98c6b612e27b47b06ee8711ddfcd1cee22` | Block 334564. Oracle NFT at `bchtest:rd8cuc0a…6pgp8ctn6`, price 500.00, sequence 1. **Oracle category `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602`**. Change `c530…:1` = 513,747 sats |
+| Identifier | Value |
+| --- | --- |
+| **PUSD category** | `74167994a2d8e1e57188bae9a42035678e3526a1d8650ced756b2ffa4c078ab3` (1,000,000.00, 2 decimals, no baton) |
+| PUSD genesis | `9a1a960107d5de533a68659bd3b97b175f548c1d483beb7c7ff285b560316aba`: **output 0 = BCH-only identity, output 1 = supply** (no separation step needed) |
+| **Oracle category** | `88e2a9eebad292fc843ab8cd2f683b6326295dde7de716242041ddfccd3b9a37` |
+| Oracle genesis | `a08a39c3d9d8df4274c79ed33864247e118ff2b727edc46981f7eddb3d7a60dc` (500.00, seq 1, block 335268) |
 
-**Live trading tests (agent, 2026-11-17, local app + Cashonize web in the VM):**
+**End-to-end test, all signed in Cashonize, broadcast from the app and checked against Chipnet** (types: real signed and broadcast Chipnet transactions):
 
-| Step | Transaction | Result |
-| --- | --- | --- |
-| Test wallets | — | `PP Trader A` `bchtest:qze7r468…l4t7e50` and `PP Trader B` `bchtest:qrxy22p4…w89lgp4t` (Cashonize single-address Chipnet dev wallets in the VM's Chrome) |
-| Faucet → A | `d53ebb87…` | 1,017,000 sats |
-| A → B tBCH | `ac970dda…5ea48b` | 400,000 sats, confirmed |
-| **First real ask** (A) | `50e420e3e811439b4b91c751ae8b631447c3d591cbb3cbdf98358d96b8ba61e7` | Sell 0.004 BCH at +50 BPS (502.50). Cashonize signed the oracle `read()` contract input + P2PKH; orderbook discovered it from Chipnet |
-| **First real cancel** (A) | `60bbc9ed8528b07b29c58222ba25d7a80fb11bc7203b8ace062b9efe746acffe` | Covenant `cancel()` accepted by the node; 400,508 sats returned |
-
-Cashonize notes: it pre-fills nothing for contract inputs and signs only empty-unlocking wallet P2PKH inputs (confirmed in its source and live). Its WalletConnect sessions belong to the active wallet: switching wallets ends the other wallet's session, so testing two wallets in one browser means re-pairing after each switch (two devices avoid this). `http://` dev origins show "URL hidden (unsafe protocol)" in Cashonize; harmless locally.
-
-**Not yet done:** PUSD identity separation and PUSD distribution (both need the operator wallet, which is not in the VM), fills, oracle updates. The BCMR draft is local only and unpublished.
-
-**PUSD identity (BCMR authchain), verified on Chipnet 2026-11-17**
-- Authchain: authbase `b9d9ef3c…a2ee` → genesis `46db72c8711ccda28de97e924e5edc12a6f5b1f124fc2df83433c4a2156b61e4`. The txid `46bd72c8…`, sometimes mistyped in reports, does not exist on Chipnet.
-- The current identity output, **`46db72c8…61e4:0`**, is unspent at the operator address. It also holds **the entire 1,000,000.00 PUSD supply**.
-- Because of that, Cashonize refused the first PUSD send: the send put the recipient at output 0, which would have handed the identity to the recipient. A bid or ask fill would have moved it into the oracle contract instead.
-
-**Next on-chain step: identity separation** (Token page → PUSD identity → Review). The preview, built from live UTXOs:
-
-| | Outpoint / address | BCH | Token |
+| # | Step | Transaction | Verified result |
 | --- | --- | --- | --- |
-| In 0 | `46db72c8…61e4:0` (identity) | 1,000 sats | 100,000,000 units of `b9d9ef3c…` |
-| In 1 | `c530a910…ee22:1` | 513,747 sats | — |
-| Out 0 | operator `bchtest:qq3gfs…nrf0` (new identity) | 1,000 sats | none |
-| Out 1 | operator `bchtest:zq3gfs…a9ku` | 1,000 sats | 100,000,000 units of `b9d9ef3c…` |
-| Out 2 | operator (change) | 512,284 sats | — |
+| 1 | Operator sends 1,000 PUSD to A and to B | `fa8865f4…` | identity output `9a1a9601…:0` untouched (flagged "PUSD identity" in the UI) |
+| 2 | A: ask, sell 0.002 BCH at +50 BPS (502.50) | `b399b57669165730286fd34a17ee727b6f2c3857899d11f1d8a36ee980f06040` | block 335278 |
+| 3 | **B buys 0.001 BCH from A's ask** | `ebfecc0823b8bdb5fa42402e1f92aae7143c4236fd6c5e74aa7384b9f1dc385b` | order 201,000→101,000 sats, 0→51 PUSD units. 51e18 − 1e5·500e8·10050 ≥ 0 ✓ (0.5025 rounded up for the maker). Block 335278 |
+| 4 | B: bid 0.25 PUSD at −50 BPS (497.50) | `c462779107098006a38eab1fa4587b847b16769920f6450e79191ef72c15e583` | block 335278 |
+| 5 | **A sells 0.0002 BCH into B's bid** | `e3098a63bb4163ef1d8aaa11d419f073b14e0ccda3bac4307ad46b730a7b83ae` | order +20,000 sats, 25→16 units. −9e18 + 2e4·500e8·9950 ≥ 0 ✓ (0.0995 rounded down for the maker). Block 335278 |
+| 6 | A cancels ask remainder | `900dc99c…d4132f3` | A gets 0.001 BCH + 0.51 PUSD back; A shows 1,000.60 PUSD |
+| 7 | B cancels bid remainder | `243d498e…356773b` | B gets 20,000 sats bought + 0.16 PUSD |
+| 8 | Operator oracle update 500.00 → 505.00 | `f48c14b7…b100ef` | seq #2; open-order limits re-price (+50 BPS → 507.53) |
 
-The fee is 463 sats. All three outputs pay the operator. After this, send 100 PUSD to the second wallet.
+Earlier v2 tests (retired market, operator `qq3gfs…nrf0` whose wallet is not available): first ask `50e420e3…` and cancel `60bbc9ed…`.
+The v2 PUSD (`b9d9ef3c…`) and oracle (`03f6c31a…`) still exist on Chipnet but the app no longer uses them.
+
+**Testing two wallets in one browser:** Cashonize WalletConnect sessions belong to the active wallet, so switching wallets ends the other session.
+Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:5173` have separate storage), switch the Cashonize wallet, then
+**Wallet → Connect → "Open in Cashonize web"** (deep link `https://cashonize.com/?uri=…`) and approve. On two devices this is not needed.
 
 ## Pricing convention (protocol v2, changed before any oracle or order existed)
 
@@ -126,14 +118,14 @@ Run from `packages/app`, using libauth's BCH 2025 VM:
 
 ```
 pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 23 covenant checks
-pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 49 builder checks (signed, chained txs, PUSD transfer, identity separation + safeguards, error texts)
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 58 builder checks (signed, chained txs, PUSD genesis + transfer, identity safeguards, error texts)
 pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
 pnpm dlx tsx scripts/pennypicker-identity.test.ts    # 8 authchain/marking checks
 ```
 
-The UI was checked by type-checking (no errors in PennyPicker files; 122 pre-existing Vox errors remain) and by
-server-rendering every page, including with the real wallet's Chipnet UTXOs loaded. It has **not** been clicked
-through in a browser by the agent.
+Read-only Chipnet helpers: `pennypicker-live-check.ts`, `-balances.ts`, `-utxos-full.ts`, `-oracle-history.ts`, `-verify-trades.ts`, `-wait-confirm.ts`.
+
+The UI has been driven end to end in Chrome by the agent (see the live test table). Type-check: no errors in PennyPicker files; 121 legacy Vox errors remain.
 
 ## Known limitations
 
@@ -148,12 +140,11 @@ through in a browser by the agent.
 
 ## External actions required (you)
 
-1. ~~Oracle genesis~~ (done, `c530a910…`). **Identity separation:** Token → PUSD identity → Review → Sign → Broadcast. Then send PUSD to the second wallet.
-2. Optionally put the identifiers in `packages/app/.env` (`VITE_PENNYPICKER_PUSD_CATEGORY`, `…_ORACLE_CATEGORY`, `…_ORACLE_OPERATOR_PKH`).
-3. **Push commits:** `git push ibex-backup main` from your terminal. This shell has no GitHub credentials. Each push redeploys the public site.
-4. **Testing:** place an ask and a bid. Fill them from a second Cashonize wallet: fund it from a faucet, then use **Wallet → Send PUSD** from the operator wallet (after oracle genesis) to give it PUSD. Cancel an order, publish an oracle update, and check that limit prices re-price.
+1. **Push commits:** `git push ibex-backup main` from your terminal. This shell has no GitHub credentials. Each push redeploys the public site.
+2. Faucet top-ups (tbch.googol.cash uses a CAPTCHA the agent may not solve).
 
 ## Remaining tasks
 
-- Run and fix the first live oracle genesis, order, fill, cancel and update. Cashonize behaviour with contract inputs in `sourceOutputs` is the main unknown.
-- Polish after live testing: empty states, mobile tuning, and a price chart from the oracle history.
+- ~~Live oracle genesis, order, fill, cancel and update~~ (done, see table above; Cashonize signs contract inputs fine).
+- Verify the public deployment with the v3 identifiers and pair Cashonize from https://pennypicker.pages.dev.
+- Polish: mobile pass, empty states, price chart from oracle history.

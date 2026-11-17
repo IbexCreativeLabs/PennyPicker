@@ -113,7 +113,7 @@ export interface ContractInfo {
 export type WcSourceOutput = Input & Output & { contract?: ContractInfo };
 
 export interface UnsignedExchangeTransaction {
-	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel' | 'pusd-send' | 'identity-separation';
+	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel' | 'pusd-send' | 'identity-separation' | 'pusd-genesis';
 	transaction: TransactionCommon;
 	unsignedHex: string;
 	sourceOutputs: WcSourceOutput[];
@@ -388,9 +388,10 @@ export function buildOracleGenesis(
 	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(operatorPkh))) {
 		throw new Error('Operator hash does not match the connected P2PKH address.');
 	}
-	const genesisInput = bchOnly(walletUtxos).find((utxo) => utxo.vout === 0 && (utxo.height ?? 0) > 0);
+	// Unconfirmed is fine: the category is the parent txid, which is fixed once signed.
+	const genesisInput = genesisInputOf(walletUtxos);
 	if (!genesisInput) {
-		throw new Error('Oracle genesis needs a confirmed BCH-only UTXO at output index 0 in the connected wallet.');
+		throw new Error('Oracle genesis needs a BCH-only UTXO at output index 0 in the connected wallet. Receive a payment (it lands at output 0) and try again.');
 	}
 	const category = genesisInput.txid;
 	const instance = oracleContract({ operatorPkh });
@@ -886,6 +887,65 @@ export function buildPusdTransfer(
 // ---------------------------------------------------------------- identity separation
 
 export const IDENTITY_OUTPUT_SATOSHIS = 1_000n;
+
+/** A BCH-only, non-identity wallet output at index 0 (confirmed preferred). */
+function genesisInputOf(walletUtxos: ChainUtxo[]): ChainUtxo | undefined {
+	const candidates = bchOnly(walletUtxos).filter((utxo) => utxo.vout === 0);
+	return candidates.find((utxo) => (utxo.height ?? 0) > 0) ?? candidates[0];
+}
+
+/**
+ * Create a fixed-supply fungible token (PUSD) with the identity kept apart from
+ * the supply, so ordinary sends never touch it:
+ *   output 0: BCH-only identity output to the creator (BCMR authchain head);
+ *   output 1: the entire supply to the creator's token-aware address;
+ *   output 2: BCH change.
+ * No minting baton and no NFTs are created, so the supply can never grow.
+ */
+export function buildPusdGenesis(creatorAddress: string, walletUtxos: ChainUtxo[], supplyUnits: bigint): UnsignedExchangeTransaction {
+	if (!creatorAddress.startsWith('bchtest:')) throw new Error('PUSD genesis is restricted to a Chipnet (bchtest:) address.');
+	if (supplyUnits <= 0n || supplyUnits > MAX_TOKEN_UNITS) throw new Error('Supply must be a positive CashToken amount.');
+	const walletLocking = addressToLockingBytecode(creatorAddress);
+	if (walletLocking.length !== 25) throw new Error('Genesis must be created from a P2PKH wallet address.');
+	const genesisInput = genesisInputOf(walletUtxos);
+	if (!genesisInput) {
+		throw new Error('PUSD genesis needs a BCH-only UTXO at output index 0 in the connected wallet. Receive a payment (it lands at output 0) and try again.');
+	}
+	const category = genesisInput.txid;
+	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [], outputs: [] };
+	const sources: WcSourceOutput[] = [];
+	const input = utxoToInput(genesisInput, new Uint8Array());
+	tx.inputs.push(input);
+	sources.push(source(input, utxoToOutput(genesisInput, walletLocking)));
+	tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: IDENTITY_OUTPUT_SATOSHIS });
+	tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: hexToBin(category), amount: supplyUnits } });
+	const used = new Set([`${genesisInput.txid}:${genesisInput.vout}`]);
+	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
+	if (tx.outputs[0]!.token || tx.outputs.filter((output) => output.token).length !== 1) {
+		throw new Error('Internal check failed: output 0 must be BCH-only and exactly one output must carry the supply.');
+	}
+	if (tx.outputs.some((output) => binToHex(output.lockingBytecode) !== binToHex(walletLocking))) {
+		throw new Error('Internal check failed: every output must pay the creator.');
+	}
+	assertTokenConservation(tx, sources, category);
+	const own = lockingBytecodeToChipnetAddress(walletLocking, true);
+	const ownPlain = lockingBytecodeToChipnetAddress(walletLocking, false);
+	return {
+		kind: 'pusd-genesis',
+		transaction: tx,
+		unsignedHex: binToHex(encodeTransaction(tx)),
+		sourceOutputs: sources,
+		feeSatoshis: fee,
+		createdCategory: category,
+		summary: [
+			`Create ${formatUnits(supplyUnits)} PUSD (fixed supply, 2 decimals, no minting baton, no NFTs)`,
+			`Spends ${genesisInput.txid.slice(0, 12)}…:0 · new PUSD category = that txid`,
+			`Output 0: token identity, BCH only, to ${ownPlain}`,
+			`Output 1: the whole supply to ${own}`,
+			`Network fee ≈ ${fee.toString()} sats`
+		]
+	};
+}
 
 /**
  * One-time fix for a token identity output that also carries fungible tokens

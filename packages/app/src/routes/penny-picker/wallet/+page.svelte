@@ -66,6 +66,17 @@
 	);
 	const label = (category: string) =>
 		category === pp.config.pusdCategory ? 'PUSD' : category === pp.config.oracleCategory ? 'Oracle' : `${category.slice(0, 8)}…`;
+
+	let uriCopied = $state(false);
+	async function copyPairingUri() {
+		try {
+			await navigator.clipboard.writeText(pp.pairingUri ?? '');
+			uriCopied = true;
+			setTimeout(() => (uriCopied = false), 2500);
+		} catch {
+			uriCopied = false;
+		}
+	}
 </script>
 
 <svelte:head><title>Wallet · PennyPicker</title></svelte:head>
@@ -109,6 +120,11 @@
 				<div class="pairing">
 					<p class="small">Scan with Cashonize (set to Chipnet), or paste the URI into Cashonize's WalletConnect screen.</p>
 					<qr-code contents={pp.pairingUri} aria-label="WalletConnect pairing QR code"></qr-code>
+					<div class="pair-copy">
+						<button class="pp-btn pp-btn-sm" type="button" onclick={copyPairingUri}>{uriCopied ? 'Copied ✓' : 'Copy pairing URI'}</button>
+						<a class="pp-btn pp-btn-sm" href={`https://cashonize.com/?uri=${encodeURIComponent(pp.pairingUri ?? '')}`} target="_blank" rel="noopener">Open in Cashonize web ↗</a>
+						<span class="small muted">or paste the URI in Cashonize → Connect.</span>
+					</div>
 					<details class="pp-details"><summary>Pairing URI</summary><textarea class="pp-input" readonly rows="4">{pp.pairingUri}</textarea></details>
 				</div>
 			{/if}
@@ -204,6 +220,7 @@
 </main>
 
 <style>
+	.pair-copy { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
 	.pairing { margin-top: 1rem; display: grid; gap: 0.6rem; justify-items: start; }
 	qr-code { width: 15rem; max-width: 100%; background: #fff; border-radius: 8px; padding: 0.4rem; }
 	textarea { font-family: var(--pp-mono); font-size: 0.75rem; }

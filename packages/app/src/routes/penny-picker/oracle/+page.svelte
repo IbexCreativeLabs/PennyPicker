@@ -162,7 +162,7 @@
 						{#if pp.genesisReadyUtxo}
 							✓ Genesis input ready: <span class="mono">{pp.genesisReadyUtxo.txid.slice(0, 16)}…:0</span> ({formatSats(pp.genesisReadyUtxo.satoshis)} BCH, confirmed)
 						{:else}
-							✗ Needs a confirmed BCH-only UTXO at output index 0. Create one with the self-transfer on <a href="/penny-picker/token">Token</a>.
+							✗ Needs a BCH-only UTXO at output index 0. Receive a payment to this wallet (it lands at output 0) and refresh.
 						{/if}
 					</div>
 					<p class="muted">Creates one mutable NFT holding the price and sends it to the oracle contract, with no minting baton. The new oracle category ID equals the spent transaction's ID. You become the operator.</p>
