@@ -1,18 +1,18 @@
 # Deploying the PennyPicker demo (Cloudflare Pages)
 
-**Status (2026-11-17): live at https://pennypicker.pages.dev.** Project `pennypicker`, production branch `main`, with the settings below. The Reown allowlist is empty and the feedback token is not set yet.
+**Status (2026-11-17): live at https://pennypicker.pages.dev.** Project `pennypicker`, production branch `main`, with the settings below. The Reown allowlist is empty; set `ADMIN_PASSWORD` for the admin area (section 3).
 
 PennyPicker is a **static site**:
 - SvelteKit `adapter-static`, with `ssr = false` and `prerender = true`.
 - The browser talks directly to the BCH **Chipnet** Electrum servers over WSS (`chipnet.imaginary.cash`) and to the WalletConnect relay.
 - No app server, database or persistent process is needed.
 
-The only server-side code is an optional feedback endpoint (`functions/api/feedback.js`). It runs as a Cloudflare Pages Function.
+The only server-side code is the admin password check (`functions/_middleware.js`), a Cloudflare Pages Function.
 
 **Why Cloudflare Pages:**
 - It deploys private repositories owned by GitHub organizations on the free plan.
 - It rebuilds automatically on every push to `main` and gives each branch a preview URL.
-- It runs the feedback function next to the static files.
+- It runs the admin middleware next to the static files.
 - It needs no hosting configuration changes in the app.
 
 ## 1. Create the Pages project (one-time, needs your Cloudflare account)
@@ -58,30 +58,25 @@ At dashboard.reown.com, open the project whose ID you use, then its allowed-doma
 
 The app sends `window.location.origin` as its WalletConnect metadata URL, so Cashonize shows the real site address in its approval prompts.
 
-## 3. Team feedback endpoint (optional, recommended)
+## 3. Admin password (required for /admin)
 
-Without configuration, the Feedback button still works: it shows a copyable report and a GitHub-issue link.
-To file issues automatically, with no GitHub account needed by testers:
+The admin area (`/admin`, `/admin/token`, `/admin/simulator`: setup progress, genesis tools, simulator) is protected
+by HTTP Basic auth in `functions/_middleware.js`. Until a password is set, `/admin` answers 503 (locked).
 
-1. On GitHub, go to **Settings → Developer settings → Fine-grained personal access tokens → Generate new token**:
-   - Resource owner: **IbexCreativeLabs**. Repository access: **Only select repositories → PennyPicker**.
-   - Permissions: **Issues: Read and write**. Nothing else.
-   - Expiration: just after the hackathon.
-2. In the Cloudflare Pages project, go to **Settings → Variables and Secrets** (Production) and add:
-   - `FEEDBACK_GITHUB_TOKEN` = the token, with type **Secret**.
-   - `FEEDBACK_GITHUB_REPO` = `IbexCreativeLabs/PennyPicker`.
-3. Redeploy (Deployments → Retry deployment), or push any commit.
+1. In the Cloudflare Pages project, go to **Settings → Variables and Secrets** (Production) and add
+   `ADMIN_PASSWORD` with type **Secret** (optionally `ADMIN_USER`, default `admin`).
+2. Redeploy (Deployments → Retry deployment), or push any commit.
 
-Issues are titled `[Bug] …`, `[UI problem] …` and so on, and labelled `feedback` plus the type where permissions allow.
-The endpoint accepts same-origin requests only, limits size, ignores bot submissions (honeypot field), and removes
-`@mentions`.
+`static/_routes.json` limits the Function to `/admin*`, so public pages are served as plain static files.
+This hides admin tools from visitors; it is not a security boundary for on-chain actions, which always need the
+user's own wallet.
 
 ## 4. Verify the deployment
 
-1. Open the production URL. It should redirect to `/penny-picker` and show the experimental-demo notice.
-2. The header shows **Chipnet** and **Demo** badges. The overview checklist loads (Electrum reachable).
+1. Open the production URL. The Exchange loads directly at `/` and shows the experimental-demo notice.
+2. The header shows the stablecoin selector and the **Demo** badge. `/admin` asks for the admin password.
 3. **Wallet → Connect Cashonize**: pair Cashonize (set to Chipnet) and confirm the address appears.
-4. Send one feedback item. It should either file an issue or show the copy fallback.
+4. Old `/penny-picker/...` links redirect (`static/_redirects`).
 
 ## Local equivalents
 

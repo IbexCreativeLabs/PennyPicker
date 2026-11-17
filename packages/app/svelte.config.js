@@ -21,7 +21,7 @@ const config = {
 	      $workers: 'src/lib/workers'
 		},
 		prerender:{
-			entries: ["*","/pop/","/future/"]
+			entries: ["*"]
 		}
 	},
 	extensions: ['.svelte', '.svx', '.md']

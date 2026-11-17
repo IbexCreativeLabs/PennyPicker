@@ -36,7 +36,7 @@ export function describeBroadcastError(cause: unknown): string {
 		return `The network fee was too low (${message}). Nothing was broadcast.`;
 	}
 	if (/script|verify|mandatory|non-mandatory|evaluat/i.test(message)) {
-		return `The covenant rejected this transaction (${message}). Nothing was broadcast. Please send this through Feedback.`;
+		return `The covenant rejected this transaction (${message}). Nothing was broadcast. Please report it in the community chat with the transaction details.`;
 	}
 	if (/already (in|known)|txn-already/i.test(message)) {
 		return 'Chipnet already has this transaction.';

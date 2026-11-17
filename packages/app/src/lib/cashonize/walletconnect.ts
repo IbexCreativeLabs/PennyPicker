@@ -19,7 +19,7 @@ async function initializeCashonizeClient(): Promise<CashonizeClient> {
 	}
 
 	// Load the browser client only after the user chooses to connect. This keeps the
-	// WalletConnect client out of server rendering and Vox wallet initialization.
+	// WalletConnect client out of server rendering and wallet initialization.
 	const { default: SignClient } = await import('@walletconnect/sign-client');
 	return SignClient.init({
 		projectId,

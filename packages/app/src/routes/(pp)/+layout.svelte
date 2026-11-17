@@ -1,0 +1,178 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import '$lib/pennypicker/ui/theme.css';
+	import { pp } from '$lib/pennypicker/ui/session.svelte';
+	import { formatPrice } from '$lib/pennypicker/contracts';
+	import DemoNotice from '$lib/pennypicker/ui/DemoNotice.svelte';
+	import TelegramChat from '$lib/pennypicker/ui/TelegramChat.svelte';
+	import { MARKETS, COMMUNITY } from '$lib/pennypicker/deployment';
+
+	const build = __PENNYPICKER_BUILD__;
+	let notice: DemoNotice | undefined = $state();
+
+	let { children } = $props();
+	let menuOpen = $state(false);
+
+	const nav = [
+		{ href: '/', label: 'Exchange' },
+		{ href: '/token', label: 'Token' },
+		{ href: '/oracle', label: 'Oracle' },
+		{ href: '/wallet', label: 'Wallet' },
+		{ href: '/about', label: 'About' }
+	];
+	const adminNav = [
+		{ href: '/admin', label: 'Overview' },
+		{ href: '/admin/token', label: 'Token tools' },
+		{ href: '/admin/simulator', label: 'Simulator' }
+	];
+	const isAdmin = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
+	const active = (href: string) => (href === '/' ? page.url.pathname === '/' : page.url.pathname === href || page.url.pathname.startsWith(href + '/'));
+	let marketOpen = $state(false);
+	const doneCount = $derived(pp.setup.filter((s) => s.state === 'done').length);
+
+	onMount(() => pp.start());
+</script>
+
+<svelte:head><link rel="icon" href="/pennypicker.svg" type="image/svg+xml" /></svelte:head>
+
+<div class="pp">
+	<header class="topbar">
+		<div class="bar">
+			<a class="brand" href="/">
+				<span class="coin" aria-hidden="true">¢</span>
+				<strong>PennyPicker</strong>
+			</a>
+			<div class="market">
+				<button class="market-btn" type="button" aria-haspopup="listbox" aria-expanded={marketOpen} onclick={() => (marketOpen = !marketOpen)}>
+					<span class="pair">BCH / {pp.selectedMarket.name}</span>
+					<span class="net {pp.selectedMarket.network}">{pp.selectedMarket.network === 'chipnet' ? 'Chipnet' : 'Mainnet'}</span>
+					<span aria-hidden="true">▾</span>
+				</button>
+				{#if marketOpen}
+					<ul class="market-list pp-card" role="listbox" aria-label="Stablecoin">
+						{#each MARKETS as m (m.id)}
+							<li>
+								<button type="button" role="option" aria-selected={m.id === pp.selectedMarketId} class:sel={m.id === pp.selectedMarketId} onclick={() => { pp.selectMarket(m.id); marketOpen = false; }}>
+									<span><strong>{m.name}</strong> <span class="muted small">{m.symbol}</span></span>
+									<span class="small muted">{m.network === 'chipnet' ? 'Chipnet · tradable' : 'Mainnet · view only'}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+			<button class="menu pp-btn pp-btn-ghost" type="button" aria-label="Menu" aria-expanded={menuOpen} onclick={() => (menuOpen = !menuOpen)}>☰</button>
+			<nav class:open={menuOpen}>
+				{#each nav as item (item.href)}
+					<a href={item.href} class:active={active(item.href)} aria-current={active(item.href) ? 'page' : undefined} onclick={() => (menuOpen = false)}>{item.label}</a>
+				{/each}
+			</nav>
+			<div class="status">
+				{#if pp.marketError}<span class="pp-badge bad plain" title={pp.marketError}>Chipnet offline</span>{/if}
+				<button class="pp-badge warn plain demo" type="button" onclick={() => notice?.show()} title="About this experimental demo">Demo</button>
+				{#if pp.price}
+					<a href="/oracle" class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}" title="Reference price: oracles.cash BCH/USD">
+						{formatPrice(pp.price)}
+					</a>
+				{:else if pp.market}
+					<span class="pp-badge warn">No oracle</span>
+				{:else}
+					<span class="pp-badge warn">Market not set</span>
+				{/if}
+				{#if pp.walletStatus === 'connected' && pp.wallet}
+					<a href="/wallet" class="pp-badge ok" title={pp.wallet.address}>{pp.wallet.address.slice(8, 14)}…{pp.wallet.address.slice(-4)}</a>
+				{:else if pp.walletStatus === 'checking'}
+					<span class="pp-badge">Wallet…</span>
+				{:else}
+					<a href="/wallet" class="pp-badge bad">Connect wallet</a>
+				{/if}
+			</div>
+		</div>
+		{#if pp.marketError}
+			<div class="net-strip" role="alert">
+				<div class="bar small">
+					<span><strong>Chipnet connection problem.</strong> {pp.marketError}</span>
+					<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Retrying…' : 'Retry'}</button>
+				</div>
+			</div>
+		{/if}
+		{#if isAdmin}
+			<div class="admin-strip">
+				<div class="bar">
+					<span class="pp-badge warn plain">Admin</span>
+					{#each adminNav as item (item.href)}
+						<a href={item.href} class:active={page.url.pathname === item.href}>{item.label}</a>
+					{/each}
+				</div>
+			</div>
+		{/if}
+		{#if isAdmin && doneCount < pp.setup.length && pp.nextStep}
+			<div class="setup-strip">
+				<div class="bar">
+					<span class="muted small">Setup {doneCount}/{pp.setup.length}</span>
+					<span class="progress"><span style="width: {(doneCount / pp.setup.length) * 100}%"></span></span>
+					<span class="small">Next: <a href={pp.nextStep.href}>{pp.nextStep.label}</a> <span class="muted">— {pp.nextStep.detail}</span></span>
+				</div>
+			</div>
+		{/if}
+	</header>
+
+	{@render children()}
+
+	<DemoNotice bind:this={notice} />
+	<TelegramChat />
+
+	<footer class="foot">
+		<div class="bar small muted">
+			<span>Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing. Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
+			<span><a href="/about">About</a> · <a href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Source code</a></span>
+		</div>
+	</footer>
+</div>
+
+<style>
+	.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--pp-surface) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--pp-border); }
+	.bar { max-width: 76rem; margin: 0 auto; padding: 0.55rem max(16px, 2vw); display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+	.brand { display: flex; align-items: center; gap: 0.55rem; color: var(--pp-text) !important; text-decoration: none !important; }
+	.brand strong { display: block; font-size: 1rem; line-height: 1.1; }
+	.brand small { display: block; color: var(--pp-muted); font-size: 0.72rem; letter-spacing: 0.05em; }
+	.coin { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: radial-gradient(circle at 35% 30%, #e7a36b, var(--pp-accent) 70%); color: #fff; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.15); }
+	nav { display: flex; gap: 0.15rem; flex: 1; }
+	nav a { padding: 0.4rem 0.7rem; border-radius: 8px; color: var(--pp-muted); font-weight: 550; text-decoration: none !important; }
+	nav a:hover { background: var(--pp-surface-2); color: var(--pp-text); }
+	nav a.active { background: var(--pp-accent-soft); color: var(--pp-accent); }
+	.net-strip { background: var(--pp-danger); color: #fff; }
+	.net-strip .bar { justify-content: space-between; padding-block: 0.35rem; }
+	.status { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+	.status a { text-decoration: none !important; }
+	.menu { display: none; margin-left: auto; font-size: 1.2rem; }
+	.market { position: relative; }
+	.market-btn { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--pp-border); background: var(--pp-surface); color: var(--pp-text); border-radius: 999px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+	.market-btn:hover { border-color: var(--pp-border-strong); }
+	.net { font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 999px; }
+	.net.chipnet { background: var(--pp-accent-soft); color: var(--pp-accent); }
+	.net.mainnet { background: var(--pp-info-soft); color: #2f5b9a; }
+	.market-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; list-style: none; margin: 0; padding: 0.3rem; min-width: 16rem; }
+	.market-list button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; width: 100%; text-align: left; border: 0; background: none; color: var(--pp-text); font: inherit; padding: 0.5rem 0.6rem; border-radius: 8px; cursor: pointer; }
+	.market-list button:hover, .market-list button.sel { background: var(--pp-surface-2); }
+	.market-list button.sel { box-shadow: inset 3px 0 0 var(--pp-accent); }
+	.admin-strip { border-top: 1px solid var(--pp-border); background: var(--pp-warn-soft); }
+	.admin-strip .bar { padding-block: 0.35rem; gap: 0.75rem; }
+	.admin-strip a { font-weight: 550; text-decoration: none !important; color: var(--pp-muted); }
+	.admin-strip a.active { color: var(--pp-accent); }
+	.setup-strip { border-top: 1px solid var(--pp-border); background: var(--pp-surface-2); }
+	.setup-strip .bar { padding-block: 0.35rem; gap: 0.75rem; }
+	.progress { width: 7rem; height: 6px; border-radius: 3px; background: var(--pp-border); overflow: hidden; }
+	.progress span { display: block; height: 100%; background: var(--pp-accent); }
+	.foot { border-top: 1px solid var(--pp-border); padding-bottom: 3.5rem; }
+	.demo { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 600; }
+	.linkish { border: 0; background: none; padding: 0; color: var(--pp-accent); font: inherit; cursor: pointer; text-decoration: underline; }
+	.foot .bar { justify-content: space-between; padding-block: 1rem; }
+	@media (max-width: 860px) {
+		.menu { display: inline-flex; }
+		nav { display: none; flex-basis: 100%; flex-direction: column; order: 5; }
+		nav.open { display: flex; }
+		.status { flex-basis: 100%; }
+	}
+</style>

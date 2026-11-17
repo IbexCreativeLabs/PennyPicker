@@ -1,0 +1,5 @@
+/penny-picker            /          301
+/penny-picker/exchange   /          301
+/penny-picker/mechanisms /about     301
+/penny-picker/simulator  /admin/simulator 301
+/penny-picker/*          /:splat    301

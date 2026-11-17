@@ -1,91 +1,72 @@
-<img width=100px src="./static/vox.svg">
+<img width="72" src="./packages/app/static/pennypicker.svg" alt="PennyPicker">
 
-# vox.cash
+# PennyPicker
 
-A collection of small decentralized financial applications.
+**Oracle Delta Basis Points Denominated Orderbook DEX for Stablecoins**, on Bitcoin Cash.
 
+Live demo (BCH Chipnet): **https://pennypicker.pages.dev**
 
+Instead of pricing limit orders at a static dollar price that goes stale every time BCH moves, orders are
+denominated in basis points (±bps) relative to the live oracle price.
 
-## Unspent v3 Protocol Records
+Because every core mechanism in a stablecoin protocol is ultimately a spread trade against the oracle, an
+oracle-delta orderbook doesn't just improve stablecoin trading experience and liquidity — it could also replace
+three separate protocol mechanics with a single P2P market:
 
-Instances of vox contracts are can be stored on NFTs. The commitments (and token category) can be used to construct an instance of the contract.
+1. **No more "0% interest PUSD loans" just to swap BCH to PUSD.** Users swap BCH for PUSD directly against resting
+   bids anchored tightly around the oracle price (0 bps).
+2. **P2P market liquidations (0–10%) instead of a flat 10% penalty.** Bids from 0 to −1000 bps replace the Stability
+   Pool; competition drives liquidation penalties down.
+3. **Market-based redemptions.** Redemption-eligible loans sit on the orderbook, making redemption pricing 100%
+   market-driven instead of hardcoded fees and baseRate decay math.
 
-| Protocol     | NFT Record Commitment                                 | Ct  | Description      |
-| ------------ | ----------------------------------------------------- | --- | ---------------- |
-| CatDex       | <"U3X">                                               | 🔵   | Limit-order DEX  |
-| Drip         |                                                       |     | MEV faucet       |
-| Dutch        | <"U3A"><0x\${recipient}>                              | 🔵   | Dutch Auction    |
-| Flash        | <"U3F">                                               |     | Flash Loans      |
-| Locktime     | <"U3L"><0x\${recipient}><\${locktime}>                | 🔵   | Timelocked Vault |
-| SmallIndex   | <"U3R"><0x\${key}>                                    | 🔵   | Key-Value DB     |
-| Subscription | <"U3S"><\${installment}><0x\${recipient}><\${period}> | 🔵   | Subscriptions    |
-| Timeout      | <"U3T"><0x\${recipient}><\${timeout}>                 | 🔵   | Timeout Vault    |
-| Trust        | <"U3P"><0x\${recipient}>                              |     | Annuity          |
-| Vox          | <"U3V"><0x\${channel}>                                | 🔵   | Chat             |
+## How it works
 
+- **Orders are covenants.** Each limit order is its own P2SH32 CashScript contract (`PennyPickerOrder`) holding the
+  escrow: asks escrow BCH, bids escrow the stablecoin. Its limit is `reference × (10000 + bps) / 10000`, so it
+  re-prices automatically whenever the reference moves.
+- **Exact settlement.** `fill()` enforces `dUnits·1e18 + dSat·price·(10000 + bps) ≥ 0` with integer arithmetic;
+  the app rounds in the maker's favour.
+- **Real oracle.** The reference is the BCH/USD price signed by the General Protocols oracle behind
+  [oracles.cash](https://oracles.cash) (the same oracle ParyonUSD uses). `PennyPickerOracle.update()` verifies the
+  signed message with `OP_CHECKDATASIG` and only accepts newer messages, so anyone can update it and old prices can
+  never be replayed against resting orders. Orders and fills carry the newest message and update the price in the
+  same transaction.
+- **Wallet.** [Cashonize](https://cashonize.com) over WalletConnect. Every transaction is previewed, signed in the
+  wallet, checked against the preview and only then broadcast.
 
+Contracts: [`packages/app/src/lib/pennypicker/contracts`](packages/app/src/lib/pennypicker/contracts) ·
+Transaction builders: [`exchange.ts`](packages/app/src/lib/pennypicker/exchange.ts) ·
+Status, live Chipnet transactions and design notes: [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
 
-## First-class Assets
+## Status
 
-Vox.cash will support a number 
+Experimental hackathon prototype. **Chipnet only**: PennyPickerUSD is a fixed-supply test token priced as 1 USD with
+no backing. ParyonUSD (mainnet) is shown view-only. The contracts have not been security reviewed. A reviewed mainnet
+deployment is the goal.
 
-| Protocol     | Identifier             | Ticker(s)         |
-| ------------ | ---------------------- | ----------------- |
-| Badgers      | -                      | BADGER            |
-| Block Points | -                      | BPTS              |
-| Bloc Tops    | -                      | BTOP              |
-| Future BCH   | <"FBCH"><\${locktime}> | FBCH-`<locktime>` |
-| Wrapped BCH  | -                      | WBCH              |
+Real two-wallet trades, fills in both directions, cancels and oracle updates have been signed in Cashonize and
+confirmed on Chipnet; the transaction IDs are listed in `PROJECT_STATUS.md`.
 
+## Run locally
 
-## Sub protocols
+```bash
+pnpm install
+cp packages/app/.env.example packages/app/.env   # add a WalletConnect (Reown) project ID
+pnpm --filter app dev                            # http://localhost:5173
+```
 
-### Small Index
+Tests (BCH 2025 VM via Libauth), from `packages/app`:
 
-Any contract from any Unspent v3 protocol may be announced as a Small Index record. 
+```bash
+pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # covenant checks, incl. a real oracles.cash message
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # transaction builders, signed and VM-verified
+pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts
+pnpm dlx tsx scripts/pennypicker-identity.test.ts
+```
 
-Records specific to a token may be announced in the index for that token category. 
+## Credits
 
-General anyone-can-spend contract records may be announced in stores for that contract type. 
-
-Small index records, if not intended for a virtual machine, should be prefixed with an operation code halting machine interpretation, i.e. OP_RETURN. 
-
-All records must pay miners a rate of 1 sat/block. It is up to user software to assure records persist for long enough to accomplish their intended purpose. 
-
-### Market Identifiers
-
-CatDex is a market aggregator that may support many DEX protocols. 
-
-Markets may be denoted on a small index or vox contract like so:
-
-| Protocol      | Identifier                                             |
-| ------------- | ------------------------------------------------------ |
-| CatDex        | OP_RETURN <"U3X"> <liquidity_provider_pkh>             |
-| Cauldron AMM  | OP_RETURN <"CQ1"> <liquidity_provider_pkh>             |
-| Dutch Auction | OP_RETURN <"U3A"> <liquidity_provider_pkh>             |
-| TapSwap Ask   | OP_RETURN <"TAP"> <liquidity_provider_pkh> <ask_price> |
-
-If not otherwise provided, all fees and missing parameters are assumed to match the defaults for the related exchange. 
-
-### Vox Chat
-
-A Vox channel may be announced on a small index or in another vox channel with a vox record:
-
-   OP_RETURN <"UV3"> <channel_name>
-
-Vox is a protocol for rolling chat groups.
-
-The following actions are available:
-
-| Protocol | Identifier                        |
-| -------- | --------------------------------- |
-| message  | OP_RETURN <"V0"> <"a message">    |
-| like     | OP_RETURN <"V+"> <transaction_id> |
-| dislike  | OP_RETURN <"V-"> <transaction_id> |
-| reply    | OP_RETURN <"VR"> <transaction_id> |
-
-The above action templates may be sent to a Vox Channel as immutable NFT commitments of the author's NFT category. Message order is specified by the order of transaction outputs.
-
-A post is comprised of message packets. All the message packets of one transaction shall be concatenated together (without spaces) and rendered as a single post. 
-
-A reply or like may be followed by an unlimited messages, but MUST be specific to one proceeding message.
+This project was forked from [Vox](https://github.com/2qx/vox), an open-source collection of Bitcoin Cash apps by
+2qx. It builds on [CashScript](https://cashscript.org), [Libauth](https://libauth.org), Cashonize and the General
+Protocols oracles. Licensed under the terms in [LICENSE](LICENSE).

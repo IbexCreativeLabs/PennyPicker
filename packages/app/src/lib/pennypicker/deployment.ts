@@ -18,3 +18,56 @@ export const CHIPNET_DEPLOYMENT = {
 	/** Oracle v4, fed by oracles.cash BCH/USD. Genesis 34533fc4635527016456e3965b1cc31e5a7037c0a4537282480feaf57a6d0e27 (210.99, message #1930547). */
 	oracleCategory: 'adcf011756ad2726f8521c371ea950ae293fb1a1e6507bfdc13cbe2b2d4f74b5' as string | undefined
 } as const;
+
+/** Public community links. Set the Telegram invite link here (t.me/…) once the group exists. */
+export const COMMUNITY = {
+	telegramUrl: '' as string,
+	sourceUrl: 'https://github.com/IbexCreativeLabs/PennyPicker',
+	forkedFromUrl: 'https://github.com/2qx/vox'
+} as const;
+
+export type MarketId = 'pennypickerusd' | 'paryonusd';
+
+export interface StablecoinMarket {
+	id: MarketId;
+	name: string;
+	symbol: string;
+	network: 'chipnet' | 'mainnet';
+	/** 'live': trading enabled in this build. 'view-only': shown for information; no transactions. */
+	status: 'live' | 'view-only';
+	category: string | undefined;
+	summary: string;
+	links: { label: string; href: string }[];
+}
+
+/**
+ * Stablecoin markets offered in the selector. Both use the same General Protocols
+ * BCH/USD oracle (oracles.cash). Only Chipnet markets trade in this build; mainnet
+ * markets are view-only until a reviewed mainnet deployment exists.
+ */
+export const MARKETS: StablecoinMarket[] = [
+	{
+		id: 'pennypickerusd',
+		name: 'PennyPickerUSD',
+		symbol: 'PUSD',
+		network: 'chipnet',
+		status: 'live',
+		category: CHIPNET_DEPLOYMENT.pusdCategory,
+		summary: 'Experimental test stablecoin on BCH Chipnet: 1,000,000 fixed supply, priced as 1 USD, no backing. Trade it freely with test coins.',
+		links: []
+	},
+	{
+		id: 'paryonusd',
+		name: 'ParyonUSD',
+		symbol: 'PUSD',
+		network: 'mainnet',
+		status: 'view-only',
+		category: '2469acc5afa4b10cb5b5c04afb89c3a3ffd61c5da9c01e26d00951cae2a02544',
+		summary: 'The BCH-collateralised USD stablecoin on Bitcoin Cash mainnet. It uses the same oracles.cash BCH/USD oracle as PennyPicker. Shown for reference: PennyPicker trades only on Chipnet for now.',
+		links: [
+			{ label: 'paryonusd.com', href: 'https://paryonusd.com' },
+			{ label: 'Cauldron', href: 'https://app.cauldron.quest/tokens' },
+			{ label: 'Stats', href: 'https://stats.paryonusd.com/' }
+		]
+	}
+];

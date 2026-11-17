@@ -38,7 +38,7 @@
 				<li><strong>You approve everything.</strong> Nothing is signed or broadcast automatically. Each transaction is shown first, signed only in your Cashonize wallet, and broadcast only when you press Broadcast.</li>
 				<li><strong>Unaudited code.</strong> The contracts have not been security reviewed.</li>
 			</ul>
-			<p class="small muted">Found a problem? Use the <strong>Feedback</strong> button at the bottom right of every page.</p>
+			<p class="small muted">Questions or problems? Use the <strong>Chat</strong> button at the bottom right of every page.</p>
 			<button class="pp-btn pp-btn-primary pp-btn-block" type="button" onclick={accept}>I understand. Open the demo</button>
 		</div>
 	</div>

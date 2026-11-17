@@ -28,6 +28,7 @@ import {
 	oracleAddress
 } from '$lib/pennypicker/chain';
 import { oracleStateFromMessage, type OracleMessage } from '$lib/pennypicker/contracts';
+import { MARKETS, type MarketId } from '$lib/pennypicker/deployment';
 import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 import { makerPkhFromChipnetAddress } from '$lib/pennypicker/orderCommitment';
 import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identity';
@@ -51,6 +52,18 @@ class PennyPickerSession {
 	walletError = $state('');
 
 	config = $state(loadMarketConfig());
+	/** Stablecoin selected in the header menu. Only 'live' markets can trade. */
+	selectedMarketId = $state<MarketId>('pennypickerusd');
+	selectedMarket = $derived(MARKETS.find((m) => m.id === this.selectedMarketId) ?? MARKETS[0]!);
+
+	selectMarket(id: MarketId) {
+		this.selectedMarketId = id;
+		try {
+			localStorage.setItem('pennypicker:selected-market', id);
+		} catch {
+			/* storage unavailable */
+		}
+	}
 	utxos = $state<ChainUtxo[]>([]);
 	utxosLoaded = $state(false);
 	oracle = $state<OracleUtxo | undefined>();
@@ -104,16 +117,16 @@ class PennyPickerSession {
 		});
 		const oracleExists = !!this.oracle;
 		return [
-			step('wallet', 'Wallet connected', this.walletStatus === 'connected', this.wallet ? 'Cashonize on Chipnet' : 'Connect Cashonize', '/penny-picker/wallet'),
-			step('pusd', 'PUSD genesis', !!pusd, pusd ? `Category ${pusd.slice(0, 8)}…` : 'Create the token', '/penny-picker/token'),
-			step('pusd-verified', 'PUSD category verified', pusdSeen, pusdSeen ? 'Seen on-chain' : 'No PUSD UTXO observed yet', '/penny-picker/token', !pusd),
-			step('vout0', 'Oracle genesis input', oracleExists || !!this.genesisReadyUtxo, oracleExists ? 'Used by oracle genesis' : this.genesisReadyUtxo ? `${this.genesisReadyUtxo.txid.slice(0, 8)}…:0 ready` : 'Needs a BCH-only output 0', '/penny-picker/token'),
-			step('oracle', 'Oracle genesis', oracleExists, oracleExists ? `Category ${this.config.oracleCategory?.slice(0, 8)}…` : 'Create the oracle', '/penny-picker/oracle'),
-			step('price', 'Reference price published', oracleExists, oracleExists ? `Sequence #${this.oracle!.state.sequence}` : 'Published with oracle genesis', '/penny-picker/oracle', !oracleExists),
-			step('orders', 'First buy & sell orders', sides.has('bid') && sides.has('ask'), `${sides.has('bid') ? '✓' : '·'} bid (buy BCH)  ${sides.has('ask') ? '✓' : '·'} ask (sell BCH)`, '/penny-picker/exchange', !oracleExists),
-			step('trade', 'First trade (fill)', (orders?.fills.length ?? 0) > 0, `${orders?.fills.length ?? 0} fill(s) observed`, '/penny-picker/exchange', !oracleExists),
-			step('cancel', 'Cancellation test', (orders?.canceled.length ?? 0) > 0, `${orders?.canceled.length ?? 0} cancel(s) observed`, '/penny-picker/exchange', !oracleExists),
-			step('update', 'Price updated from oracles.cash', (this.discovery?.oracleUpdates.length ?? 0) > 1, oracleExists ? `Message #${this.oracle!.state.sequence}` : '—', '/penny-picker/oracle', !oracleExists)
+			step('wallet', 'Wallet connected', this.walletStatus === 'connected', this.wallet ? 'Cashonize on Chipnet' : 'Connect Cashonize', '/wallet'),
+			step('pusd', 'PUSD genesis', !!pusd, pusd ? `Category ${pusd.slice(0, 8)}…` : 'Create the token', '/admin/token'),
+			step('pusd-verified', 'PUSD category verified', pusdSeen, pusdSeen ? 'Seen on-chain' : 'No PUSD UTXO observed yet', '/admin/token', !pusd),
+			step('vout0', 'Oracle genesis input', oracleExists || !!this.genesisReadyUtxo, oracleExists ? 'Used by oracle genesis' : this.genesisReadyUtxo ? `${this.genesisReadyUtxo.txid.slice(0, 8)}…:0 ready` : 'Needs a BCH-only output 0', '/admin/token'),
+			step('oracle', 'Oracle genesis', oracleExists, oracleExists ? `Category ${this.config.oracleCategory?.slice(0, 8)}…` : 'Create the oracle', '/oracle'),
+			step('price', 'Reference price published', oracleExists, oracleExists ? `Sequence #${this.oracle!.state.sequence}` : 'Published with oracle genesis', '/oracle', !oracleExists),
+			step('orders', 'First buy & sell orders', sides.has('bid') && sides.has('ask'), `${sides.has('bid') ? '✓' : '·'} bid (buy BCH)  ${sides.has('ask') ? '✓' : '·'} ask (sell BCH)`, '/', !oracleExists),
+			step('trade', 'First trade (fill)', (orders?.fills.length ?? 0) > 0, `${orders?.fills.length ?? 0} fill(s) observed`, '/', !oracleExists),
+			step('cancel', 'Cancellation test', (orders?.canceled.length ?? 0) > 0, `${orders?.canceled.length ?? 0} cancel(s) observed`, '/', !oracleExists),
+			step('update', 'Price updated from oracles.cash', (this.discovery?.oracleUpdates.length ?? 0) > 1, oracleExists ? `Message #${this.oracle!.state.sequence}` : '—', '/oracle', !oracleExists)
 		];
 	});
 	nextStep = $derived(this.setup.find((s) => s.state === 'pending'));
@@ -125,6 +138,12 @@ class PennyPickerSession {
 		if (this.started) return;
 		this.started = true;
 		this.history = loadTxHistory();
+		try {
+			const saved = localStorage.getItem('pennypicker:selected-market');
+			if (MARKETS.some((m) => m.id === saved)) this.selectedMarketId = saved as MarketId;
+		} catch {
+			/* storage unavailable */
+		}
 		setInterval(() => (this.nowSec = Math.floor(Date.now() / 1000)), 5_000);
 		void this.refreshFeed();
 		setInterval(() => void this.refreshFeed(), 60_000);

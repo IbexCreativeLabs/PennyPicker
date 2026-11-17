@@ -104,17 +104,20 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
 - A red **Chipnet offline** banner, with a Retry button, appears when Electrum is unreachable.
 - `ui/theme.css`: PennyPicker design tokens and primitives, scoped under `.pp` with light and dark themes.
 
-**Pages** (`/penny-picker/*`, using their own shell; the root layout skips the Vox chrome for these routes)
+**Pages** (`packages/app/src/routes/(pp)`; PennyPicker is the whole site, all Vox routes and assets were removed)
 
 | Route | Purpose |
 | --- | --- |
-| `/penny-picker` | Overview: reference price, setup and test checklist, pricing explainer, market identifiers |
-| `/penny-picker/exchange` | Market header, orderbook (asks / reference / bids), limit-order and trade-now panels, my orders, activity |
-| `/penny-picker/oracle` | Current reference, freshness, identity, how the oracle works, genesis and update forms, price history |
-| `/penny-picker/token` | PUSD info, wallet balances, genesis status, BCMR draft, vout-0 self-transfer tool |
-| `/penny-picker/mechanisms` | Liquidation and redemption simulations (live book when available) |
-| `/penny-picker/wallet` | Connect or disconnect Cashonize (QR pairing), token address (copy), balances, **Send PUSD** to teammates, UTXO list |
-| `/penny-picker/simulator` | The original in-memory simulator (legacy sats-per-PUSD convention) |
+| `/` | Exchange: market header, orderbook, limit-order and trade-now panels, my orders, activity. With ParyonUSD selected: view-only mainnet card |
+| `/token` | Selected stablecoin's details (PennyPickerUSD or ParyonUSD), your balance, market list |
+| `/oracle` | Live oracles.cash price, on-chain reference, permissionless update, history |
+| `/wallet` | Connect Cashonize (QR, copy, Cashonize-web deep link), balances, **Send PUSD**, UTXO list |
+| `/about` | Project description, how it works, liquidation and redemption simulations, disclaimers, Vox fork credit |
+| `/admin` | **Admin (password)**: setup and test checklist, market identifiers |
+| `/admin/token` | **Admin**: PUSD genesis, identity, BCMR draft, vout-0 self-transfer |
+| `/admin/simulator` | **Admin**: the original in-memory simulator |
+
+Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `2469acc5…2544` on mainnet, view only). Bottom-right **Chat** button opens the Telegram community panel (link set in `deployment.ts` → `COMMUNITY.telegramUrl`). Old `/penny-picker/...` links redirect via `static/_redirects`.
 
 ## Deployment (public demo)
 
@@ -122,11 +125,10 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
 - **Checked by the agent on 2026-11-17 (HTTP only):**
   - Every route returns 200 and the security headers are served.
   - The bundle is stamped with build `5642333`, embeds the WalletConnect project ID, and uses chain `bch:bchtest` with the Chipnet Electrum host `chipnet.imaginary.cash`. The only mainnet strings are libauth's enum names.
-  - `/api/feedback` is deployed and answers `not-configured`. No GitHub token is set yet, so testers get the copy-report fallback.
   - The Reown allowlist is empty (checked by you), so every origin is allowed.
 - **Checked 2026-11-17:** pairing Cashonize from https://pennypicker.pages.dev (origin shown as https, PennyPicker icon), signing and broadcasting there (oracle update `9ee282d6…`). The oracles.cash relay allows cross-origin reads.
 - **Committed defaults:** the market identifiers are in `deployment.ts` (PUSD category and operator PKH). The oracle category is discovered on-chain and accepted only if the operator's own address created it.
-- **What visitors see:** `/` redirects to `/penny-picker` (the Vox list is still at `/?vox`). A first-visit demo notice and a Demo badge appear, and a Feedback button sits on every page.
+- **What visitors see:** `/` is the Exchange (no redirect). A first-visit demo notice and a Demo badge appear, and a Chat button sits on every page. `/admin` needs `ADMIN_PASSWORD` (see `DEPLOYMENT.md`).
 - **CI:** `pennypicker-ci.yml` runs the tests and the build. The inherited Vox deploy workflows were removed.
 
 ## Tests

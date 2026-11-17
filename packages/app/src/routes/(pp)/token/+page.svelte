@@ -1,0 +1,81 @@
+<script lang="ts">
+	import { pp } from '$lib/pennypicker/ui/session.svelte';
+	import { MARKETS } from '$lib/pennypicker/deployment';
+	import { formatSats, formatUnits } from '$lib/pennypicker/exchange';
+
+	const market = $derived(pp.selectedMarket);
+	const explorer = (network: string, category: string) =>
+		network === 'chipnet' ? `https://chipnet.imaginary.cash/tx/${category}` : `https://blockchair.com/bitcoin-cash/transaction/${category}`;
+</script>
+
+<svelte:head><title>Token · PennyPicker</title></svelte:head>
+
+<main class="pp-container">
+	<div class="pp-page-head">
+		<div>
+			<h1>{market.name} <span class="muted">({market.symbol})</span></h1>
+			<p>{market.summary}</p>
+		</div>
+		<span class="pp-badge {market.status === 'live' ? 'ok' : 'warn'}">{market.network === 'chipnet' ? 'Chipnet · tradable' : 'Mainnet · view only'}</span>
+	</div>
+
+	<div class="pp-grid-2">
+		<section class="pp-card">
+			<h2>Token</h2>
+			<dl class="pp-kv">
+				<dt>Name</dt><dd>{market.name}</dd>
+				<dt>Ticker</dt><dd>{market.symbol} <span class="muted small">(several tokens use this ticker: always check the category)</span></dd>
+				<dt>Network</dt><dd>{market.network === 'chipnet' ? 'BCH Chipnet (test network)' : 'BCH mainnet'}</dd>
+				{#if market.id === 'pennypickerusd'}
+					<dt>Supply</dt><dd>1,000,000.00, fixed (no minting baton)</dd>
+					<dt>Decimals</dt><dd>2 (1 PUSD = 100 base units)</dd>
+					<dt>Price</dt><dd>Treated as 1 USD for trading; a test token with no backing or value</dd>
+				{/if}
+				<dt>Category</dt>
+				<dd class="mono small">
+					{#if market.category}<a href={explorer(market.network, market.category)} target="_blank" rel="noopener">{market.category}</a>{:else}—{/if}
+				</dd>
+			</dl>
+			{#if market.links.length}
+				<div class="pp-row" style="margin-top: 0.75rem">
+					{#each market.links as link (link.href)}<a class="pp-btn pp-btn-sm" href={link.href} target="_blank" rel="noopener">{link.label} ↗</a>{/each}
+				</div>
+			{/if}
+		</section>
+
+		<section class="pp-card">
+			<h2>Your balance</h2>
+			{#if market.status !== 'live'}
+				<p class="muted">{market.name} lives on BCH mainnet. PennyPicker currently connects to Chipnet wallets only, so mainnet balances are not shown.</p>
+			{:else if !pp.wallet}
+				<p class="muted">Connect Cashonize to see your Chipnet balances.</p>
+				<a class="pp-btn pp-btn-primary" href="/wallet">Connect wallet</a>
+			{:else}
+				<div class="pp-grid-2">
+					<div><div class="pp-stat-label">BCH</div><div class="pp-stat-value">{formatSats(pp.balances.bchSats)}</div></div>
+					<div><div class="pp-stat-label">{market.symbol}</div><div class="pp-stat-value">{formatUnits(pp.balances.pusdUnits)}</div></div>
+				</div>
+				<p class="small muted" style="margin-top: 0.6rem">Need test PUSD? Ask in the community chat, or sell test BCH into a bid on the <a href="/">Exchange</a>.</p>
+			{/if}
+		</section>
+	</div>
+
+	<section class="pp-card" style="margin-top: 1rem">
+		<h2>Markets</h2>
+		<div class="markets">
+			{#each MARKETS as m (m.id)}
+				<button type="button" class="pp-card mkt" class:sel={m.id === market.id} onclick={() => pp.selectMarket(m.id)}>
+					<strong>BCH / {m.name}</strong>
+					<span class="small muted">{m.network === 'chipnet' ? 'Chipnet · tradable now' : 'Mainnet · view only for now'}</span>
+				</button>
+			{/each}
+		</div>
+		<p class="small muted" style="margin-top: 0.6rem">Both markets price orders against the same oracles.cash BCH/USD oracle. Mainnet trading will open after a reviewed mainnet deployment.</p>
+	</section>
+</main>
+
+<style>
+	.markets { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.6rem; }
+	.mkt { text-align: left; display: flex; flex-direction: column; gap: 0.2rem; cursor: pointer; font: inherit; color: var(--pp-text); }
+	.mkt.sel { border-color: var(--pp-accent); box-shadow: inset 3px 0 0 var(--pp-accent); }
+</style>
