@@ -30,6 +30,7 @@
 	import { balancesOf, type Balances } from '$lib/pennypicker/ui/wallet';
 	import { pp, explorerTx } from '$lib/pennypicker/ui/session.svelte';
 	import IdentityCard from '$lib/pennypicker/ui/IdentityCard.svelte';
+	import { CHIPNET_DEPLOYMENT } from '$lib/pennypicker/deployment';
 	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
 	import { PUSD_CATEGORY_STORAGE_KEY as PUSD_KEY_FOR_BALANCE } from '$lib/pennypicker/pusdGenesis';
 
@@ -353,7 +354,8 @@
 
 	const pusdCategory = $derived(pp.config.pusdCategory);
 	const pusdUtxos = $derived(pp.utxos.filter((u) => pusdCategory && u.token?.category === pusdCategory));
-	const genesisComplete = $derived(!!pusdCategory && (pusdUtxos.some((u) => (u.height ?? 0) > 0) || pp.balances.pusdUnits > 0n || (pp.discovery?.orders.some((o) => o.heldUnits > 0n) ?? false)));
+	// The committed deployment category is a confirmed genesis; a resolved authchain head also proves it exists.
+	const genesisComplete = $derived(!!pusdCategory && (pusdCategory === CHIPNET_DEPLOYMENT.pusdCategory || !!pp.pusdIdentity || pusdUtxos.some((u) => (u.height ?? 0) > 0) || pp.balances.pusdUnits > 0n || (pp.discovery?.orders.some((o) => o.heldUnits > 0n) ?? false)));
 
 	function prepareBcmrFromConfig() {
 		if (pusdCategory) bcmrDraft = createPusdBcmrDraft(pusdCategory);
@@ -493,7 +495,8 @@
 		{/if}
 	</section>
 
-	<!-- Genesis-input tool -->
+	<!-- Genesis-input tool: only needed before PUSD exists -->
+	{#if !genesisComplete}
 	<section class="pp-card" style="margin-top: 1rem">
 		<div class="pp-card-head">
 			<h2>Genesis input (vout 0)</h2>
@@ -533,6 +536,7 @@
 			</div>
 		{/if}
 	</section>
+	{/if}
 
 	{#if currentOperation}<p class="pp-callout small" role="status">{currentOperation}</p>{/if}
 	{#if error}<p class="pp-callout bad" role="alert">{error}</p>{/if}

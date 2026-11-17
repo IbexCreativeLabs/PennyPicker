@@ -22,7 +22,19 @@ The user performed these steps through Cashonize and the app. All are confirmed,
 
 | **Oracle genesis** | `c530a91072561915dd032da8d491fa98c6b612e27b47b06ee8711ddfcd1cee22` | Block 334564. Oracle NFT at `bchtest:rd8cuc0a…6pgp8ctn6`, price 500.00, sequence 1. **Oracle category `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602`**. Change `c530…:1` = 513,747 sats |
 
-**Not yet done:** PUSD identity separation, orders, trades, cancels and oracle updates. The BCMR draft is local only and unpublished.
+**Live trading tests (agent, 2026-11-17, local app + Cashonize web in the VM):**
+
+| Step | Transaction | Result |
+| --- | --- | --- |
+| Test wallets | — | `PP Trader A` `bchtest:qze7r468…l4t7e50` and `PP Trader B` `bchtest:qrxy22p4…w89lgp4t` (Cashonize single-address Chipnet dev wallets in the VM's Chrome) |
+| Faucet → A | `d53ebb87…` | 1,017,000 sats |
+| A → B tBCH | `ac970dda…5ea48b` | 400,000 sats, confirmed |
+| **First real ask** (A) | `50e420e3e811439b4b91c751ae8b631447c3d591cbb3cbdf98358d96b8ba61e7` | Sell 0.004 BCH at +50 BPS (502.50). Cashonize signed the oracle `read()` contract input + P2PKH; orderbook discovered it from Chipnet |
+| **First real cancel** (A) | `60bbc9ed8528b07b29c58222ba25d7a80fb11bc7203b8ace062b9efe746acffe` | Covenant `cancel()` accepted by the node; 400,508 sats returned |
+
+Cashonize notes: it pre-fills nothing for contract inputs and signs only empty-unlocking wallet P2PKH inputs (confirmed in its source and live). Its WalletConnect sessions belong to the active wallet: switching wallets ends the other wallet's session, so testing two wallets in one browser means re-pairing after each switch (two devices avoid this). `http://` dev origins show "URL hidden (unsafe protocol)" in Cashonize; harmless locally.
+
+**Not yet done:** PUSD identity separation and PUSD distribution (both need the operator wallet, which is not in the VM), fills, oracle updates. The BCMR draft is local only and unpublished.
 
 **PUSD identity (BCMR authchain), verified on Chipnet 2026-11-17**
 - Authchain: authbase `b9d9ef3c…a2ee` → genesis `46db72c8711ccda28de97e924e5edc12a6f5b1f124fc2df83433c4a2156b61e4`. The txid `46bd72c8…`, sometimes mistyped in reports, does not exist on Chipnet.
