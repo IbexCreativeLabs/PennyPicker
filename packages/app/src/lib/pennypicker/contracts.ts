@@ -105,13 +105,30 @@ function instance(redeem: Uint8Array): ContractInstance {
 	return { redeemScript: redeem, lockingBytecode: p2sh32LockingBytecode(redeem) };
 }
 
+/** General Protocols (oracles.cash) BCH/USD price oracle: prices in US cents, one message per minute. */
+export const GP_BCH_USD_ORACLE = {
+	publicKey: '02d09db08af1ff4e8453919cc866a4be427d7bfe18f2c05e5444c196fcf6fd2818',
+	unitsPerWhole: 100n,
+	relay: 'https://oracles.generalprotocols.com'
+} as const;
+
 export interface OracleContractParams {
-	/** 20-byte HASH160 of the operator's public key. */
+	/** 20-byte HASH160 of the wallet that created the oracle (names the instance; no special rights). */
 	operatorPkh: string;
+	/** Compressed public key of the price oracle whose signed messages update the state. */
+	oraclePublicKey?: string;
+	/** Oracle price units per whole currency unit (BCH/USD: 100 cents). */
+	unitsPerWhole?: bigint;
 }
 
 export function oracleContract(params: OracleContractParams): ContractInstance {
-	return instance(redeemScript(oracleBytecode, [bytesOf(params.operatorPkh, 20, 'Operator hash')]));
+	return instance(
+		redeemScript(oracleBytecode, [
+			bytesOf(params.operatorPkh, 20, 'Operator hash'),
+			bytesOf(params.oraclePublicKey ?? GP_BCH_USD_ORACLE.publicKey, 33, 'Oracle public key'),
+			bigIntToVmNumber(params.unitsPerWhole ?? GP_BCH_USD_ORACLE.unitsPerWhole)
+		])
+	);
 }
 
 export interface OrderContractParams {
@@ -165,9 +182,45 @@ export function oracleReadUnlocking(oracle: ContractInstance): Uint8Array {
 	return concat([pushInt(BigInt(ORACLE_FUNCTION.read)), encodeDataPush(oracle.redeemScript)]);
 }
 
-/** Update needs no arguments: the operator authorises it with a P2PKH input at index + 1. */
-export function oracleUpdateUnlocking(oracle: ContractInstance): Uint8Array {
-	return concat([pushInt(BigInt(ORACLE_FUNCTION.update)), encodeDataPush(oracle.redeemScript)]);
+/** Permissionless update with a signed oracle message (arguments pushed in reverse order). */
+export function oracleUpdateUnlocking(oracle: ContractInstance, signature: Uint8Array, message: Uint8Array): Uint8Array {
+	return concat([
+		encodeDataPush(message),
+		encodeDataPush(signature),
+		pushInt(BigInt(ORACLE_FUNCTION.update)),
+		encodeDataPush(oracle.redeemScript)
+	]);
+}
+
+/** A signed price message from a General Protocols oracle (16-byte message, 64-byte Schnorr signature). */
+export interface OracleMessage {
+	message: Uint8Array;
+	signature: Uint8Array;
+	timestamp: number;
+	messageSequence: number;
+	dataSequence: number;
+	/** Oracle units, e.g. US cents for BCH/USD. */
+	price: bigint;
+}
+
+export function parseOracleMessage(messageHex: string, signatureHex: string): OracleMessage {
+	const message = bytesOf(messageHex, 16, 'Oracle message');
+	const signature = bytesOf(signatureHex, 64, 'Oracle signature');
+	const view = new DataView(message.buffer, message.byteOffset, 16);
+	return {
+		message,
+		signature,
+		timestamp: view.getUint32(0, true),
+		messageSequence: view.getInt32(4, true),
+		dataSequence: view.getInt32(8, true),
+		price: BigInt(view.getInt32(12, true))
+	};
+}
+
+/** The 16-byte state commitment the oracle contract derives from a message. */
+export function oracleStateFromMessage(msg: OracleMessage, unitsPerWhole: bigint = GP_BCH_USD_ORACLE.unitsPerWhole): OracleState {
+	if (msg.price <= 0n || msg.dataSequence <= 0) throw new Error('Not an oracle price message.');
+	return { price: (msg.price * PRICE_SCALE) / unitsPerWhole, timestamp: msg.timestamp, sequence: msg.messageSequence };
 }
 
 export interface OracleState {

@@ -71,16 +71,16 @@
 		<section class="pp-card">
 			<h2>How pricing works</h2>
 			<dl class="pp-kv">
-				<dt>Reference</dt><dd>Latest price the oracle operator has published on-chain</dd>
+				<dt>Reference</dt><dd>Live BCH/USD price signed by oracles.cash, verified on-chain (1 PUSD treated as 1 USD)</dd>
 				<dt>BPS</dt><dd>1 BPS = 0.01%. 100 BPS = 1%</dd>
 				<dt>Limit price</dt><dd><span class="mono">reference × (10000 + BPS) / 10000</span></dd>
 				<dt>Ask (sell BCH)</dt><dd>BPS ≥ 0, at or above the reference. Escrows BCH</dd>
 				<dt>Bid (buy BCH)</dt><dd>BPS ≤ 0, at or below the reference. Escrows PUSD</dd>
 			</dl>
 			<p class="pp-callout small" style="margin-top: 0.75rem">
-				Example: with a reference of 500.00 PUSD/BCH, an ask at +50 BPS has a limit of <strong>502.50 PUSD/BCH</strong>. If the reference moves to 520.00, the same order re-prices to 522.60 without being edited.
+				Example: with a reference of 500.00 PUSD/BCH, an ask at +50 BPS has a limit of <strong>502.50 PUSD/BCH</strong>. If BCH moves to 520.00, the same order re-prices to 522.60 without being edited.
 			</p>
-			<p class="small muted" style="margin-top: 0.5rem">The reference is operator-attested, not a market feed. See <a href="/penny-picker/oracle">Oracle</a>.</p>
+			<p class="small muted" style="margin-top: 0.5rem">The reference comes from the oracles.cash BCH/USD oracle (General Protocols); the contract checks its signature. See <a href="/penny-picker/oracle">Oracle</a>.</p>
 		</section>
 	</div>
 

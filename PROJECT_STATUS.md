@@ -8,13 +8,13 @@ PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet**. Orders
 relative to an on-chain reference price. PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals) with no USD
 backing and no peg. `PENNYPICKER_PROGRESS.md` is the earlier research log.
 
-## Live market on Chipnet (market v3, 2026-11-17)
+## Live market on Chipnet (2026-11-17)
 
 All three wallets are Cashonize single-address **Chipnet development wallets** in the VM's Chrome (seed phrases stay in Cashonize; never exported).
 
 | Role | Address |
 | --- | --- |
-| **PP Operator** (PUSD issuer, oracle operator) | `bchtest:qz6fyv7h46g24nwlqmhua23hqumgj2zgcc0w05m3sx` (PKH `b49233d7ae90aacddf06efceaa370736892848c6`) |
+| **PP Operator** (PUSD issuer, oracle creator) | `bchtest:qz6fyv7h46g24nwlqmhua23hqumgj2zgcc0w05m3sx` (PKH `b49233d7ae90aacddf06efceaa370736892848c6`) |
 | PP Trader A | `bchtest:qze7r468d3qk2wnvzt7afwm2g7wzhgv0fgel4t7e50` |
 | PP Trader B | `bchtest:qrxy22p45mzt6tg0e3hjqmy8sz6jgqzjmvw89lgp4t` |
 
@@ -22,10 +22,20 @@ All three wallets are Cashonize single-address **Chipnet development wallets** i
 | --- | --- |
 | **PUSD category** | `74167994a2d8e1e57188bae9a42035678e3526a1d8650ced756b2ffa4c078ab3` (1,000,000.00, 2 decimals, no baton) |
 | PUSD genesis | `9a1a960107d5de533a68659bd3b97b175f548c1d483beb7c7ff285b560316aba`: **output 0 = BCH-only identity, output 1 = supply** (no separation step needed) |
-| **Oracle category** | `88e2a9eebad292fc843ab8cd2f683b6326295dde7de716242041ddfccd3b9a37` |
+| **Oracle category (v4, oracles.cash)** | `adcf011756ad2726f8521c371ea950ae293fb1a1e6507bfdc13cbe2b2d4f74b5` (v3 operator-typed oracle `88e2a9ee…` retired) |
 | Oracle genesis | `a08a39c3d9d8df4274c79ed33864247e118ff2b727edc46981f7eddb3d7a60dc` (500.00, seq 1, block 335268) |
 
-**End-to-end test, all signed in Cashonize, broadcast from the app and checked against Chipnet** (types: real signed and broadcast Chipnet transactions):
+**Oracle v4 (oracles.cash BCH/USD), live:**
+
+| Step | Transaction | Verified result |
+| --- | --- | --- |
+| Oracle genesis (210.99, message #1930547) | `34533fc4635527016456e3965b1cc31e5a7037c0a4537282480feaf57a6d0e27` | category `adcf011756ad2726f8521c371ea950ae293fb1a1e6507bfdc13cbe2b2d4f74b5` |
+| Operator ask, sell 0.002 BCH at +20 BPS, **carries oracles.cash message #1930549** | `e5f61b3aa73ac78d0a92ee7cc15fe2553973a2feb7993c5f34ff85746d83c030` | GP signature checked on-chain; block 335332 |
+| **Trader B buys 0.001 BCH, carries message #1930551 (211.10)** | `bc35fd555f665b194df906b1493b618c2c45080498f5db5a80a0d603fad91036` | price read from output 0: 22e18 − 1e5·211.10e8·10020 ≥ 0 ✓ (0.21152 → 0.22 PUSD). Signed by a wallet that did not create the oracle |
+
+`scripts/pennypicker-verify-oracle-tx.ts <txid>` decodes the message a transaction carried and re-checks the General Protocols signature.
+
+**Earlier end-to-end test on oracle v3 (operator-typed price, retired), all signed in Cashonize, broadcast from the app and checked against Chipnet** (types: real signed and broadcast Chipnet transactions):
 
 | # | Step | Transaction | Verified result |
 | --- | --- | --- | --- |
@@ -47,7 +57,7 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
 
 ## Pricing convention (protocol v2, changed before any oracle or order existed)
 
-- **Pair:** BCH/PUSD. Price = **PUSD per BCH**. The oracle stores it × 1e8 (`500.00` → `50000000000`).
+- **Pair:** BCH/PUSD. Price = **PUSD per BCH** = the oracles.cash **BCH/USD** price with 1 PUSD treated as 1 USD (PUSD stands in for a USD stablecoin, per the project pitch). The oracle stores it × 1e8 (`210.99` → `21099000000`).
 - **Limit price:** `reference × (10000 + BPS) / 10000`.
 - **Ask** = sell BCH, with BPS ≥ 0. It escrows BCH and collects PUSD. At +50 BPS with a 500.00 reference, the limit is **502.50**.
 - **Bid** = buy BCH, with BPS ≤ 0. It escrows PUSD and collects BCH. At −25 BPS, the limit is **498.75**.
@@ -59,11 +69,16 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
 
 **Covenants** (`packages/app/src/lib/pennypicker/contracts/*.cash`, cashc 0.11.5)
 
-- **`PennyPickerOracle(operatorPkh)`** holds the single mutable oracle NFT. Its commitment is `price:int64le | timestamp:int32le | sequence:int32le`.
-  - `update()` requires the input directly after the oracle to come from the operator's P2PKH address. The wallet signs that input normally, and SIGHASH_ALL covers the new price. The sequence must strictly increase and the timestamp may not go backwards.
-  - `read()` lets anyone spend the oracle UTXO if it is recreated unchanged. Superseded prices are therefore spent outputs.
+- **`PennyPickerOracle(operatorPkh, oraclePublicKey, priceUnitsPerWhole)`** (oracle v4) holds the single mutable oracle NFT, commitment `price:int64le (×1e8) | timestamp:int32le | sequence:int32le`.
+  - **The price comes from oracles.cash.** `oraclePublicKey` is General Protocols' BCH/USD oracle `02d09db0…2818`, with prices in cents (`priceUnitsPerWhole` = 100).
+  - **`update(sig, message)` is permissionless.** It checks the signature with `OP_CHECKDATASIG` (Schnorr over sha256 of the 16-byte message `timestamp | messageSequence | dataSequence | price`).
+    - It requires a price message (positive data sequence) whose message sequence is greater than the stored one.
+    - It writes exactly `price × 1e8 / 100 | timestamp | sequence`. Nobody can type a price.
+  - **`read()`** lets anyone spend the state if it is recreated unchanged. Superseded states are spent outputs and can never be reused.
+  - `operatorPkh` only names the wallet that created the oracle (one contract address per creator). It grants no rights.
+  - **Why an on-chain record, not raw signed messages:** resting orders would otherwise let a taker attach any old signed message and pick a favourable price. The script cannot see the clock, but it can refuse anything older than the stored sequence.
 - **`PennyPickerOrder(oracleCat, pusdCat, makerPkh, side, deltaBps)`** gives each order its own P2SH32 address. One UTXO holds the escrow and the proceeds.
-  - `fill()` reads the oracle at input 0, continues the order at the same index, and enforces the side and the exact settlement inequality.
+  - `fill()` requires the oracle category at input 0 and output 0. It **reads the price from output 0**, so a fill can carry a newer oracles.cash message and settle at it in the same transaction. It continues the order at the same index and enforces the side and the exact settlement inequality.
   - `cancel()` requires the maker's P2PKH input directly after the order input.
 - **Why P2PKH-input authorisation:** it avoids depending on WalletConnect contract-signature placeholders, which Cashonize support could not be verified for. Cashonize already signs P2PKH inputs in practice; the self-transfers and genesis prove it.
 
@@ -117,8 +132,8 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
 Run from `packages/app`, using libauth's BCH 2025 VM:
 
 ```
-pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 23 covenant checks
-pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 58 builder checks (signed, chained txs, PUSD genesis + transfer, identity safeguards, error texts)
+pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 28 covenant checks (incl. a real oracles.cash message)
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 63 builder checks (signed, chained txs, PUSD genesis + transfer, identity safeguards, error texts)
 pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
 pnpm dlx tsx scripts/pennypicker-identity.test.ts    # 8 authchain/marking checks
 ```
@@ -129,7 +144,8 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 
 ## Known limitations
 
-- **The oracle is operator-attested.** It does not check prices against any market, and the operator key is trusted. The chain cannot enforce freshness; the UI marks a price stale after 15 minutes.
+- **Oracle trust: oracles.cash (General Protocols).** The contract verifies their signature; there is no PennyPicker operator. PUSD is a test token *priced as* 1 USD with no backing.
+- **Message choice window.** The chain cannot see the clock, so a taker may pick any signed message newer than the stored one (minutes while the market is active, longer if idle). The app always uses the newest; the UI marks prices older than 15 minutes as stale.
 - **Oracle contention.** Every create, fill and update spends the single oracle UTXO, so concurrent users conflict and must rebuild. Unconfirmed chaining works.
 - **Order sizing.** An ask's BCH is its size. A bid's PUSD is its size, and its BCH size shown in the UI depends on the current reference.
 - **Discovery limits.** It scans the last 300 oracle-history transactions and makes one Electrum call per announced order.

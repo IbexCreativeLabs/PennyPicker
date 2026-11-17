@@ -2,62 +2,45 @@
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
 	import { pp, explorerTx, formatAge, STALE_AFTER_SECONDS } from '$lib/pennypicker/ui/session.svelte';
 	import { errorText } from '$lib/pennypicker/ui/wallet';
-	import { formatPrice, parsePrice } from '$lib/pennypicker/contracts';
-	import { buildOracleGenesis, buildOracleUpdate, formatSats, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
+	import { formatPrice, GP_BCH_USD_ORACLE, oracleStateFromMessage } from '$lib/pennypicker/contracts';
+	import { buildOracleGenesis, buildOracleRefresh, formatSats, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 	import { getOracleState, oracleAddress, ORACLE_CATEGORY_STORAGE_KEY, ORACLE_OPERATOR_STORAGE_KEY, writeStorage } from '$lib/pennypicker/chain';
 
-	let priceInput = $state('500.00');
 	let pending = $state<UnsignedExchangeTransaction | undefined>();
 	let error = $state('');
 	let notice = $state('');
 
 	const oracle = $derived(pp.oracle);
+	const feed = $derived(pp.feed);
+	const feedState = $derived(feed ? oracleStateFromMessage(feed) : undefined);
 	const operatorPkh = $derived(pp.config.oracleOperatorPkh ?? pp.wallet?.pkh);
 	const exists = $derived(!!oracle);
-	const canOperate = $derived(!!pp.wallet && (!pp.config.oracleOperatorPkh || pp.config.oracleOperatorPkh === pp.wallet.pkh));
-	const parsed = $derived.by(() => {
-		try {
-			return { price: parsePrice(priceInput) };
-		} catch (cause) {
-			return { error: errorText(cause) };
-		}
-	});
-	const change = $derived(
-		oracle && 'price' in parsed && parsed.price
-			? Number(((parsed.price - oracle.state.price) * 1_000_000n) / oracle.state.price) / 10_000
-			: undefined
-	);
+	const recordAge = $derived(oracle ? Math.max(0, pp.nowSec - oracle.state.timestamp) : undefined);
+	const feedAge = $derived(feed ? Math.max(0, pp.nowSec - feed.timestamp) : undefined);
+	const behind = $derived(feed && oracle ? feed.messageSequence - oracle.state.sequence : 0);
 
 	async function prepareGenesis() {
 		error = '';
 		try {
 			if (!pp.wallet) throw new Error('Connect Cashonize first.');
-			if ('error' in parsed) throw new Error(parsed.error);
-			await pp.refreshWallet();
-			pending = buildOracleGenesis(pp.wallet.address, pp.wallet.pkh, pp.utxos, {
-				price: parsed.price!,
-				timestamp: Math.floor(Date.now() / 1000),
-				sequence: 1
-			});
+			await Promise.all([pp.refreshWallet(), pp.refreshFeed()]);
+			if (!pp.feed) throw new Error(pp.feedError || 'The oracles.cash price feed is unavailable.');
+			pending = buildOracleGenesis(pp.wallet.address, pp.wallet.pkh, pp.utxos, oracleStateFromMessage(pp.feed));
 		} catch (cause) {
 			error = errorText(cause);
 		}
 	}
 
-	async function prepareUpdate() {
+	async function prepareRefresh() {
 		error = '';
 		try {
-			if (!pp.wallet || !pp.market) throw new Error('Connect the operator wallet first.');
-			if ('error' in parsed) throw new Error(parsed.error);
-			await pp.refreshWallet();
+			if (!pp.wallet || !pp.market) throw new Error('Connect a Cashonize wallet first (any wallet can do this).');
+			await Promise.all([pp.refreshWallet(), pp.refreshFeed()]);
 			const latest = await getOracleState(pp.market);
 			if (!latest) throw new Error('Oracle state not found.');
+			if (!pp.feed) throw new Error(pp.feedError || 'The oracles.cash price feed is unavailable.');
 			pp.oracle = latest;
-			pending = buildOracleUpdate(pp.market, latest, pp.wallet.address, pp.utxos, {
-				price: parsed.price!,
-				timestamp: Math.max(Math.floor(Date.now() / 1000), latest.state.timestamp),
-				sequence: latest.state.sequence + 1
-			});
+			pending = buildOracleRefresh(pp.market, latest, pp.wallet.address, pp.utxos, pp.feed);
 		} catch (cause) {
 			error = errorText(cause);
 		}
@@ -65,7 +48,6 @@
 
 	function broadcasted(txid: string, unsigned: UnsignedExchangeTransaction) {
 		if (unsigned.kind === 'oracle-genesis' && unsigned.createdCategory && pp.wallet) {
-			// Identifiers come from the broadcast transaction itself; status is still derived from chain data.
 			writeStorage(ORACLE_CATEGORY_STORAGE_KEY, unsigned.createdCategory);
 			writeStorage(ORACLE_OPERATOR_STORAGE_KEY, pp.wallet.pkh);
 			pp.reloadConfig();
@@ -81,7 +63,7 @@
 	<div class="pp-page-head">
 		<div>
 			<h1>Reference oracle</h1>
-			<p>The BCH/PUSD reference price every order is priced against, published on-chain by the oracle operator.</p>
+			<p>Every order is priced against the live BCH/USD price signed by <a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a> (General Protocols). PUSD stands in for a USD stablecoin, so 1 PUSD is treated as 1 USD.</p>
 		</div>
 		<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
 	</div>
@@ -89,31 +71,49 @@
 	<div class="pp-grid-2">
 		<section class="pp-card">
 			<div class="pp-card-head">
-				<h2>Current reference</h2>
+				<h2>Live price · oracles.cash</h2>
+				{#if feed}<span class="pp-badge ok">Signed</span>{:else if pp.feedError}<span class="pp-badge warn">Unavailable</span>{:else}<span class="pp-badge plain">Loading</span>{/if}
+			</div>
+			{#if feed && feedState}
+				<div class="pp-stat-value big">{formatPrice(feedState.price)} <small>USD per BCH</small></div>
+				<dl class="pp-kv" style="margin-top: 0.75rem">
+					<dt>Published</dt><dd>{new Date(feed.timestamp * 1000).toLocaleString()} <span class="muted">({formatAge(feedAge)})</span></dd>
+					<dt>Message</dt><dd>#{feed.messageSequence} · signature verified in this browser</dd>
+					<dt>Oracle key</dt><dd class="mono small">{GP_BCH_USD_ORACLE.publicKey}</dd>
+				</dl>
+			{:else if pp.feedError}
+				<p class="pp-callout warn small">{pp.feedError}. Trading still works at the on-chain price below.</p>
+			{:else}
+				<p class="muted">Loading…</p>
+			{/if}
+
+			<div class="pp-card-head" style="margin-top: 1.1rem">
+				<h2>On-chain reference</h2>
 				{#if exists}
-					<span class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}">{pp.oracleStale ? 'Stale' : 'Live'}</span>
+					<span class="pp-badge {behind > 0 ? 'warn' : 'ok'}">{behind > 0 ? `${behind} message${behind === 1 ? '' : 's'} behind` : 'Up to date'}</span>
 				{:else}
 					<span class="pp-badge warn">Not created</span>
 				{/if}
 			</div>
 			{#if oracle}
-				<div class="pp-stat-value big">{formatPrice(oracle.state.price)} <small>PUSD per BCH</small></div>
-				<dl class="pp-kv" style="margin-top: 0.75rem">
-					<dt>Last update</dt><dd>{new Date(oracle.state.timestamp * 1000).toLocaleString()} <span class="muted">({formatAge(pp.oracleAge)})</span></dd>
-					<dt>Freshness</dt><dd>{pp.oracleStale ? `Older than ${STALE_AFTER_SECONDS / 60} min: shown as stale` : `Within ${STALE_AFTER_SECONDS / 60} min`}</dd>
-					<dt>Sequence</dt><dd>#{oracle.state.sequence}</dd>
+				<div class="pp-stat-value">{formatPrice(oracle.state.price)} <small>PUSD per BCH</small></div>
+				<dl class="pp-kv" style="margin-top: 0.5rem">
+					<dt>From message</dt><dd>#{oracle.state.sequence} · {new Date(oracle.state.timestamp * 1000).toLocaleString()} <span class="muted">({formatAge(recordAge)})</span></dd>
 					<dt>Status on chain</dt><dd>{(oracle.height ?? 0) > 0 ? `Confirmed (block ${oracle.height})` : 'In mempool (unconfirmed)'}</dd>
 				</dl>
+				{#if behind > 0}
+					<p class="small muted">New orders and fills carry the latest signed message and update this record in the same transaction, so they settle at the live price. You can also update it on its own below.</p>
+				{/if}
 			{:else if pp.loadingMarket && !pp.oracleLoaded}
 				<p class="muted">Loading…</p>
 			{:else}
-				<p class="muted">No oracle exists yet. Creating it publishes the first reference price.</p>
+				<p class="muted">No on-chain reference exists yet.</p>
 			{/if}
 			<details class="pp-details" style="margin-top: 0.85rem">
 				<summary>Identity</summary>
 				<dl class="pp-kv">
-					<dt>Operator PKH</dt><dd class="mono">{operatorPkh ?? '—'} {pp.wallet && operatorPkh === pp.wallet.pkh ? '(your wallet)' : ''}</dd>
-					<dt>Oracle category</dt><dd class="mono">{pp.config.oracleCategory ?? (pp.genesisReadyUtxo ? `${pp.genesisReadyUtxo.txid} (after genesis)` : '—')}</dd>
+					<dt>Created by</dt><dd class="mono">{operatorPkh ?? '—'} {pp.wallet && operatorPkh === pp.wallet.pkh ? '(your wallet)' : ''}</dd>
+					<dt>Oracle category</dt><dd class="mono">{pp.config.oracleCategory ?? '—'}</dd>
 					{#if operatorPkh}<dt>Contract</dt><dd class="mono">{oracleAddress(operatorPkh)}</dd>{/if}
 					{#if oracle}<dt>State UTXO</dt><dd class="mono"><a href={explorerTx(oracle.txid)} target="_blank" rel="noopener">{oracle.txid}:{oracle.vout} ↗</a></dd>{/if}
 				</dl>
@@ -121,14 +121,14 @@
 		</section>
 
 		<section class="pp-card">
-			<h2>How this oracle works</h2>
+			<h2>How the price gets on-chain</h2>
 			<ul class="facts">
-				<li><strong>What it does.</strong> It holds one on-chain record with the BCH/PUSD reference price. Every order fill must read it.</li>
-				<li><strong>Why PennyPicker needs it.</strong> Orders are stored as BPS deviations, not prices. The covenant needs a reference to turn BPS into a limit price at fill time.</li>
-				<li><strong>Who controls it.</strong> Only the operator address can publish a price. Here that is the wallet that created the oracle.</li>
-				<li><strong>Manual price.</strong> The operator types the price in. The oracle does <em>not</em> check it against any real market, and PUSD is not USD.</li>
-				<li><strong>Latest price only.</strong> Each update spends the previous record, so fills can only use the most recent price.</li>
-				<li><strong>Freshness.</strong> The chain cannot see wall-clock time, so the app marks the price stale after 15 minutes. Fills still settle at it until a new price is published.</li>
+				<li><strong>Real oracle data.</strong> oracles.cash publishes a BCH/USD price every minute, signed by General Protocols' oracle key.</li>
+				<li><strong>Checked by the contract.</strong> The PennyPicker oracle contract only accepts a message carrying that key's valid signature (<span class="mono">OP_CHECKDATASIG</span>), and writes exactly the signed price.</li>
+				<li><strong>No operator.</strong> Anyone may submit a newer signed message. No wallet can type in a price.</li>
+				<li><strong>Why an on-chain record at all.</strong> Orders rest in the book for hours or days. If a taker could attach <em>any</em> signed message, they would pick an old one that suits them. Here each update must be newer than the last and spends the previous record, so a superseded price can never be used again.</li>
+				<li><strong>Freshness.</strong> Orders and fills bring the record up to date in the same transaction. The chain cannot see the clock, so a taker can still choose among messages published since the last update (a window of minutes while the book is active).</li>
+				<li><strong>PUSD = USD for pricing.</strong> PUSD here is an experimental test token with no real backing; it stands in for the stablecoin the design targets.</li>
 			</ul>
 		</section>
 	</div>
@@ -141,67 +141,52 @@
 
 	<section class="pp-card" style="margin-top: 1rem">
 		{#if !pp.wallet}
-			<h2>Operator actions</h2>
-			<p class="muted">Connect the operator's Cashonize wallet to create the oracle or publish prices. <a href="/penny-picker/wallet">Wallet →</a></p>
-		{:else if !exists && !pp.config.oracleCategory && !canOperate}
-			<h2>Oracle not created yet</h2>
-			<p class="muted">Only the operator (<span class="mono">{pp.config.oracleOperatorPkh?.slice(0, 12)}…</span>) can create the oracle. Trading opens once it exists. This page updates automatically when it appears on Chipnet.</p>
+			<h2>Update the on-chain price</h2>
+			<p class="muted">Any connected wallet can push the latest signed oracles.cash price on-chain (it pays only the network fee). <a href="/penny-picker/wallet">Wallet →</a></p>
 		{:else if !exists && !pp.config.oracleCategory}
 			<h2>Create the oracle</h2>
 			<div class="pp-grid-2 action">
 				<div class="pp-stack">
-					<label class="pp-field">
-						<span>Initial reference price</span>
-						<div class="pp-input-group"><input class="pp-input" inputmode="decimal" bind:value={priceInput} /><span class="pp-addon">PUSD per BCH</span></div>
-					</label>
-					{#if 'error' in parsed}<p class="pp-error small">{parsed.error}</p>{/if}
-					<button class="pp-btn pp-btn-primary" type="button" onclick={prepareGenesis} disabled={!pp.genesisReadyUtxo || 'error' in parsed || !!pending}>Review oracle creation</button>
+					<p class="small">Starts the on-chain record at the latest oracles.cash price{feedState ? ` (${formatPrice(feedState.price)})` : ''}.</p>
+					<button class="pp-btn pp-btn-primary" type="button" onclick={prepareGenesis} disabled={!pp.genesisReadyUtxo || !feed || !!pending}>Review oracle creation</button>
 				</div>
 				<div class="pp-stack small">
 					<div class="check {pp.genesisReadyUtxo ? 'ok' : 'no'}">
 						{#if pp.genesisReadyUtxo}
-							✓ Genesis input ready: <span class="mono">{pp.genesisReadyUtxo.txid.slice(0, 16)}…:0</span> ({formatSats(pp.genesisReadyUtxo.satoshis)} BCH, confirmed)
+							✓ Genesis input ready: <span class="mono">{pp.genesisReadyUtxo.txid.slice(0, 16)}…:0</span> ({formatSats(pp.genesisReadyUtxo.satoshis)} BCH)
 						{:else}
 							✗ Needs a BCH-only UTXO at output index 0. Receive a payment to this wallet (it lands at output 0) and refresh.
 						{/if}
 					</div>
-					<p class="muted">Creates one mutable NFT holding the price and sends it to the oracle contract, with no minting baton. The new oracle category ID equals the spent transaction's ID. You become the operator.</p>
+					<p class="muted">Creates one mutable NFT holding the price and sends it to the oracle contract, with no minting baton. The new oracle category ID equals the spent transaction's ID.</p>
 				</div>
 			</div>
 		{:else if !exists}
 			<h2>Waiting for the oracle</h2>
 			<p class="muted">An oracle category is configured (<span class="mono">{pp.config.oracleCategory?.slice(0, 16)}…</span>), but no state UTXO is visible yet. If you just broadcast genesis, refresh in a moment.</p>
-		{:else if canOperate}
-			<h2>Publish a new reference price</h2>
+		{:else}
+			<h2>Update the on-chain price</h2>
 			<div class="pp-grid-2 action">
 				<div class="pp-stack">
-					<label class="pp-field">
-						<span>New reference price</span>
-						<div class="pp-input-group"><input class="pp-input" inputmode="decimal" bind:value={priceInput} /><span class="pp-addon">PUSD per BCH</span></div>
-					</label>
-					{#if 'error' in parsed}<p class="pp-error small">{parsed.error}</p>{/if}
-					<button class="pp-btn pp-btn-primary" type="button" onclick={prepareUpdate} disabled={'error' in parsed || !!pending}>Review price update</button>
+					<button class="pp-btn pp-btn-primary" type="button" onclick={prepareRefresh} disabled={!feed || behind <= 0 || !!pending}>
+						{behind > 0 ? 'Review price update from oracles.cash' : 'Already up to date'}
+					</button>
 				</div>
 				<div class="small">
-					{#if oracle && 'price' in parsed}
+					{#if oracle && feedState}
 						<div class="calc">
-							<div><span class="muted">Current</span><span class="num">{formatPrice(oracle.state.price)}</span></div>
-							<div><span class="muted">New</span><span class="num">{formatPrice(parsed.price!)}</span></div>
-							<div><span class="muted">Change</span><span class="num">{change !== undefined ? `${change > 0 ? '+' : ''}${change.toFixed(2)}%` : '—'}</span></div>
-							<div><span class="muted">Sequence</span><span class="num">#{oracle.state.sequence} → #{oracle.state.sequence + 1}</span></div>
+							<div><span class="muted">On-chain</span><span class="num">{formatPrice(oracle.state.price)} (#{oracle.state.sequence})</span></div>
+							<div><span class="muted">oracles.cash</span><span class="num">{formatPrice(feedState.price)} (#{feed!.messageSequence})</span></div>
 						</div>
 					{/if}
-					<p class="muted">Open orders re-price immediately: each limit is the new reference ± its BPS. The update is authorised by an ordinary input from your operator address.</p>
+					<p class="muted">Open orders re-price immediately: each limit is the new reference ± its BPS. Any wallet may do this; it pays only the fee.</p>
 				</div>
 			</div>
-		{:else}
-			<h2>Operator actions</h2>
-			<p class="muted">The connected wallet is not this oracle's operator, so prices are read-only here.</p>
 		{/if}
 	</section>
 
 	<section class="pp-card" style="margin-top: 1rem">
-		<h2>Price history</h2>
+		<h2>On-chain price history</h2>
 		{#each pp.discovery?.oracleUpdates ?? [] as update (update.state.sequence)}
 			<div class="row">
 				<span class="mono small">#{update.state.sequence}</span>

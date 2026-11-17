@@ -15,16 +15,17 @@ import {
 	hexToBin,
 	lockingBytecodeToCashAddress,
 	secp256k1,
+	sha256,
 	SigningSerializationFlag,
 	type TransactionCommon
 } from '@bitauth/libauth';
-import { makerPkhFromPublicKey, oracleContract, orderContract, encodeOracleCommitment } from '../src/lib/pennypicker/contracts';
+import { makerPkhFromPublicKey, oracleContract, orderContract, encodeOracleCommitment, parseOracleMessage } from '../src/lib/pennypicker/contracts';
 import {
 	buildCancelOrder,
 	buildCreateOrder,
 	buildFillOrders,
 	buildOracleGenesis,
-	buildOracleUpdate,
+	buildOracleRefresh,
 	buildPusdTransfer,
 	buildIdentitySeparation,
 	buildPusdGenesis,
@@ -56,6 +57,15 @@ const key = (byte: string) => {
 	return { priv, pub, pkh, address: lockingBytecodeToChipnetAddress(p2pkhLockingBytecode(pkh)), locking: p2pkhLockingBytecode(pkh) };
 };
 const operator = key('0a');
+// Local stand-in for the oracles.cash signing key (same message format and Schnorr-over-sha256 signature).
+const oracleSigner = key('0d');
+const ORACLE_PK = binToHex(oracleSigner.pub);
+const le = (v: bigint | number, n: number) => { const b = new Uint8Array(n); let x = BigInt(v); for (let i = 0; i < n; i++) { b[i] = Number(x & 0xffn); x >>= 8n; } return b; };
+function signedPrice(ts: number, seq: number, cents: bigint) {
+	const message = Uint8Array.from([...le(ts, 4), ...le(seq, 4), ...le(seq, 4), ...le(cents, 4)]);
+	const signature = secp256k1.signMessageHashSchnorr(oracleSigner.priv, sha256.hash(message)) as Uint8Array;
+	return parseOracleMessage(binToHex(message), binToHex(signature));
+}
 const maker = key('0b');
 const taker = key('0c');
 
@@ -120,24 +130,25 @@ let operatorUtxos = [fund(operator, 1, 1_000_000n)];
 	try { buildOracleGenesis(operator.address, operator.pkh, [{ ...operatorUtxos[0]!, vout: 1 }], { price: RATE, timestamp: 1_800_000_000, sequence: 1 }); } catch { threw = true; }
 	check('oracle genesis refuses without a vout-0 input', threw);
 }
-const genesis = buildOracleGenesis(operator.address, operator.pkh, [...operatorUtxos, fund(operator, 99, 5_000n, 7n)], { price: RATE, timestamp: 1_800_000_000, sequence: 1 });
+const genesis = buildOracleGenesis(operator.address, operator.pkh, [...operatorUtxos, fund(operator, 99, 5_000n, 7n)], { price: RATE, timestamp: 1_800_000_000, sequence: 1 }, ORACLE_PK);
 const g = verify('oracle genesis', genesis, operator);
 check('oracle genesis spends only the vout-0 input', genesis.transaction.inputs.length === 1);
-const market: MarketConfig = { pusdCategory: PUSD, oracleCategory: genesis.createdCategory!, oracleOperatorPkh: operator.pkh };
-const oracleLocking = oracleContract({ operatorPkh: operator.pkh }).lockingBytecode;
+const market: MarketConfig = { pusdCategory: PUSD, oracleCategory: genesis.createdCategory!, oracleOperatorPkh: operator.pkh, oraclePublicKey: ORACLE_PK };
+const oracleLocking = oracleContract({ operatorPkh: operator.pkh, oraclePublicKey: ORACLE_PK }).lockingBytecode;
 let oracle = findOracleUtxo(outputsTo(g.txid, g.tx, oracleLocking), market)!;
 check('oracle found after genesis', !!oracle && oracle.state.sequence === 1 && oracle.state.price === RATE);
 operatorUtxos = outputsTo(g.txid, g.tx, operator.locking);
 
-// 2. Oracle update to 520.00.
-const upd = buildOracleUpdate(market, oracle, operator.address, operatorUtxos, { price: 520n * 100_000_000n, timestamp: 1_800_000_060, sequence: 2 });
-const u = verify('oracle update authorised by operator input', upd, operator);
+// 2. Anyone (here the maker) moves the reference to 520.00 with a signed oracle message.
+const upd = buildOracleRefresh(market, oracle, maker.address, [fund(maker, 8, 100_000n)], signedPrice(1_800_000_060, 2, 52_000n));
+const u = verify('oracle refresh with a signed oracle message (permissionless)', upd, maker);
 oracle = findOracleUtxo(outputsTo(u.txid, u.tx, oracleLocking), market)!;
 const price = oracle.state.price;
+check('refreshed state is 520.00 at message #2', price === 520n * 100_000_000n && oracle.state.sequence === 2);
 {
 	let threw = false;
-	try { buildOracleUpdate(market, oracle, maker.address, [fund(maker, 9, 100_000n)], { ...oracle.state, sequence: 3 }); } catch { threw = true; }
-	check('non-operator cannot build an oracle update', threw);
+	try { buildOracleRefresh(market, oracle, maker.address, [fund(maker, 9, 100_000n)], signedPrice(1_800_000_060, 2, 60_000n)); } catch { threw = true; }
+	check('refresh refuses a message that is not newer', threw);
 }
 
 // 3. Maker posts an ask: sell 0.1 BCH at +50 BPS.
@@ -288,6 +299,22 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	let refused = false;
 	try { buildPusdGenesis('bitcoincash:qq3gfs2492tlz2nckgpq6wn28fcd80lucvcv23a9ku', [g0], SUPPLY); } catch { refused = true; }
 	check('genesis refuses a mainnet address', refused);
+}
+// 12. A fill that carries a newer oracle message updates the reference and settles at it.
+{
+	const asker = key('11');
+	const buyer = key('12');
+	const ca2 = buildCreateOrder(market, oracle, asker.address, asker.pkh, [fund(asker, 70, 5_000_000n)], { side: 'ask', deltaBps: 0, amount: 1_000_000n });
+	const c2 = verify('create ask for refresh test', ca2, asker);
+	const o2 = findOracleUtxo(outputsTo(c2.txid, c2.tx, oracleLocking), market)!;
+	const askUtxo = outputsTo(c2.txid, c2.tx, hexToBin(ca2.order!.lockingBytecodeHex))[0]!;
+	const open = toOpenOrder(ca2.order!, askUtxo, market)!;
+	const msg = signedPrice(1_800_000_120, o2.state.sequence + 5, 60_000n); // 600.00
+	const fr = buildFillOrders(market, o2, buyer.address, [fund(buyer, 71, 100_000n), fund(buyer, 72, 1_000n, 100_000n)], [{ order: open, sats: 500_000n }], msg);
+	const fv = verify('fill with a bundled oracle refresh', fr, buyer);
+	const after = findOracleUtxo(outputsTo(fv.txid, fv.tx, oracleLocking), market)!;
+	check('bundled refresh moved the reference to 600.00', after.state.price === 600n * 100_000_000n && after.state.sequence === msg.messageSequence);
+	check('the fill settled at the refreshed price (0.005 BCH = 3.00 PUSD)', fv.tx.outputs[1]!.token?.amount === 300n);
 }
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 

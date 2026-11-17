@@ -46,6 +46,8 @@ import {
 	oracleContract,
 	oracleReadUnlocking,
 	oracleUpdateUnlocking,
+	oracleStateFromMessage,
+	type OracleMessage,
 	orderCancelUnlocking,
 	orderContract,
 	orderFillUnlocking,
@@ -77,7 +79,10 @@ const FEE_MARGIN_BYTES = 30n;
 export interface MarketConfig {
 	pusdCategory: string;
 	oracleCategory: string;
+	/** Wallet that created the oracle; names the oracle contract instance. */
 	oracleOperatorPkh: string;
+	/** Price oracle whose signed messages update the state (default: oracles.cash BCH/USD). */
+	oraclePublicKey?: string;
 }
 
 /** A spendable output with its outpoint, as returned by Electrum listunspent. */
@@ -362,15 +367,27 @@ export function findOracleUtxo(utxos: ChainUtxo[], market: MarketConfig): Oracle
 	return { ...match, state: decodeOracleCommitment(hexToBin(match.token!.nft!.commitment)) };
 }
 
-function oracleReadInput(oracle: OracleUtxo, market: MarketConfig) {
-	const instance = oracleContract({ operatorPkh: market.oracleOperatorPkh });
+/**
+ * The oracle input/output pair every create and fill carries at index 0.
+ * With a newer signed oracle message, the state is moved forward in the same
+ * transaction (update); otherwise it is read and recreated unchanged.
+ */
+function oracleInput(oracle: OracleUtxo, market: MarketConfig, refresh?: OracleMessage) {
+	const instance = oracleContract({ operatorPkh: market.oracleOperatorPkh, oraclePublicKey: market.oraclePublicKey });
+	const prev = utxoToOutput(oracle, instance.lockingBytecode);
+	if (refresh && refresh.messageSequence > oracle.state.sequence) {
+		const state = oracleStateFromMessage(refresh);
+		const input = utxoToInput(oracle, oracleUpdateUnlocking(instance, refresh.signature, refresh.message));
+		return {
+			input,
+			source: source(input, prev, contractInfo(oracleArtifact, 'update', instance)),
+			output: { ...prev, token: { ...prev.token!, nft: { capability: 'mutable' as const, commitment: encodeOracleCommitment(state) } } },
+			state,
+			refreshed: true
+		};
+	}
 	const input = utxoToInput(oracle, oracleReadUnlocking(instance));
-	const output = utxoToOutput(oracle, instance.lockingBytecode);
-	return {
-		input,
-		source: source(input, output, contractInfo(oracleArtifact, 'read', instance)),
-		output: { ...output }
-	};
+	return { input, source: source(input, prev, contractInfo(oracleArtifact, 'read', instance)), output: { ...prev }, state: oracle.state, refreshed: false };
 }
 
 /**
@@ -382,7 +399,8 @@ export function buildOracleGenesis(
 	operatorAddress: string,
 	operatorPkh: string,
 	walletUtxos: ChainUtxo[],
-	initial: OracleState
+	initial: OracleState,
+	oraclePublicKey?: string
 ): UnsignedExchangeTransaction {
 	const walletLocking = addressToLockingBytecode(operatorAddress);
 	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(operatorPkh))) {
@@ -394,7 +412,7 @@ export function buildOracleGenesis(
 		throw new Error('Oracle genesis needs a BCH-only UTXO at output index 0 in the connected wallet. Receive a payment (it lands at output 0) and try again.');
 	}
 	const category = genesisInput.txid;
-	const instance = oracleContract({ operatorPkh });
+	const instance = oracleContract({ operatorPkh, oraclePublicKey });
 	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [], outputs: [] };
 	const sources: WcSourceOutput[] = [];
 	const input = utxoToInput(genesisInput, new Uint8Array());
@@ -429,36 +447,26 @@ export function buildOracleGenesis(
 	};
 }
 
-/** Operator publishes a new reference price. Authorised by the operator's own P2PKH input. */
-export function buildOracleUpdate(
+/**
+ * Anyone moves the on-chain reference forward with a newer message signed by
+ * the price oracle (oracles.cash). The wallet only pays the network fee.
+ */
+export function buildOracleRefresh(
 	market: MarketConfig,
 	oracle: OracleUtxo,
-	operatorAddress: string,
+	payerAddress: string,
 	walletUtxos: ChainUtxo[],
-	next: OracleState
+	message: OracleMessage
 ): UnsignedExchangeTransaction {
-	if (next.sequence <= oracle.state.sequence) throw new Error('Sequence must increase.');
-	if (next.timestamp < oracle.state.timestamp) throw new Error('Timestamp cannot move backwards.');
-	const walletLocking = addressToLockingBytecode(operatorAddress);
-	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(market.oracleOperatorPkh))) {
-		throw new Error('The connected address is not the oracle operator.');
-	}
-	const instance = oracleContract({ operatorPkh: market.oracleOperatorPkh });
-	const input = utxoToInput(oracle, oracleUpdateUnlocking(instance));
-	const prev = utxoToOutput(oracle, instance.lockingBytecode);
-	const tx: TransactionCommon = {
-		version: 2,
-		locktime: 0,
-		inputs: [input],
-		outputs: [{ ...prev, token: { ...prev.token!, nft: { capability: 'mutable', commitment: encodeOracleCommitment(next) } } }]
-	};
-	const sources: WcSourceOutput[] = [source(input, prev, contractInfo(oracleArtifact, 'update', instance))];
-	const used = new Set<string>();
-	addAuthorisationInput(tx, sources, walletUtxos, walletLocking, used, 'oracle operator');
-	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
+	if (message.messageSequence <= oracle.state.sequence) throw new Error('The on-chain price is already at this oracle message or newer.');
+	const walletLocking = addressToLockingBytecode(payerAddress);
+	const o = oracleInput(oracle, market, message);
+	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [o.input], outputs: [o.output] };
+	const sources: WcSourceOutput[] = [o.source];
+	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, new Set());
 	return finish('oracle-update', tx, sources, fee, [
-		`Publish reference price ${formatPrice(oracle.state.price)} → ${formatPrice(next.price)} PUSD per BCH`,
-		`Sequence #${oracle.state.sequence} → #${next.sequence}; authorised by your operator address (input 1)`
+		`Update the on-chain reference ${formatPrice(oracle.state.price)} → ${formatPrice(o.state.price)} PUSD per BCH from oracles.cash BCH/USD`,
+		`Oracle message #${message.messageSequence} (${new Date(message.timestamp * 1000).toLocaleString()}), signature checked by the contract`
 	]);
 }
 
@@ -571,7 +579,8 @@ export function buildCreateOrder(
 	makerAddress: string,
 	makerPkh: string,
 	walletUtxos: ChainUtxo[],
-	request: CreateOrderRequest
+	request: CreateOrderRequest,
+	refresh?: OracleMessage
 ): UnsignedExchangeTransaction {
 	const walletLocking = addressToLockingBytecode(makerAddress);
 	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(makerPkh))) {
@@ -580,12 +589,12 @@ export function buildCreateOrder(
 	assertOrderDelta(request.side, request.deltaBps);
 	const terms = { side: request.side, deltaBps: request.deltaBps, makerPkh };
 	const order = describeOrder(market, terms);
-	const oracleRead = oracleReadInput(oracle, market);
+	const oracleRead = oracleInput(oracle, market, refresh);
 	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [oracleRead.input], outputs: [oracleRead.output] };
 	const sources: WcSourceOutput[] = [oracleRead.source];
 	const used = new Set<string>();
 	const orderLocking = hexToBin(order.lockingBytecodeHex);
-	const limit = (oracle.state.price * (10_000n + BigInt(request.deltaBps))) / 10_000n;
+	const limit = (oracleRead.state.price * (10_000n + BigInt(request.deltaBps))) / 10_000n;
 	const summary: string[] = [];
 
 	if (request.side === 'bid') {
@@ -698,14 +707,15 @@ export function buildFillOrders(
 	oracle: OracleUtxo,
 	takerAddress: string,
 	walletUtxos: ChainUtxo[],
-	legs: FillLeg[]
+	legs: FillLeg[],
+	refresh?: OracleMessage
 ): UnsignedExchangeTransaction {
 	if (legs.length === 0) throw new Error('Select at least one order to fill.');
 	const side = legs[0]!.order.side;
 	if (legs.some((leg) => leg.order.side !== side)) throw new Error('All filled orders must be on the same side.');
 	const walletLocking = addressToLockingBytecode(takerAddress);
-	const price = oracle.state.price;
-	const oracleRead = oracleReadInput(oracle, market);
+	const oracleRead = oracleInput(oracle, market, refresh);
+	const price = oracleRead.state.price;
 	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [oracleRead.input], outputs: [oracleRead.output] };
 	const sources: WcSourceOutput[] = [oracleRead.source];
 	const pusd = hexToBin(market.pusdCategory);
@@ -758,7 +768,11 @@ export function buildFillOrders(
 		tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: pusd, amount: totalUnits } });
 		summary.push(`Total: you sell ${formatSats(totalSats)} BCH and receive ${formatUnits(totalUnits)} PUSD`);
 	}
-	summary.push(`Priced against the oracle reference ${formatPrice(price)} PUSD/BCH (sequence #${oracle.state.sequence})`);
+	summary.push(
+		oracleRead.refreshed
+			? `Priced at ${formatPrice(price)} PUSD/BCH: this transaction also updates the on-chain reference from oracles.cash (message #${oracleRead.state.sequence})`
+			: `Priced against the on-chain reference ${formatPrice(price)} PUSD/BCH (message #${oracle.state.sequence})`
+	);
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('order-fill', tx, sources, fee, summary);
 }

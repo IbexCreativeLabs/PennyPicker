@@ -43,7 +43,7 @@
 				<span class="pp-badge {pp.marketError ? 'bad' : 'accent'} plain" title={pp.marketError || 'All transactions use BCH Chipnet (test network)'}>{pp.marketError ? 'Chipnet offline' : 'Chipnet'}</span>
 				<button class="pp-badge warn plain demo" type="button" onclick={() => notice?.show()} title="About this experimental demo">Demo</button>
 				{#if pp.price}
-					<a href="/penny-picker/oracle" class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}" title="Operator-published reference price">
+					<a href="/penny-picker/oracle" class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}" title="Reference price: oracles.cash BCH/USD">
 						{formatPrice(pp.price)}
 					</a>
 				{:else if pp.market}
@@ -86,7 +86,7 @@
 
 	<footer class="foot">
 		<div class="bar small muted">
-			<span>Experimental prototype on BCH Chipnet. PUSD is a test token with no USD backing or peg. The oracle is operator-controlled. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
+			<span>Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing. Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
 			<span><a href="/penny-picker">Overview</a> · <a href="/penny-picker/simulator">Simulator</a> · <a href="/?vox">Vox</a></span>
 		</div>
 	</footer>

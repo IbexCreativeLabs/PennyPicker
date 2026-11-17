@@ -32,8 +32,8 @@
 			<h2 id="demo-title">PennyPicker is an experimental hackathon demo</h2>
 			<ul>
 				<li><strong>Test network only.</strong> Everything runs on BCH <em>Chipnet</em>. Use a Chipnet wallet with test coins; real BCH is never involved.</li>
-				<li><strong>PUSD is a test token.</strong> It is not backed by USD, has no peg and no value.</li>
-				<li><strong>Operator-controlled oracle.</strong> The reference price is typed in by one operator, not taken from a market.</li>
+				<li><strong>PUSD is a test token.</strong> It stands in for a USD stablecoin: prices treat 1 PUSD as 1 USD, but this token has no backing and no value.</li>
+				<li><strong>Real oracle price.</strong> The reference is the live BCH/USD price signed by oracles.cash (General Protocols); the contract verifies the signature.</li>
 				<li><strong>Simulations are labelled.</strong> Liquidation and redemption are pricing simulations, not working protocols.</li>
 				<li><strong>You approve everything.</strong> Nothing is signed or broadcast automatically. Each transaction is shown first, signed only in your Cashonize wallet, and broadcast only when you press Broadcast.</li>
 				<li><strong>Unaudited code.</strong> The contracts have not been security reviewed.</li>

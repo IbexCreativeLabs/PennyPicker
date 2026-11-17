@@ -149,7 +149,7 @@
 			<li>A vault covenant holding BCH collateral against minted debt. That needs a PUSD minting authority, which the fixed-supply test token deliberately lacks.</li>
 			<li>A liquidation path that is valid only when the oracle state puts the ratio below the minimum. It would require the collateral to fill PennyPicker bid covenants in the same transaction and the bought PUSD to be burned.</li>
 			<li>A redemption path that lets a holder burn PUSD against ask covenants posted by vault owners.</li>
-			<li>The same oracle trust assumption as the exchange: the operator's latest published price.</li>
+			<li>The same oracle trust assumption as the exchange: the oracles.cash BCH/USD signer.</li>
 		</ul>
 	</details>
 </main>

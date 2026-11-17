@@ -1,37 +1,55 @@
 pragma cashscript ^0.11.0;
 
-// PennyPicker BCH/PUSD reference-price state (price = PUSD per BCH).
+// PennyPicker reference-price state, fed by a General Protocols (oracles.cash)
+// price oracle. For the BCH/USD oracle the reference is USD per BCH, which the
+// demo treats as PUSD per BCH (PUSD stands in for a USD stablecoin).
 //
 // Holds the single mutable NFT of the oracle category (genesis mints no minting
 // baton). Commitment (16 bytes):
-//   price:int64le     PUSD per BCH, scaled by 1e8 (> 0)
-//   timestamp:int32le unix seconds claimed by the operator
-//   sequence:int32le  strictly increasing update counter
+//   price:int64le     reference per BCH, scaled by 1e8 (> 0)
+//   timestamp:int32le oracle message timestamp (unix seconds)
+//   sequence:int32le  oracle message sequence (strictly increasing)
 //
-// Freshness model: fills must spend and recreate this UTXO unchanged, so a
-// superseded price is an already-spent output and cannot be used. The maximum
-// age of the current price is the operator's update cadence; the script cannot
-// observe wall-clock time, so it does not enforce a maximum age.
-contract PennyPickerOracle(bytes20 operatorPkh) {
-    // Authorised by an input from the operator's P2PKH address placed directly
-    // after the oracle input. The operator's wallet signs that ordinary input
-    // (SIGHASH_ALL), which commits to every output, including the new price.
-    function update() {
+// Oracle price message (16 bytes, signed by the oracle with Schnorr over
+// sha256(message), i.e. exactly what OP_CHECKDATASIG verifies):
+//   timestamp:int32le | messageSequence:int32le | dataSequence:int32le | price:int32le
+// For BCH/USD the price is in US cents.
+//
+// Freshness model: fills spend this UTXO at input 0 and read the state that
+// output 0 carries forward. Anyone may move the state forward with a newer
+// signed oracle message, in its own transaction or inside a fill; a superseded
+// state is a spent output and can never be used again. The script cannot see
+// wall-clock time, so it cannot force the newest message: a taker can choose
+// among messages published since the last on-chain update.
+contract PennyPickerOracle(bytes20 operatorPkh, pubkey oraclePublicKey, int priceUnitsPerWhole) {
+    // Permissionless: anyone may submit a newer message signed by the oracle.
+    function update(datasig oracleSignature, bytes oracleMessage) {
+        require(checkDataSig(oracleSignature, oracleMessage, oraclePublicKey));
+        require(oracleMessage.length == 16);
+
         int i = this.activeInputIndex;
-        require(tx.inputs[i + 1].lockingBytecode == new LockingBytecodeP2PKH(operatorPkh));
         require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);
         require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
         require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);
+        require(tx.outputs[i].value >= tx.inputs[i].value);
 
-        bytes next = tx.outputs[i].nftCommitment;
-        require(next.length == 16);
-        bytes nextPrice, bytes nextTail = next.split(8);
-        bytes nextTime, bytes nextSeq = nextTail.split(4);
-        bytes prevTail = tx.inputs[i].nftCommitment.split(8)[1];
-        bytes prevTime, bytes prevSeq = prevTail.split(4);
-        require(int(nextPrice) > 0);
-        require(int(nextTime) >= int(prevTime));
-        require(int(nextSeq) > int(prevSeq));
+        bytes header, bytes body = oracleMessage.split(8);
+        bytes messageSequence = header.split(4)[1];
+        bytes dataSequence, bytes priceBin = body.split(4);
+        int price = int(priceBin);
+        require(price > 0);
+        // Price messages have a positive data sequence (metadata uses negative types).
+        require(int(dataSequence) > 0);
+
+        bytes prevSequence = tx.inputs[i].nftCommitment.split(12)[1];
+        require(int(messageSequence) > int(prevSequence));
+
+        // Scale to 1e8 per whole unit: cents (100 per USD) * 1e6 = 1e8.
+        int scaled = price * 100000000 / priceUnitsPerWhole;
+        require(tx.outputs[i].nftCommitment == bytes8(scaled) + header);
+
+        // operatorPkh only names who created this oracle (one address per creator).
+        require(operatorPkh.length == 20);
     }
 
     // Anyone may spend the state to read it, if it is recreated unchanged.

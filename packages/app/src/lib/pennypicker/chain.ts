@@ -3,9 +3,9 @@
  * order discovery and broadcasting. Reads use the app's Electrum Chipnet
  * provider; broadcasting is only ever called from an explicit user action.
  */
-import { binToHex, decodeTransaction, hexToBin, type TransactionCommon } from '@bitauth/libauth';
+import { binToHex, decodeTransaction, hexToBin, secp256k1, sha256, type TransactionCommon } from '@bitauth/libauth';
 import { TestNetWatchWallet } from '@unspent/wallet';
-import { decodeOracleCommitment, oracleContract, type OracleState } from './contracts';
+import { decodeOracleCommitment, GP_BCH_USD_ORACLE, oracleContract, parseOracleMessage, type OracleMessage, type OracleState } from './contracts';
 import {
 	contractAddress,
 	describeOrder,
@@ -117,8 +117,28 @@ export function isCompleteMarket(config: Partial<MarketConfig>): config is Marke
 	return !!config.pusdCategory && !!config.oracleCategory && !!config.oracleOperatorPkh;
 }
 
-export function oracleAddress(operatorPkh: string): string {
-	return contractAddress(oracleContract({ operatorPkh }));
+export function oracleAddress(operatorPkh: string, oraclePublicKey?: string): string {
+	return contractAddress(oracleContract({ operatorPkh, oraclePublicKey }));
+}
+
+/**
+ * Latest signed price message from the General Protocols relay behind oracles.cash.
+ * The signature is checked here (and again by the contract when it is used on-chain).
+ */
+export async function fetchLatestOracleMessage(publicKey: string = GP_BCH_USD_ORACLE.publicKey): Promise<OracleMessage> {
+	const url = `${GP_BCH_USD_ORACLE.relay}/api/v1/oracleMessages?publicKey=${publicKey}&count=5`;
+	const response = await fetch(url, { cache: 'no-store' });
+	if (!response.ok) throw new Error(`oracles.cash relay answered ${response.status}`);
+	const body = (await response.json()) as { oracleMessages?: { message: string; signature: string; publicKey: string }[] };
+	const candidates = (body.oracleMessages ?? [])
+		.filter((entry) => entry.publicKey === publicKey)
+		.map((entry) => parseOracleMessage(entry.message, entry.signature))
+		.filter((msg) => msg.dataSequence > 0 && msg.price > 0n)
+		.filter((msg) => secp256k1.verifySignatureSchnorr(msg.signature, hexToBin(publicKey), sha256.hash(msg.message)))
+		.sort((a, b) => b.messageSequence - a.messageSequence);
+	const latest = candidates[0];
+	if (!latest) throw new Error('No valid signed price message from oracles.cash.');
+	return latest;
 }
 
 type Provider = Awaited<ReturnType<typeof TestNetWatchWallet.watchOnly>>['provider'];
@@ -148,7 +168,7 @@ export async function getAddressHistoryCount(address: string): Promise<number> {
 }
 
 export async function getOracleState(market: MarketConfig): Promise<OracleUtxo | undefined> {
-	return findOracleUtxo(await getAddressUtxos(oracleAddress(market.oracleOperatorPkh)), market);
+	return findOracleUtxo(await getAddressUtxos(oracleAddress(market.oracleOperatorPkh, market.oraclePublicKey)), market);
 }
 
 export interface ActivityEvent {
@@ -181,7 +201,7 @@ export interface DiscoveryResult {
  * different script), then each address is queried for its live UTXO.
  */
 export async function discoverOrders(market: MarketConfig): Promise<DiscoveryResult> {
-	const address = oracleAddress(market.oracleOperatorPkh);
+	const address = oracleAddress(market.oracleOperatorPkh, market.oraclePublicKey);
 	const provider = await chipnetProvider(address);
 	const history = await provider.getHistory(address);
 	const recent = history.slice(-DISCOVERY_HISTORY_LIMIT);

@@ -103,7 +103,7 @@
 					<dt>Token address</dt>
 					<dd><span class="mono">{tokenAddress}</span> <button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={copyAddress}>{copied ? 'Copied' : 'Copy'}</button><br /><span class="small muted">Share this to receive PUSD from a teammate.</span></dd>
 					<dt>Key hash</dt><dd class="mono">{pp.wallet.pkh}</dd>
-					<dt>Role</dt><dd>{pp.isOperator ? 'Oracle operator · trader' : 'Trader'}</dd>
+					<dt>Role</dt><dd>{pp.isOperator ? 'Market creator · trader' : 'Trader'}</dd>
 				{/if}
 			</dl>
 			<div class="pp-row" style="margin-top: 0.85rem">
@@ -168,7 +168,7 @@
 			{:else if pp.ownIdentityUtxo?.token}
 				<p class="pp-callout warn small">Your PUSD sits on the PUSD identity coin, so sending it would move the token identity. Separate them first: <a href="/penny-picker/token">Token → PUSD identity</a>.</p>
 			{:else if pp.balances.pusdUnits === 0n}
-				<p class="muted small">This wallet holds no PUSD. Ask the operator to send some to your token address above, or sell BCH into a bid on the Exchange.</p>
+				<p class="muted small">This wallet holds no PUSD. Ask a teammate holding PUSD to send some to your token address above, or sell BCH into a bid on the Exchange.</p>
 			{:else}
 				<p class="small muted">One recipient per line: <span class="mono">address amount</span>, e.g. <span class="mono">bchtest:z… 250.00</span>. Chipnet addresses only. Each recipient also receives 1,000 sats that travel with the tokens. PUSD is a test token with no value.</p>
 				<textarea class="pp-input mono" rows="4" placeholder="bchtest:z… 250.00" bind:value={recipientsText}></textarea>

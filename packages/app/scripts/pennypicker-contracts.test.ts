@@ -12,6 +12,8 @@ import {
 	secp256k1,
 	hexToBin,
 	SigningSerializationFlag,
+	sha256,
+	binToHex,
 	type Input,
 	type Output,
 	type TransactionCommon
@@ -39,7 +41,16 @@ const makerPk = secp256k1.derivePublicKeyCompressed(makerKey) as Uint8Array;
 const makerPkh = makerPkhFromPublicKey(makerPk);
 const operatorKey = hexToBin('02'.repeat(32));
 const operatorPk = secp256k1.derivePublicKeyCompressed(operatorKey) as Uint8Array;
-const operator = oracleContract({ operatorPkh: makerPkhFromPublicKey(operatorPk) });
+// A local stand-in for the oracles.cash signing key (same message format and signature scheme).
+const oracleKey = hexToBin('03'.repeat(32));
+const oraclePk = secp256k1.derivePublicKeyCompressed(oracleKey) as Uint8Array;
+const operator = oracleContract({ operatorPkh: makerPkhFromPublicKey(operatorPk), oraclePublicKey: binToHex(oraclePk) });
+const le = (v: bigint | number, n: number) => { const b = new Uint8Array(n); let x = BigInt(v); for (let i = 0; i < n; i++) { b[i] = Number(x & 0xffn); x >>= 8n; } return b; };
+/** Oracle price message: timestamp | messageSequence | dataSequence | price (cents). */
+function oracleMsg(ts: number, seq: number, dataSeq: number, cents: bigint, key = oracleKey) {
+	const message = Uint8Array.from([...le(ts, 4), ...le(seq, 4), ...le(dataSeq, 4), ...le(cents, 4)]);
+	return { message, signature: secp256k1.signMessageHashSchnorr(key, sha256.hash(message)) as Uint8Array };
+}
 // Reference 500.00 PUSD per BCH (price scaled by 1e8).
 const RATE = 500n * 100_000_000n;
 const oracleCommitment = encodeOracleCommitment({ price: RATE, timestamp: 1_800_000_000, sequence: 7 });
@@ -143,24 +154,48 @@ const wallet = (pk: Uint8Array): Output => ({ lockingBytecode: p2pkh(pk), valueS
 	check('cancel authorised by another address', mk(operatorPk, operatorKey), false);
 	check('cancel with maker input before (not after) the order', mk(makerPk, makerKey, 0), false);
 }
+// --- Oracle update: anyone, with a newer message signed by the price oracle.
 {
-	const next = encodeOracleCommitment({ price: RATE + 1n, timestamp: 1_800_000_060, sequence: 8 });
-	const mk = (commitment: Uint8Array, key: Uint8Array, pk: Uint8Array) => {
+	const mk = (signed: { message: Uint8Array; signature: Uint8Array }, commitment: Uint8Array) => {
 		const tx: TransactionCommon = {
 			version: 2, locktime: 0,
-			inputs: [input(0, oracleUpdateUnlocking(operator)), input(9, new Uint8Array())],
-			outputs: [oracleUtxo(commitment), { lockingBytecode: p2pkh(pk), valueSatoshis: 4_000n }]
+			inputs: [input(0, oracleUpdateUnlocking(operator, signed.signature, signed.message)), input(9, new Uint8Array())],
+			outputs: [oracleUtxo(commitment), { lockingBytecode: OP_TRUE, valueSatoshis: 4_000n }]
 		};
-		const sources = [oracleUtxo(), wallet(pk)];
-		signP2pkh(tx, sources, 1, key, pk);
+		return verify(tx, [oracleUtxo(), { lockingBytecode: OP_TRUE, valueSatoshis: 5_000n }]);
+	};
+	const m = oracleMsg(1_800_000_060, 8, 5, 21_072n); // 210.72
+	const state = encodeOracleCommitment({ price: 21_072n * 1_000_000n, timestamp: 1_800_000_060, sequence: 8 });
+	check('oracle update with a newer signed message (permissionless)', mk(m, state), true);
+	check('oracle update with a forged signature', mk(oracleMsg(1_800_000_060, 8, 5, 21_072n, makerKey), state), false);
+	const tampered = { ...m, message: Uint8Array.from([...m.message.slice(0, 12), ...le(30_000n, 4)]) };
+	check('oracle update with an altered price in the message', mk(tampered, encodeOracleCommitment({ price: 30_000n * 1_000_000n, timestamp: 1_800_000_060, sequence: 8 })), false);
+	check('oracle update writing a different price than signed', mk(m, encodeOracleCommitment({ price: 50_000n * 1_000_000n, timestamp: 1_800_000_060, sequence: 8 })), false);
+	check('oracle update replaying an old message (same sequence)', mk(oracleMsg(1_800_000_060, 7, 5, 21_072n), encodeOracleCommitment({ price: 21_072n * 1_000_000n, timestamp: 1_800_000_060, sequence: 7 })), false);
+	check('oracle update with a metadata message (negative type)', mk(oracleMsg(1_800_000_060, 8, -54, 21_072n), state), false);
+}
+// --- A real oracles.cash BCH/USD message (fetched 2026-11-17) verifies against the production key.
+{
+	const real = oracleContract({ operatorPkh: makerPkhFromPublicKey(operatorPk) }); // default: GP BCH/USD key
+	const message = hexToBin('5c49fc6a2b751d000e751d0050520000'); // 210.72 USD, sequence 1930539
+	const signature = hexToBin('91afdd390238bee6d879613e8b1294ad3d93e6340dab531bc072ccad6c28d26631a75cc7e26181cf1feb1b1e7c084e43b9e36335d97225fafae7e10a400288c0');
+	const prev: Output = { ...oracleUtxo(), lockingBytecode: real.lockingBytecode };
+	const next: Output = { ...prev, token: { ...prev.token!, nft: { capability: 'mutable', commitment: encodeOracleCommitment({ price: 21_072n * 1_000_000n, timestamp: 1_794_918_748, sequence: 1_930_539 }) } } };
+	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [input(0, oracleUpdateUnlocking(real, signature, message)), input(9, new Uint8Array())], outputs: [next, { lockingBytecode: OP_TRUE, valueSatoshis: 4_000n }] };
+	check('real oracles.cash BCH/USD message updates the state (210.72)', verify(tx, [prev, { lockingBytecode: OP_TRUE, valueSatoshis: 5_000n }]), true);
+}
+// --- A fill that refreshes the price in the same transaction reads the new price.
+{
+	const m = oracleMsg(1_800_000_060, 8, 5, 52_000n); // 520.00 → ask limit 522.60
+	const newState = oracleUtxo(encodeOracleCommitment({ price: 52_000n * 1_000_000n, timestamp: 1_800_000_060, sequence: 8 }));
+	const mkFill = (units: bigint) => {
+		const { tx, sources } = fillTx(ask, askIn, out(ask.lockingBytecode, 10_001_000n - 4_000_000n, units), { oracleOut: newState });
+		tx.inputs[0]!.unlockingBytecode = oracleUpdateUnlocking(operator, m.signature, m.message);
 		return verify(tx, sources);
 	};
-	check('oracle update by operator', mk(next, operatorKey, operatorPk), true);
-	check('oracle update by other address', mk(next, makerKey, makerPk), false);
-	const replay = encodeOracleCommitment({ price: RATE + 1n, timestamp: 1_800_000_060, sequence: 7 });
-	check('oracle update without sequence increase', mk(replay, operatorKey, operatorPk), false);
-	const backwards = encodeOracleCommitment({ price: RATE + 1n, timestamp: 1_799_999_999, sequence: 8 });
-	check('oracle update with timestamp moving backwards', mk(backwards, operatorKey, operatorPk), false);
+	const dueNew = askFillUnitsDue(4_000_000n, 52_000n * 1_000_000n, 50);
+	check('fill with in-transaction price update pays the new limit', mkFill(dueNew), true);
+	check('fill with in-transaction update cannot pay the old price', mkFill(due), false);
 }
 
 console.log(failures === 0 ? '\nAll covenant checks passed.' : `\n${failures} check(s) failed.`);

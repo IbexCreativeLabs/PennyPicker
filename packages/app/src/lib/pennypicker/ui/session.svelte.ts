@@ -23,8 +23,10 @@ import {
 	saveTxHistory,
 	transactionHeight,
 	type DiscoveryResult,
-	type TxRecord
+	type TxRecord,
+	fetchLatestOracleMessage
 } from '$lib/pennypicker/chain';
+import { oracleStateFromMessage, type OracleMessage } from '$lib/pennypicker/contracts';
 import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 import { makerPkhFromChipnetAddress } from '$lib/pennypicker/orderCommitment';
 import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identity';
@@ -65,8 +67,15 @@ class PennyPickerSession {
 
 	market = $derived<MarketConfig | undefined>(isCompleteMarket(this.config) ? this.config : undefined);
 	balances = $derived(balancesOf(this.utxos, this.config.pusdCategory));
-	price = $derived(this.oracle?.state.price);
-	oracleAge = $derived(this.oracle ? Math.max(0, this.nowSec - this.oracle.state.timestamp) : undefined);
+	/** Latest signed BCH/USD message from oracles.cash (polled every minute). */
+	feed = $state<OracleMessage | undefined>();
+	feedError = $state('');
+	/** The feed's message when it is newer than the on-chain state: new orders and fills carry it. */
+	refreshMessage = $derived(this.feed && this.oracle && this.feed.messageSequence > this.oracle.state.sequence ? this.feed : undefined);
+	/** The price the next order or fill settles at (the bundled feed price, else the on-chain state). */
+	effectiveState = $derived(this.refreshMessage ? oracleStateFromMessage(this.refreshMessage) : this.oracle?.state);
+	price = $derived(this.effectiveState?.price);
+	oracleAge = $derived(this.effectiveState ? Math.max(0, this.nowSec - this.effectiveState.timestamp) : undefined);
 	oracleStale = $derived(this.oracleAge !== undefined && this.oracleAge > STALE_AFTER_SECONDS);
 	isOperator = $derived(!!this.wallet && !!this.config.oracleOperatorPkh && this.wallet.pkh === this.config.oracleOperatorPkh);
 
@@ -103,7 +112,7 @@ class PennyPickerSession {
 			step('orders', 'First buy & sell orders', sides.has('bid') && sides.has('ask'), `${sides.has('bid') ? '✓' : '·'} bid (buy BCH)  ${sides.has('ask') ? '✓' : '·'} ask (sell BCH)`, '/penny-picker/exchange', !oracleExists),
 			step('trade', 'First trade (fill)', (orders?.fills.length ?? 0) > 0, `${orders?.fills.length ?? 0} fill(s) observed`, '/penny-picker/exchange', !oracleExists),
 			step('cancel', 'Cancellation test', (orders?.canceled.length ?? 0) > 0, `${orders?.canceled.length ?? 0} cancel(s) observed`, '/penny-picker/exchange', !oracleExists),
-			step('update', 'Oracle update test', (this.oracle?.state.sequence ?? 0) > 1, oracleExists ? `${this.oracle!.state.sequence - 1} update(s)` : '—', '/penny-picker/oracle', !oracleExists)
+			step('update', 'Price updated from oracles.cash', (this.discovery?.oracleUpdates.length ?? 0) > 1, oracleExists ? `Message #${this.oracle!.state.sequence}` : '—', '/penny-picker/oracle', !oracleExists)
 		];
 	});
 	nextStep = $derived(this.setup.find((s) => s.state === 'pending'));
@@ -116,6 +125,8 @@ class PennyPickerSession {
 		this.started = true;
 		this.history = loadTxHistory();
 		setInterval(() => (this.nowSec = Math.floor(Date.now() / 1000)), 5_000);
+		void this.refreshFeed();
+		setInterval(() => void this.refreshFeed(), 60_000);
 		void this.restoreSession().then(() => this.refreshAll());
 	}
 
@@ -256,8 +267,17 @@ class PennyPickerSession {
 		}
 	}
 
+	async refreshFeed() {
+		try {
+			this.feed = await fetchLatestOracleMessage(this.config.oraclePublicKey);
+			this.feedError = '';
+		} catch (cause) {
+			this.feedError = `oracles.cash price feed unavailable: ${errorText(cause)}`;
+		}
+	}
+
 	async refreshAll() {
-		await Promise.all([this.refreshWallet(), this.refreshMarket()]);
+		await Promise.all([this.refreshWallet(), this.refreshMarket(), this.refreshFeed()]);
 		await this.refreshHistory();
 	}
 

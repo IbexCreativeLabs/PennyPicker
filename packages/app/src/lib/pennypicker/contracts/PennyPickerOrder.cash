@@ -6,8 +6,9 @@ pragma cashscript ^0.11.0;
 //   side 0 (ask): sells BCH. Holds BCH; fills remove BCH and add PUSD.
 //   side 1 (bid): buys BCH.  Holds PUSD; fills remove PUSD and add BCH.
 //
-// Fills must spend the PennyPicker oracle-state UTXO at input 0. Its mutable NFT
-// commitment starts with price:int64le = PUSD per BCH scaled by 1e8.
+// Fills must spend the PennyPicker oracle-state UTXO at input 0 and recreate it at
+// output 0; the output's mutable NFT commitment starts with price:int64le =
+// PUSD per BCH scaled by 1e8 (BCH/USD from the oracle; PUSD stands in for USD).
 // The limit is price * (10000 + deltaBps) / 10000 (asks use deltaBps >= 0, bids
 // deltaBps <= 0 by app convention). Settlement is exact, with no rounding:
 //   dUnits * 1e18 + dSat * price * (10000 + deltaBps) >= 0
@@ -27,9 +28,13 @@ contract PennyPickerOrder(
         require(i > 0);
         require(10000 + deltaBps > 0);
 
-        // Authentic current oracle state: the only mutable NFT of its category.
+        // Authentic oracle state: the only mutable NFT of its category is spent at
+        // input 0 and carried forward at output 0. The price is read from output 0,
+        // which the oracle contract only lets hold the unchanged state or a newer
+        // signed oracle message, so a fill can refresh the price in the same transaction.
         require(tx.inputs[0].tokenCategory == oracleCategory + 0x01);
-        bytes priceBin = tx.inputs[0].nftCommitment.split(8)[0];
+        require(tx.outputs[0].tokenCategory == oracleCategory + 0x01);
+        bytes priceBin = tx.outputs[0].nftCommitment.split(8)[0];
         int price = int(priceBin);
         require(price > 0);
 

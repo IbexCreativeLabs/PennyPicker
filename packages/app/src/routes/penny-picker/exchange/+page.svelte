@@ -118,7 +118,7 @@
 		try {
 			if (!pp.wallet) throw new Error('Connect Cashonize first.');
 			if (!pp.market) throw new Error('Market is not configured.');
-			await pp.refreshWallet();
+			await Promise.all([pp.refreshWallet(), pp.refreshFeed()]);
 			const latest = await getOracleState(pp.market);
 			if (!latest) throw new Error('Oracle state not found; refresh the market.');
 			pp.oracle = latest;
@@ -135,7 +135,7 @@
 				side,
 				deltaBps: maker.delta,
 				amount: side === 'ask' ? maker.sats : maker.units
-			});
+			}, pp.refreshMessage);
 		});
 	}
 
@@ -143,7 +143,7 @@
 		const r = route;
 		void prepare(() => {
 			if (!r || r.legs.length === 0) throw new Error('No fillable orders for that amount.');
-			return buildFillOrders(pp.market!, pp.oracle!, pp.wallet!.address, pp.utxos, r.legs);
+			return buildFillOrders(pp.market!, pp.oracle!, pp.wallet!.address, pp.utxos, r.legs, pp.refreshMessage);
 		});
 	}
 
@@ -208,7 +208,7 @@
 	{:else if pp.oracleLoaded && !pp.oracle}
 		<p class="pp-callout warn">No oracle state found on-chain. Trading opens once the oracle is created on <a href="/penny-picker/oracle">Oracle</a>.</p>
 	{:else if pp.oracleStale}
-		<p class="pp-callout warn small">The reference price was published {formatAge(pp.oracleAge)}. Fills still settle at this price until the operator publishes a new one.</p>
+		<p class="pp-callout warn small">{pp.feed ? 'The oracles.cash price' : 'The on-chain reference'} is {formatAge(pp.oracleAge)} old{pp.feedError ? ` (${pp.feedError})` : ''}. Fills settle at the newest signed price available.</p>
 	{/if}
 	{#if pp.marketError}<p class="pp-error">{pp.marketError}</p>{/if}
 
