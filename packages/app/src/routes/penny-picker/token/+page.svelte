@@ -29,6 +29,7 @@
 	import { getAddressHistoryCount, getAddressUtxos } from '$lib/pennypicker/chain';
 	import { balancesOf, type Balances } from '$lib/pennypicker/ui/wallet';
 	import { pp, explorerTx } from '$lib/pennypicker/ui/session.svelte';
+	import IdentityCard from '$lib/pennypicker/ui/IdentityCard.svelte';
 	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
 	import { PUSD_CATEGORY_STORAGE_KEY as PUSD_KEY_FOR_BALANCE } from '$lib/pennypicker/pusdGenesis';
 
@@ -435,6 +436,8 @@
 			{/if}
 		</section>
 	</div>
+
+	<IdentityCard />
 
 	<!-- 5. Genesis status -->
 	<section class="pp-card" style="margin-top: 1rem">

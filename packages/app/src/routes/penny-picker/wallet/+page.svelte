@@ -149,6 +149,8 @@
 			</div>
 			{#if pending}
 				<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={(txid, u) => { pp.recordBroadcast(txid, u); recipientsText = ''; }} onDismiss={() => (pending = undefined)} />
+			{:else if pp.ownIdentityUtxo?.token}
+				<p class="pp-callout warn small">Your PUSD sits on the PUSD identity coin, so sending it would move the token identity. Separate them first: <a href="/penny-picker/token">Token → PUSD identity</a>.</p>
 			{:else if pp.balances.pusdUnits === 0n}
 				<p class="muted small">This wallet holds no PUSD. Ask the operator to send some to your token address above, or sell BCH into a bid on the Exchange.</p>
 			{:else}
@@ -187,7 +189,8 @@
 								</td>
 								<td>
 									<span class="pp-badge {(utxo.height ?? 0) > 0 ? 'ok' : 'warn'}">{(utxo.height ?? 0) > 0 ? 'confirmed' : 'pending'}</span>
-									{#if utxo.vout === 0 && !utxo.token && (utxo.height ?? 0) > 0}<span class="pp-badge plain accent" title="Can be spent as a CashToken genesis input">genesis-ready</span>{/if}
+									{#if utxo.identityOf}<span class="pp-badge warn plain" title="Token identity output. PennyPicker never spends it in ordinary transactions.">{utxo.identityOf === pp.config.pusdCategory && pp.pusdIdentity ? 'PUSD identity' : 'held back'}</span>{/if}
+									{#if utxo.vout === 0 && !utxo.token && !utxo.identityOf && (utxo.height ?? 0) > 0}<span class="pp-badge plain accent" title="Can be spent as a CashToken genesis input">genesis-ready</span>{/if}
 								</td>
 							</tr>
 						{:else}

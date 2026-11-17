@@ -20,13 +20,26 @@ The user performed these steps through Cashonize and the app. All are confirmed,
 | **PUSD category** | — | `b9d9ef3c2cd4ad75354119824c79b068501f3f5f4131b4a246274b35d508a2ee` |
 | Self-transfer #2 | `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602` | vout 0 = 515,057 sats, reserved for oracle genesis |
 
-**Not yet done:** oracle genesis, orders, trades, cancels and oracle updates. The BCMR draft is local only and unpublished.
+| **Oracle genesis** | `c530a91072561915dd032da8d491fa98c6b612e27b47b06ee8711ddfcd1cee22` | Block 334564. Oracle NFT at `bchtest:rd8cuc0a…6pgp8ctn6`, price 500.00, sequence 1. **Oracle category `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602`**. Change `c530…:1` = 513,747 sats |
 
-**Next on-chain step:** oracle genesis on `/penny-picker/oracle`, at 500.00 PUSD per BCH.
-- A read-only dry run against the real UTXOs spends only `03f6c31a…:0`.
-- It sends 1,000 sats plus the mutable oracle NFT to `bchtest:rd8cuc0a5yrky7en2en9yqq6mwup6jrs3c653xecpvqxydwsxzaa6pgp8ctn6`.
-- It returns 513,747 sats of change, with a fee of 310 sats.
-- The resulting **oracle category will be `03f6c31a05b86b4278991ad9429049283f8a2bb84c27a4fc3d9aae898cd0a602`**, and the operator PKH will be your wallet's.
+**Not yet done:** PUSD identity separation, orders, trades, cancels and oracle updates. The BCMR draft is local only and unpublished.
+
+**PUSD identity (BCMR authchain), verified on Chipnet 2026-11-17**
+- Authchain: authbase `b9d9ef3c…a2ee` → genesis `46db72c8711ccda28de97e924e5edc12a6f5b1f124fc2df83433c4a2156b61e4`. The txid `46bd72c8…`, sometimes mistyped in reports, does not exist on Chipnet.
+- The current identity output, **`46db72c8…61e4:0`**, is unspent at the operator address. It also holds **the entire 1,000,000.00 PUSD supply**.
+- Because of that, Cashonize refused the first PUSD send: the send put the recipient at output 0, which would have handed the identity to the recipient. A bid or ask fill would have moved it into the oracle contract instead.
+
+**Next on-chain step: identity separation** (Token page → PUSD identity → Review). The preview, built from live UTXOs:
+
+| | Outpoint / address | BCH | Token |
+| --- | --- | --- | --- |
+| In 0 | `46db72c8…61e4:0` (identity) | 1,000 sats | 100,000,000 units of `b9d9ef3c…` |
+| In 1 | `c530a910…ee22:1` | 513,747 sats | — |
+| Out 0 | operator `bchtest:qq3gfs…nrf0` (new identity) | 1,000 sats | none |
+| Out 1 | operator `bchtest:zq3gfs…a9ku` | 1,000 sats | 100,000,000 units of `b9d9ef3c…` |
+| Out 2 | operator (change) | 512,284 sats | — |
+
+The fee is 463 sats. All three outputs pay the operator. After this, send 100 PUSD to the second wallet.
 
 ## Pricing convention (protocol v2, changed before any oracle or order existed)
 
@@ -63,6 +76,10 @@ The user performed these steps through Cashonize and the app. All are confirmed,
   - `ui/txErrors.ts` turns failures into plain language: declined signature, ended session, slow wallet, spent input (oracle contention), covenant rejection, low fee, network.
 - `buildPusdTransfer` (in `exchange.ts`) sends PUSD to up to 20 Chipnet addresses and rejects mainnet addresses.
   - Before oracle genesis, it never spends the operator's confirmed vout-0 UTXO that is reserved for that genesis.
+- **Token identity safeguards** (`identity.ts`):
+  - The session resolves the PUSD authchain head from Chipnet on every wallet refresh and flags that UTXO (`identityOf`).
+  - The selection helpers skip it, and `utxoToInput` refuses to spend it. Only `buildIdentitySeparation` may spend it, and that builder returns it at output 0 to the owner's address.
+  - If the authchain can't be resolved, every output-0 wallet coin is held back (fails closed).
 - A red **Chipnet offline** banner, with a Retry button, appears when Electrum is unreachable.
 - `ui/theme.css`: PennyPicker design tokens and primitives, scoped under `.pp` with light and dark themes.
 
@@ -97,8 +114,9 @@ Run from `packages/app`, using libauth's BCH 2025 VM:
 
 ```
 pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 23 covenant checks
-pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 30 builder checks (signed, chained txs, PUSD transfer, error texts)
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 49 builder checks (signed, chained txs, PUSD transfer, identity separation + safeguards, error texts)
 pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
+pnpm dlx tsx scripts/pennypicker-identity.test.ts    # 8 authchain/marking checks
 ```
 
 The UI was checked by type-checking (no errors in PennyPicker files; 122 pre-existing Vox errors remain) and by
@@ -118,7 +136,7 @@ through in a browser by the agent.
 
 ## External actions required (you)
 
-1. **Oracle genesis:** `/penny-picker/oracle` → price `500.00` → Review → Sign in Cashonize → Broadcast. Then wait for confirmation.
+1. ~~Oracle genesis~~ (done, `c530a910…`). **Identity separation:** Token → PUSD identity → Review → Sign → Broadcast. Then send PUSD to the second wallet.
 2. Optionally put the identifiers in `packages/app/.env` (`VITE_PENNYPICKER_PUSD_CATEGORY`, `…_ORACLE_CATEGORY`, `…_ORACLE_OPERATOR_PKH`).
 3. **Push commits:** `git push ibex-backup main` from your terminal. This shell has no GitHub credentials. Each push redeploys the public site.
 4. **Testing:** place an ask and a bid. Fill them from a second Cashonize wallet: fund it from a faucet, then use **Wallet → Send PUSD** from the operator wallet (after oracle genesis) to give it PUSD. Cancel an order, publish an oracle update, and check that limit prices re-price.

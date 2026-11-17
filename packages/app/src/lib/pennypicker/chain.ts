@@ -9,6 +9,7 @@ import { decodeOracleCommitment, oracleContract, type OracleState } from './cont
 import {
 	contractAddress,
 	describeOrder,
+	lockingBytecodeToChipnetAddress,
 	findOracleUtxo,
 	parseAnnouncement,
 	toOpenOrder,
@@ -20,6 +21,7 @@ import {
 } from './exchange';
 import { PUSD_CATEGORY_STORAGE_KEY } from './pusdGenesis';
 import { CHIPNET_DEPLOYMENT } from './deployment';
+import { resolveIdentityHead, type IdentityHead } from './identity';
 
 export const ORACLE_CATEGORY_STORAGE_KEY = 'pennypicker:chipnet:oracle-category';
 export const ORACLE_OPERATOR_STORAGE_KEY = 'pennypicker:chipnet:oracle-operator-pkh';
@@ -309,4 +311,27 @@ export async function transactionHeight(anyAddress: string, txid: string): Promi
 	} catch {
 		return undefined;
 	}
+}
+
+/** Resolve a token category's current identity output (BCMR authchain head) from Chipnet. */
+export async function getIdentityHead(category: string, anyAddress: string): Promise<IdentityHead> {
+	const provider = await chipnetProvider(anyAddress);
+	const cache = new Map<string, TransactionCommon>();
+	return resolveIdentityHead(category, {
+		async getTransaction(txid) {
+			const hit = cache.get(txid);
+			if (hit) return hit;
+			const tx = decodeTransaction(hexToBin(await provider.getRawTransaction(txid)));
+			if (typeof tx === 'string') throw new Error(`Cannot decode ${txid.slice(0, 12)}…: ${tx}`);
+			cache.set(txid, tx);
+			return tx;
+		},
+		async getHistoryTxids(lockingBytecode) {
+			return (await provider.getHistory(lockingBytecodeToChipnetAddress(lockingBytecode))).map((entry) => entry.tx_hash);
+		},
+		async isUnspent(txid, lockingBytecode) {
+			const utxos = await provider.getUtxos(lockingBytecodeToChipnetAddress(lockingBytecode));
+			return utxos.some((utxo) => utxo.txid === txid && utxo.vout === 0);
+		}
+	});
 }

@@ -32,7 +32,8 @@
 		'order-create': 'Place order',
 		'order-fill': 'Fill orders',
 		'order-cancel': 'Cancel order',
-		'pusd-send': 'Send PUSD'
+		'pusd-send': 'Send PUSD',
+		'identity-separation': 'Separate PUSD identity'
 	};
 
 	const rows = $derived(

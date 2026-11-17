@@ -26,6 +26,7 @@ import {
 	buildOracleGenesis,
 	buildOracleUpdate,
 	buildPusdTransfer,
+	buildIdentitySeparation,
 	describeOrder,
 	findOracleUtxo,
 	lockingBytecodeToChipnetAddress,
@@ -220,6 +221,48 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	check('expired session explained', describeSignError(new Error('No matching key. session topic doesn\'t exist')).includes('Reconnect'));
 	check('spent input (oracle contention) explained', describeBroadcastError(new Error('the transaction was rejected by network rules.\n\nbad-txns-inputs-missingorspent')).includes('already spent'));
 	check('covenant failure explained', describeBroadcastError(new Error('mandatory-script-verify-flag-failed (Script failed an OP_VERIFY operation)')).includes('covenant rejected'));
+}
+// 10. Token identity: separation and safeguards (mirrors Chipnet: whole supply on the identity output).
+{
+	const owner = key('0e');
+	const SUPPLY = 100_000_000n; // 1,000,000.00 PUSD
+	const identity: ChainUtxo = { ...fund(owner, 50, 1_000n, SUPPLY), identityOf: PUSD };
+	const bch: ChainUtxo = { ...fund(owner, 51, 513_747n), vout: 1 };
+	const wallet = [identity, bch];
+	const throwsWith = (f: () => unknown, text: string) => { try { f(); return false; } catch (e) { return String(e).includes(text); } };
+
+	// Attempted identity spends are refused (no reliance on the wallet).
+	check('send refuses to spend the identity output', throwsWith(() => buildPusdTransfer(PUSD, owner.address, wallet, [{ address: taker.address, units: 10_000n }]), 'separate the identity first'));
+	check('bid refuses to spend the identity output', throwsWith(() => buildCreateOrder(market, oracle, owner.address, owner.pkh, wallet, { side: 'bid', deltaBps: -10, amount: 10_000n }), 'Insufficient PUSD'));
+	check('ask fill refuses to spend the identity output', throwsWith(() => buildFillOrders(market, oracle, owner.address, wallet, [{ order: askOrder, sats: 1_000_000n }]), 'Insufficient PUSD'));
+	const bchIdentity: ChainUtxo = { ...fund(owner, 52, 900_000n), identityOf: PUSD };
+	check('a BCH-only identity output is never used as funding', throwsWith(() => buildCreateOrder(market, oracle, owner.address, owner.pkh, [bchIdentity], { side: 'ask', deltaBps: 10, amount: 100_000n }), 'Insufficient BCH'));
+	check('oracle genesis will not consume an identity output', throwsWith(() => buildOracleGenesis(owner.address, owner.pkh, [bchIdentity], { price: RATE, timestamp: 1, sequence: 1 }), 'output index 0'));
+
+	// The separation transaction.
+	const sep = buildIdentitySeparation(PUSD, owner.address, wallet, { txid: identity.txid, vout: 0 });
+	const sv = verify('identity separation verifies in the VM', sep, owner);
+	const out = sv.tx.outputs;
+	check('separation input 0 is the identity output', binToHex(sv.tx.inputs[0]!.outpointTransactionHash) === identity.txid && sv.tx.inputs[0]!.outpointIndex === 0);
+	check('separation spends only the identity and BCH-only coins', sv.tx.inputs.length === 2 && spent(sv.tx, bch));
+	check('output 0 is BCH-only to the owner (identity stays)', binToHex(out[0]!.lockingBytecode) === binToHex(owner.locking) && !out[0]!.token);
+	check('output 1 returns the full supply in the same category', binToHex(out[1]!.lockingBytecode) === binToHex(owner.locking) && binToHex(out[1]!.token!.category) === PUSD && out[1]!.token!.amount === SUPPLY);
+	check('BCH change comes after the token output', out.length === 3 && !out[2]!.token && binToHex(out[2]!.lockingBytecode) === binToHex(owner.locking));
+	check('every output pays the owner', out.every((o) => binToHex(o.lockingBytecode) === binToHex(owner.locking)));
+	const tokenIn = sep.sourceOutputs.reduce((sum, o) => sum + (o.token?.amount ?? 0n), 0n);
+	const tokenOut = out.reduce((sum, o) => sum + (o.token?.amount ?? 0n), 0n);
+	check('token amounts are conserved exactly', tokenIn === SUPPLY && tokenOut === SUPPLY);
+	check('separation refuses an outpoint the wallet does not hold', throwsWith(() => buildIdentitySeparation(PUSD, owner.address, [bch], { txid: identity.txid, vout: 0 }), 'not an unspent output'));
+	check('separation refuses an identity output with no tokens', throwsWith(() => buildIdentitySeparation(PUSD, owner.address, [bchIdentity, bch], { txid: bchIdentity.txid, vout: 0 }), 'nothing to separate'));
+	check('separation refuses a non-zero output index', throwsWith(() => buildIdentitySeparation(PUSD, owner.address, wallet, { txid: bch.txid, vout: 1 }), 'output 0'));
+
+	// After separation: the new identity is out 0 (BCH-only); PUSD at out 1 is freely usable.
+	const after = outputsTo(sv.txid, sv.tx, owner.locking).map((u) => (u.vout === 0 ? { ...u, identityOf: PUSD } : u));
+	const send = buildPusdTransfer(PUSD, owner.address, after, [{ address: taker.address, units: 10_000n }]);
+	verify('after separation, a PUSD send verifies', send, owner);
+	check('after separation, the send leaves the identity unspent', !spent(send.transaction, after.find((u) => u.vout === 0)!));
+	const bid = buildCreateOrder(market, oracle, owner.address, owner.pkh, after, { side: 'bid', deltaBps: -10, amount: 10_000n });
+	check('after separation, a bid leaves the identity unspent', !spent(bid.transaction, after.find((u) => u.vout === 0)!));
 }
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 

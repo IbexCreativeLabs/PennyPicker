@@ -91,6 +91,11 @@ export interface ChainUtxo {
 		amount: bigint;
 		nft?: { capability: 'none' | 'mutable' | 'minting'; commitment: string };
 	};
+	/**
+	 * Set when this output is (or, if the authchain could not be resolved, may be)
+	 * a token identity output. Ordinary builders never spend it.
+	 */
+	identityOf?: string;
 }
 
 export interface ContractInfo {
@@ -108,7 +113,7 @@ export interface ContractInfo {
 export type WcSourceOutput = Input & Output & { contract?: ContractInfo };
 
 export interface UnsignedExchangeTransaction {
-	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel' | 'pusd-send';
+	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel' | 'pusd-send' | 'identity-separation';
 	transaction: TransactionCommon;
 	unsignedHex: string;
 	sourceOutputs: WcSourceOutput[];
@@ -164,7 +169,13 @@ function utxoToOutput(utxo: ChainUtxo, lockingBytecode: Uint8Array): Output {
 	};
 }
 
-function utxoToInput(utxo: ChainUtxo, unlockingBytecode: Uint8Array): Input {
+function utxoToInput(utxo: ChainUtxo, unlockingBytecode: Uint8Array, allowIdentity = false): Input {
+	if (utxo.identityOf && !allowIdentity) {
+		// Backstop: selection helpers already skip identity outputs.
+		throw new Error(
+			`Refusing to spend ${utxo.txid.slice(0, 12)}…:${utxo.vout}: it holds a token identity (${utxo.identityOf.slice(0, 12)}…). Use the identity separation tool.`
+		);
+	}
 	return {
 		outpointTransactionHash: hexToBin(utxo.txid),
 		outpointIndex: utxo.vout,
@@ -212,12 +223,17 @@ function sortLargestFirst(utxos: ChainUtxo[]): ChainUtxo[] {
 	return [...utxos].sort((a, b) => (a.satoshis === b.satoshis ? 0 : a.satoshis > b.satoshis ? -1 : 1));
 }
 
+/** Wallet outputs ordinary transactions may spend: never a token identity output. */
+function spendable(utxos: ChainUtxo[]): ChainUtxo[] {
+	return utxos.filter((utxo) => !utxo.identityOf);
+}
+
 function bchOnly(utxos: ChainUtxo[]): ChainUtxo[] {
-	return sortLargestFirst(utxos.filter((utxo) => !utxo.token));
+	return sortLargestFirst(spendable(utxos).filter((utxo) => !utxo.token));
 }
 
 function pusdUtxos(utxos: ChainUtxo[], pusdCategory: string): ChainUtxo[] {
-	return utxos
+	return spendable(utxos)
 		.filter((utxo) => utxo.token?.category === pusdCategory && !utxo.token.nft && utxo.token.amount > 0n)
 		.sort((a, b) => (a.token!.amount === b.token!.amount ? 0 : a.token!.amount > b.token!.amount ? -1 : 1));
 }
@@ -842,7 +858,11 @@ export function buildPusdTransfer(
 		gathered += utxo.token!.amount;
 	}
 	if (gathered < total) {
-		throw new Error(`Insufficient PUSD: the wallet holds ${formatUnits(gathered)} spendable, ${formatUnits(total)} needed.`);
+		const locked = walletUtxos.some((utxo) => utxo.identityOf && utxo.token?.category === pusdCategory);
+		throw new Error(
+			`Insufficient PUSD: the wallet holds ${formatUnits(gathered)} spendable, ${formatUnits(total)} needed.` +
+				(locked ? ' Some PUSD sits on the token identity output; separate the identity first (Token page).' : '')
+		);
 	}
 	if (gathered > total) {
 		tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category, amount: gathered - total } });
@@ -861,6 +881,74 @@ export function buildPusdTransfer(
 		}
 		throw cause;
 	}
+}
+
+// ---------------------------------------------------------------- identity separation
+
+export const IDENTITY_OUTPUT_SATOSHIS = 1_000n;
+
+/**
+ * One-time fix for a token identity output that also carries fungible tokens
+ * (PUSD genesis put the whole supply on the identity output). Spends exactly that
+ * output and returns:
+ *   output 0: the identity, as a BCH-only output to the owner's own address;
+ *   output 1: every token it carried, to the owner's own address;
+ *   later:    BCH change.
+ * Nothing leaves the owner's address; only the fee is paid.
+ */
+export function buildIdentitySeparation(
+	tokenCategory: string,
+	ownerAddress: string,
+	walletUtxos: ChainUtxo[],
+	identity: { txid: string; vout: number }
+): UnsignedExchangeTransaction {
+	const walletLocking = addressToLockingBytecode(ownerAddress);
+	if (identity.vout !== 0) throw new Error('An identity output is always output 0 of its transaction.');
+	const utxo = walletUtxos.find((candidate) => candidate.txid === identity.txid && candidate.vout === identity.vout);
+	if (!utxo) throw new Error('The identity output is not an unspent output of the connected wallet.');
+	if (!utxo.token) throw new Error('The identity output already holds no tokens: nothing to separate.');
+	if (utxo.token.category !== tokenCategory || utxo.token.nft || utxo.token.amount <= 0n) {
+		throw new Error('The identity output does not hold plain fungible tokens of this category; refusing to build.');
+	}
+	const category = hexToBin(tokenCategory);
+	const input = utxoToInput(utxo, new Uint8Array(), true);
+	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [input], outputs: [] };
+	const sources: WcSourceOutput[] = [source(input, utxoToOutput(utxo, walletLocking))];
+	tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: IDENTITY_OUTPUT_SATOSHIS });
+	tx.outputs.push({
+		lockingBytecode: walletLocking,
+		valueSatoshis: TOKEN_OUTPUT_SATOSHIS,
+		token: { category, amount: utxo.token.amount }
+	});
+	const used = new Set([`${utxo.txid}:${utxo.vout}`]);
+	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
+
+	// Invariants, checked on the built transaction rather than assumed.
+	const out0 = tx.outputs[0]!;
+	if (binToHex(out0.lockingBytecode) !== binToHex(walletLocking) || out0.token) {
+		throw new Error('Internal check failed: output 0 must be a BCH-only output to your own address.');
+	}
+	const tokenOut = tx.outputs.filter((output) => output.token);
+	if (
+		tokenOut.length !== 1 ||
+		binToHex(tokenOut[0]!.lockingBytecode) !== binToHex(walletLocking) ||
+		binToHex(tokenOut[0]!.token!.category) !== tokenCategory ||
+		tokenOut[0]!.token!.amount !== utxo.token.amount
+	) {
+		throw new Error('Internal check failed: every token must return to your own address in one output.');
+	}
+	if (tx.outputs.some((output) => binToHex(output.lockingBytecode) !== binToHex(walletLocking))) {
+		throw new Error('Internal check failed: every output must pay your own address.');
+	}
+	const own = lockingBytecodeToChipnetAddress(walletLocking, true);
+	return finish('identity-separation', tx, sources, fee, [
+		`Separate the token identity from the ${formatUnits(utxo.token.amount)} PUSD supply. Everything stays at your address`,
+		`Input 0: identity output ${utxo.txid}:${utxo.vout} (${formatUnits(utxo.token.amount)} PUSD, ${formatSats(utxo.satoshis)} BCH)`,
+		`Output 0: the identity, as ${formatSats(IDENTITY_OUTPUT_SATOSHIS)} BCH with no tokens, to ${own}`,
+		`Output 1: all ${formatUnits(utxo.token.amount)} PUSD (category ${tokenCategory.slice(0, 12)}…) to ${own}`,
+		...(tx.outputs.length > 2 ? [`Output 2: BCH change to ${own}`] : []),
+		'Afterwards ordinary PUSD sends and trades no longer touch the identity'
+	]);
 }
 
 export function formatSats(sats: bigint): string {

@@ -15,6 +15,7 @@ import {
 	discoverOracleCategory,
 	discoverOrders,
 	getAddressUtxos,
+	getIdentityHead,
 	getOracleState,
 	isCompleteMarket,
 	loadMarketConfig,
@@ -26,6 +27,7 @@ import {
 } from '$lib/pennypicker/chain';
 import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 import { makerPkhFromChipnetAddress } from '$lib/pennypicker/orderCommitment';
+import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identity';
 import { balancesOf, errorText, type ConnectedWallet } from './wallet';
 
 export const STALE_AFTER_SECONDS = 15 * 60;
@@ -52,6 +54,9 @@ class PennyPickerSession {
 	oracleLoaded = $state(false);
 	discovery = $state<DiscoveryResult | undefined>();
 	loadingWallet = $state(false);
+	/** Current PUSD identity output (BCMR authchain head), resolved from Chipnet. */
+	pusdIdentity = $state<IdentityHead | undefined>();
+	identityError = $state('');
 	loadingMarket = $state(false);
 	marketError = $state('');
 	history = $state<TxRecord[]>([]);
@@ -66,7 +71,9 @@ class PennyPickerSession {
 	isOperator = $derived(!!this.wallet && !!this.config.oracleOperatorPkh && this.wallet.pkh === this.config.oracleOperatorPkh);
 
 	/** A confirmed BCH-only output at index 0 (needed for a CashToken genesis). */
-	genesisReadyUtxo = $derived(this.utxos.find((u) => u.vout === 0 && !u.token && (u.height ?? 0) > 0));
+	genesisReadyUtxo = $derived(this.utxos.find((u) => u.vout === 0 && !u.token && !u.identityOf && (u.height ?? 0) > 0));
+	/** The PUSD identity output, when the connected wallet holds it. */
+	ownIdentityUtxo = $derived(this.pusdIdentity ? this.utxos.find((u) => u.txid === this.pusdIdentity!.txid && u.vout === 0) : undefined);
 
 	setup = $derived.by((): SetupStep[] => {
 		const pusd = this.config.pusdCategory;
@@ -191,7 +198,19 @@ class PennyPickerSession {
 		if (!this.wallet) return;
 		this.loadingWallet = true;
 		try {
-			this.utxos = await getAddressUtxos(this.wallet.address);
+			const raw = await getAddressUtxos(this.wallet.address);
+			const category = this.config.pusdCategory;
+			let head: IdentityHead | undefined;
+			if (category) {
+				try {
+					head = await getIdentityHead(category, this.wallet.address);
+					this.identityError = '';
+				} catch (cause) {
+					this.identityError = `Could not resolve the PUSD identity output (${errorText(cause)}). All output-0 coins are held back until it resolves.`;
+				}
+			}
+			this.pusdIdentity = head;
+			this.utxos = markIdentityOutputs(raw, head ? [head] : [], category && !head ? [category] : []);
 			this.utxosLoaded = true;
 		} catch (cause) {
 			this.walletError = `Balance query failed: ${errorText(cause)}`;
