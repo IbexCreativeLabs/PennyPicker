@@ -78,7 +78,7 @@
 
 	<section class="pp-card controls">
 		<div class="pp-row">
-			<span class="pp-badge {usingLive ? 'ok' : 'plain'}">{usingLive ? `Live Chipnet book · ${liveBook.length} orders` : 'Illustrative demo book'}</span>
+			<span class="pp-badge {usingLive ? 'ok' : 'plain'}">{usingLive ? `Live Chipnet book · ${liveBook.length} order${liveBook.length === 1 ? '' : 's'}` : 'Illustrative demo book'}</span>
 			{#if liveBook.length > 0}<label class="small"><input type="checkbox" bind:checked={useDemo} /> use demo book</label>{/if}
 		</div>
 		<label class="pp-field price">

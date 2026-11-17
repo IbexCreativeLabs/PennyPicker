@@ -63,6 +63,15 @@
 	let balanceLoading = $state(false);
 	let balanceError = $state('');
 
+	// Follow the shared app session (Wallet page): show balances for the connected wallet.
+	$effect(() => {
+		const address = pp.wallet?.address;
+		if (address && address !== selectedAddress) {
+			selectedAddress = address;
+			void loadBalances();
+		}
+	});
+
 	/** Re-query Electrum (Chipnet) for the selected address on every call. */
 	async function loadBalances() {
 		const address = selectedAddress;
@@ -372,7 +381,7 @@
 	<div class="pp-page-head">
 		<div>
 			<h1>PUSD token</h1>
-			<p>PennyPicker USD is a fixed-supply CashToken for testing on Chipnet. It is <strong>not</strong> backed by USD and has no peg. The ticker is also used by ParyonUSD, so always identify the token by its category.</p>
+			<p>PennyPicker USD is a fixed-supply CashToken for testing on Chipnet. It stands in for a USD stablecoin: the exchange prices 1 PUSD as 1 USD, but this test token has <strong>no backing and no value</strong>. The ticker is also used by ParyonUSD, so always identify the token by its category.</p>
 		</div>
 		<span class="pp-badge {genesisComplete ? 'ok' : pusdCategory ? 'warn' : 'plain'}">{genesisComplete ? 'Deployed on Chipnet' : pusdCategory ? 'Category set, not yet seen' : 'Not deployed'}</span>
 	</div>
@@ -408,7 +417,6 @@
 				<p class="muted">Connect Cashonize to see balances and use the tools below.</p>
 				<div class="pp-row">
 					<a class="pp-btn pp-btn-primary" href="/penny-picker/wallet">Connect wallet</a>
-					<button class="pp-btn pp-btn-ghost" type="button" onclick={loadConnectedWallet} disabled={busy}>Use existing session</button>
 				</div>
 			{:else}
 				{#if balances}

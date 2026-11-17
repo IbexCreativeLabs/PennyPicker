@@ -33,6 +33,8 @@ All three wallets are Cashonize single-address **Chipnet development wallets** i
 | Operator ask, sell 0.002 BCH at +20 BPS, **carries oracles.cash message #1930549** | `e5f61b3aa73ac78d0a92ee7cc15fe2553973a2feb7993c5f34ff85746d83c030` | GP signature checked on-chain; block 335332 |
 | **Trader B buys 0.001 BCH, carries message #1930551 (211.10)** | `bc35fd555f665b194df906b1493b618c2c45080498f5db5a80a0d603fad91036` | price read from output 0: 22e18 − 1e5·211.10e8·10020 ≥ 0 ✓ (0.21152 → 0.22 PUSD). Signed by a wallet that did not create the oracle |
 
+| **Permissionless price update from the public site** (Trader B, paired from https://pennypicker.pages.dev) | `9ee282d6…` | 211.10 → 211.80, message #1930566 |
+
 `scripts/pennypicker-verify-oracle-tx.ts <txid>` decodes the message a transaction carried and re-checks the General Protocols signature.
 
 **Earlier end-to-end test on oracle v3 (operator-typed price, retired), all signed in Cashonize, broadcast from the app and checked against Chipnet** (types: real signed and broadcast Chipnet transactions):
@@ -122,7 +124,7 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
   - The bundle is stamped with build `5642333`, embeds the WalletConnect project ID, and uses chain `bch:bchtest` with the Chipnet Electrum host `chipnet.imaginary.cash`. The only mainnet strings are libauth's enum names.
   - `/api/feedback` is deployed and answers `not-configured`. No GitHub token is set yet, so testers get the copy-report fallback.
   - The Reown allowlist is empty (checked by you), so every origin is allowed.
-- **Not yet checked: pairing Cashonize from the public domain and signing there.** That needs your wallet.
+- **Checked 2026-11-17:** pairing Cashonize from https://pennypicker.pages.dev (origin shown as https, PennyPicker icon), signing and broadcasting there (oracle update `9ee282d6…`). The oracles.cash relay allows cross-origin reads.
 - **Committed defaults:** the market identifiers are in `deployment.ts` (PUSD category and operator PKH). The oracle category is discovered on-chain and accepted only if the operator's own address created it.
 - **What visitors see:** `/` redirects to `/penny-picker` (the Vox list is still at `/?vox`). A first-visit demo notice and a Demo badge appear, and a Feedback button sits on every page.
 - **CI:** `pennypicker-ci.yml` runs the tests and the build. The inherited Vox deploy workflows were removed.
@@ -162,5 +164,4 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 ## Remaining tasks
 
 - ~~Live oracle genesis, order, fill, cancel and update~~ (done, see table above; Cashonize signs contract inputs fine).
-- Verify the public deployment with the v3 identifiers and pair Cashonize from https://pennypicker.pages.dev.
-- Polish: mobile pass, empty states, price chart from oracle history.
+- ~~Mobile pass~~ (all pages checked at 390 px, no horizontal overflow). Optional: price chart from oracle history; a BCMR file for the v3 PUSD category.

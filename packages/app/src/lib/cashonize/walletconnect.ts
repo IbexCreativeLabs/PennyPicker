@@ -25,9 +25,9 @@ async function initializeCashonizeClient(): Promise<CashonizeClient> {
 		projectId,
 		metadata: {
 			name: 'PennyPicker',
-			description: 'PennyPicker BCH Chipnet wallet connection',
+			description: 'PennyPicker: oracle-relative BCH/PUSD orderbook on Chipnet',
 			url: window.location.origin,
-			icons: [new URL('/favicon.svg', window.location.origin).toString()]
+			icons: [new URL('/pennypicker.svg', window.location.origin).toString()]
 		}
 	});
 }

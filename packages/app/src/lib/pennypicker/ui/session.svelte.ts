@@ -24,7 +24,8 @@ import {
 	transactionHeight,
 	type DiscoveryResult,
 	type TxRecord,
-	fetchLatestOracleMessage
+	fetchLatestOracleMessage,
+	oracleAddress
 } from '$lib/pennypicker/chain';
 import { oracleStateFromMessage, type OracleMessage } from '$lib/pennypicker/contracts';
 import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
@@ -288,7 +289,8 @@ class PennyPickerSession {
 	}
 
 	async refreshHistory() {
-		const anyAddress = this.wallet?.address;
+		// Any Chipnet address works for an Electrum lookup; the wallet need not be connected.
+		const anyAddress = this.wallet?.address ?? (this.market ? oracleAddress(this.market.oracleOperatorPkh, this.market.oraclePublicKey) : undefined);
 		if (!anyAddress) return;
 		let changed = false;
 		for (const record of this.history.filter((r) => r.status !== 'confirmed').slice(0, 10)) {

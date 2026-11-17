@@ -26,6 +26,8 @@
 	onMount(() => pp.start());
 </script>
 
+<svelte:head><link rel="icon" href="/pennypicker.svg" type="image/svg+xml" /></svelte:head>
+
 <div class="pp">
 	<header class="topbar">
 		<div class="bar">
