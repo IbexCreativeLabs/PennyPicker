@@ -32,7 +32,7 @@ export function describeBroadcastError(cause: unknown, networkLabel = 'Chipnet')
 	const message = text(cause);
 	if (/switched off in this build/i.test(message)) return message;
 	if (/missing ?inputs|missingorspent|inputs-missing|txn-mempool-conflict|conflict/i.test(message)) {
-		return 'An input was already spent, usually because someone else used the oracle or this order first. Discard this transaction, refresh, and build it again. Nothing was broadcast.';
+		return 'An input was already spent, usually because someone else used the oracle or this order first. Nothing was broadcast. Rebuild it against the latest state and sign again.';
 	}
 	if (/min relay fee|insufficient fee|fee not met/i.test(message)) {
 		return `The network fee was too low (${message}). Nothing was broadcast.`;

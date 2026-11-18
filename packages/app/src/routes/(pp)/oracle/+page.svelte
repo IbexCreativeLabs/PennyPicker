@@ -142,7 +142,7 @@
 	</div>
 
 	{#if pending && pp.wallet}
-		<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={broadcasted} onDismiss={() => (pending = undefined)} />
+		<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={broadcasted} onDismiss={() => (pending = undefined)} onRebuild={() => { pending = undefined; void prepareRefresh(); }} />
 	{/if}
 	{#if notice}<p class="pp-callout ok">{notice}</p>{/if}
 	{#if error}<p class="pp-callout bad">{error}</p>{/if}

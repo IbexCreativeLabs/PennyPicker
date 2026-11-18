@@ -75,6 +75,17 @@ ask for 0.21 PUSD, bundling the newest oracles.cash message (#1931898). The fill
 `74966ac56d7fed89db2ff4e21f912f18e83541fdd6ba6efcd55099f341a71de7`. The recording is
 `pennypicker_two_wallet_trade.gif` (kept outside the repo).
 
+**Contention handling verified on Chipnet (2026-11-18):** Trader A signed a sell into the −10 BPS bid but held it.
+A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe2a` then spent the oracle first.
+- **Broadcasting the held transaction:** rejected with "An input was already spent… Nothing was broadcast", and the
+  panel offered **Rebuild with the latest state**.
+- **After Rebuild:** the trade was re-priced at the newer oracles.cash message #1931922, then signed and accepted:
+  `1f0ff030c55407152db8e18d228c93c0c69cdcd7625186d3ae95d7393b52a57f`.
+- **Bug found and fixed:** the vendored `@unspent/wallet` broadcast (`sendRawTransaction(hex, false)`) fired the
+  request without awaiting it and always reported success. A losing double spend therefore showed "Broadcast accepted"
+  (`60e72307…` never reached the network). It now waits for the server's verdict. TxFlow also flags a transaction the
+  server stops knowing after about a minute.
+
 ## Pricing convention (protocol v2, changed before any oracle or order existed)
 
 - **Pair:** BCH/PUSD. Price = **PUSD per BCH** = the oracles.cash **BCH/USD** price with 1 PUSD treated as 1 USD (PUSD stands in for a USD stablecoin, per the project pitch). The oracle stores it × 1e8 (`210.99` → `21099000000`).

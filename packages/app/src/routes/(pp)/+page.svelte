@@ -139,7 +139,17 @@
 		}
 	}
 
+	/** Repeats the last action against fresh chain state (after a broadcast conflict). */
+	let retry: (() => void) | undefined;
+	async function rebuild() {
+		pending = undefined;
+		await pp.refreshMarket();
+		retry?.();
+	}
+	const freshOrder = (order: OpenOrder) => (pp.discovery?.orders ?? []).find((o) => o.lockingBytecodeHex === order.lockingBytecodeHex && !o.exhausted);
+
 	function placeOrder() {
+		retry = placeOrder;
 		void prepare(() => {
 			if ('error' in maker) throw new Error(maker.error);
 			return buildCreateOrder(pp.market!, pp.oracle!, pp.wallet!.address, pp.wallet!.pkh, pp.utxos, {
@@ -151,6 +161,16 @@
 	}
 
 	function takeRoute() {
+		retry = () => {
+			if (pinned) {
+				pinned = freshOrder(pinned);
+				if (!pinned) {
+					error = 'That order was filled or canceled in the meantime. Pick another order from the book.';
+					return;
+				}
+			}
+			takeRoute();
+		};
 		const r = route;
 		void prepare(() => {
 			if (!r || r.legs.length === 0) throw new Error('No fillable orders for that amount.');
@@ -166,6 +186,11 @@
 	}
 
 	function cancel(order: OpenOrder) {
+		retry = () => {
+			const fresh = freshOrder(order);
+			if (fresh) cancel(fresh);
+			else error = 'This order is no longer open, so there is nothing to cancel.';
+		};
 		void prepare(() => buildCancelOrder(pp.market!, order, pp.wallet!.address, pp.utxos));
 	}
 
@@ -266,7 +291,7 @@
 	{#if pp.marketError}<p class="pp-error">{pp.marketError}</p>{/if}
 
 	{#if pending && pp.wallet}
-		<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={broadcasted} onDismiss={() => (pending = undefined)} />
+		<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={broadcasted} onDismiss={() => (pending = undefined)} onRebuild={rebuild} />
 	{/if}
 	{#if error}<p class="pp-callout bad">{error}</p>{/if}
 

@@ -16,8 +16,12 @@
 		title?: string;
 		onBroadcast: (txid: string, unsigned: UnsignedExchangeTransaction) => void;
 		onDismiss: () => void;
+		/** Rebuild from fresh chain state after a conflict (e.g. someone else spent the oracle first). */
+		onRebuild?: () => void;
 	}
-	let { unsigned, wallet, title, onBroadcast, onDismiss }: Props = $props();
+	let { unsigned, wallet, title, onBroadcast, onDismiss, onRebuild }: Props = $props();
+	/** The broadcast lost a race for a shared input: the transaction must be rebuilt, not retried. */
+	let conflict = $state(false);
 	const net = $derived(NETWORKS[wallet.network]);
 
 	type Stage = 'preview' | 'signing' | 'signed' | 'broadcasting' | 'broadcast' | 'confirmed';
@@ -126,10 +130,13 @@
 				return;
 			}
 			error = explained;
+			conflict = explained.startsWith('An input was already spent');
 			stage = 'signed';
 		}
 	}
 
+	/** Consecutive polls in which the server did not know the transaction. */
+	let misses = 0;
 	async function checkConfirmation() {
 		let height: number | undefined;
 		try {
@@ -137,6 +144,16 @@
 		} catch {
 			return; // transient network error: the next poll retries
 		}
+		if (height === undefined) {
+			// Unknown three times in a row (about a minute): a competing transaction won.
+			if (++misses >= 3) {
+				clearInterval(poll);
+				error = `${net.label} no longer has this transaction, usually because a competing one spent the same order or oracle first. Nothing changed in your wallet. Rebuild it against the latest state and sign again.`;
+				conflict = true;
+			}
+			return;
+		}
+		misses = 0;
 		if (height && height > 0) {
 			confirmations = height;
 			stage = 'confirmed';
@@ -211,9 +228,11 @@
 			<p class="pp-callout ok small">Signed and checked: the signed transaction spends and creates exactly what was previewed. <strong>Not broadcast yet.</strong></p>
 			<p class="small mono">{txid}</p>
 			<div class="pp-row">
-				<button type="button" class="pp-btn pp-btn-danger" onclick={broadcast} disabled={stage === 'broadcasting'}>
-					{stage === 'broadcasting' ? 'Broadcasting…' : `Broadcast to ${net.label}`}
-				</button>
+				{#if !conflict}
+					<button type="button" class="pp-btn pp-btn-danger" onclick={broadcast} disabled={stage === 'broadcasting'}>
+						{stage === 'broadcasting' ? 'Broadcasting…' : `Broadcast to ${net.label}`}
+					</button>
+				{/if}
 				<button type="button" class="pp-btn pp-btn-ghost" onclick={onDismiss} disabled={stage === 'broadcasting'}>Discard signed transaction</button>
 			</div>
 		{:else}
@@ -228,6 +247,12 @@
 			</div>
 		{/if}
 		{#if error}<p class="pp-error">{error}</p>{/if}
+		{#if conflict && onRebuild}
+			<div class="pp-row" style="margin-top: 0.5rem">
+				<button type="button" class="pp-btn pp-btn-primary" onclick={onRebuild}>Rebuild with the latest state</button>
+				<span class="small muted">Refreshes the book and the price, then shows a new transaction to sign.</span>
+			</div>
+		{/if}
 	</div>
 </section>
 

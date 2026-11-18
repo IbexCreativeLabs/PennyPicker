@@ -399,8 +399,17 @@ export default class ElectrumNetworkProvider implements NetworkProvider {
     return new Promise(async (resolve, reject) => {
       let txHash = await getTransactionHash(txHex);
       if (!awaitPropagation) {
-        this.performRequest("blockchain.transaction.broadcast", txHex);
-        resolve(txHash);
+        // PennyPicker: wait for the server's verdict. Previously the request was fired and
+        // forgotten, so a rejected transaction (e.g. a double spend) was reported as accepted.
+        try {
+          const accepted = await this.performRequest<string>(
+            "blockchain.transaction.broadcast",
+            txHex
+          );
+          resolve(typeof accepted === "string" ? accepted : txHash);
+        } catch (error) {
+          reject(error);
+        }
       } else {
         let cancel: CancelFn;
 
