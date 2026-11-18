@@ -177,6 +177,16 @@ single-address Cashonize mainnet wallets funded by the owner.
 
 Transactions 1 and 2 confirmed in block 977888. After the round trip the Maker holds 0.05 ParyonUSD and the Taker holds 0.95.
 **Opened to the public by the owner on 2026-11-18** (`MAINNET_WRITES_COMMITTED = true`): 25 PUSD per-order cap, no keeper.
+Checked live after the deploy (build `71ce7ad`):
+- The ParyonUSD market shows the order form, the real-money banner and the 25 PUSD cap.
+- The book reads "1 announced · 1 fill · 1 canceled".
+- There are no console errors.
+
+**Deploy-time cache bug (fixed in `71ce7ad`):**
+- While Cloudflare switched to `21a6a1c`, a script not yet propagated was answered with the app shell (200 HTML), and the
+  one-year immutable cache rule pinned it. The browser then showed "Failed to fetch dynamically imported module".
+- Missing files now return 404 (fallback `404.html`), app files are cached for one day, and the error page repairs the
+  cache once and reloads.
 
 ## Mainnet version (ParyonUSD), code-ready (2026-11-18)
 
