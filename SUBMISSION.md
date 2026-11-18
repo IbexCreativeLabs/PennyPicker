@@ -50,7 +50,7 @@ All of these were signed in Cashonize and broadcast from the app:
 | Taker buys 0.0002 BCH for 0.05 ParyonUSD | `3bbf492694ed79255b6397b80c9aef3829d0245bbff250e1bb5134f278fb7cc0` |
 | Maker cancels the remainder | `c46482bf44c750556e51351cc6f62513d790f594d6addad7f6e04a9d4f4b4c1e` |
 
-Explorer for the Chipnet rows: `https://chipnet.imaginary.cash/tx/<txid>`. The full log is in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+Explorer for the Chipnet rows: `https://bchexplorer.cash/chipnet/tx/<txid>`. The full log is in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
 **Try it:** follow the five steps under *Try it in 5 minutes* in the [README](README.md) or on the About page. The
 Chipnet book is seeded with asks and bids around the oracle price.

@@ -24,7 +24,7 @@ three separate protocol mechanics with a single P2P market:
   <img src="./media/two-wallet-trade.gif" width="640"
        alt="Two Cashonize wallets trading on pennypicker.pages.dev: Trader A buys 0.001 BCH from Trader B's +10 BPS ask; Cashonize shows the request, the signed transaction is checked against the preview, broadcast, and the ask leaves the book">
   <br><sub>A real two-wallet trade on Chipnet: Trader A fills Trader B's +10 BPS ask, and the same transaction pushes the
-  latest oracles.cash price on-chain (<a href="https://chipnet.imaginary.cash/tx/74966ac56d7fed89db2ff4e21f912f18e83541fdd6ba6efcd55099f341a71de7">74966ac5…</a>).</sub>
+  latest oracles.cash price on-chain (<a href="https://bchexplorer.cash/chipnet/tx/74966ac56d7fed89db2ff4e21f912f18e83541fdd6ba6efcd55099f341a71de7">74966ac5…</a>).</sub>
 </p>
 
 ## Try it in 5 minutes (free test coins)

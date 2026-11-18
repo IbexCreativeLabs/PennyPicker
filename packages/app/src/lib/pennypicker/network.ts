@@ -28,8 +28,8 @@ export const NETWORKS: Record<NetworkId, NetworkInfo> = {
 		label: 'Chipnet',
 		prefix: 'bchtest',
 		walletConnectChain: 'bch:bchtest',
-		explorerTx: (txid) => `https://chipnet.imaginary.cash/tx/${txid}`,
-		explorerAddress: (address) => `https://chipnet.imaginary.cash/address/${address}`,
+		explorerTx: (txid) => `https://bchexplorer.cash/chipnet/tx/${txid}`,
+		explorerAddress: (address) => `https://bchexplorer.cash/chipnet/address/${address}`,
 		storagePrefix: 'pennypicker:chipnet:',
 		realFunds: false
 	},
