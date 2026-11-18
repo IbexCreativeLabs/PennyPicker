@@ -172,8 +172,11 @@ single-address Cashonize mainnet wallets funded by the owner.
 | --- | --- | --- |
 | 1 | Mainnet price record created from oracles.cash (207.73), category `f9a9812abc5f8de2847b10945c81a392ff86707f07eff25f091eda27a17503d6` | `95734104aa53ada1642974ea3ea778c00da10bf9c42ef346bc395006693c5473` |
 | 2 | Maker ask: 0.0005 BCH at +50 BPS | `650e7000ddcc1a5a43d203b6ff625ad2f09a5228a2a0ac03c377403721117a24` |
-| 3 | Taker buys 0.0002 BCH from the ask (pays ParyonUSD) | pending: the Taker has no ParyonUSD yet |
-| 4 | Maker cancels the remainder | pending |
+| 3 | Taker buys 0.0002 BCH from the ask for 0.05 ParyonUSD (0.0419 rounded up for the maker), bundling oracles.cash price 208.32 | `3bbf492694ed79255b6397b80c9aef3829d0245bbff250e1bb5134f278fb7cc0` |
+| 4 | Maker cancels the remainder: 0.00031 BCH + 0.05 ParyonUSD back to the Maker | `c46482bf44c750556e51351cc6f62513d790f594d6addad7f6e04a9d4f4b4c1e` |
+
+Transactions 1 and 2 confirmed in block 977888. After the round trip the Maker holds 0.05 ParyonUSD and the Taker holds 0.95.
+The public site is still view-only on mainnet: `MAINNET_WRITES_COMMITTED = false`, and opening it needs the owner's approval.
 
 ## Mainnet version (ParyonUSD), code-ready (2026-11-18)
 

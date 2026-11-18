@@ -26,7 +26,7 @@ one P2P market of this kind could replace three protocol mechanics:
 | **Exchange UI** | Orderbook in BPS, limit orders, "trade now" routing across orders, my orders with cancel, activity, plus Token, Oracle, Wallet and About pages. A public site and a password-protected admin area. |
 | **Wallet** | Cashonize over WalletConnect. Keys never leave the wallet. Every transaction is previewed, signed in Cashonize, checked byte-for-byte against the preview, and broadcast only on an explicit click. |
 | **Contention handling** | If someone else uses the shared price record first, the app says nothing was broadcast and offers **Rebuild with the latest state**. |
-| **Mainnet readiness** | Selecting ParyonUSD switches the whole app to BCH mainnet: addresses, Cashonize chain and Electrum. In this build it is view-only: mainnet signing and broadcasting are switched off, and orders are capped at 25 PUSD. |
+| **Mainnet** | Selecting ParyonUSD switches the whole app to BCH mainnet: addresses, Cashonize chain and Electrum. A mainnet price record exists, and a real order, fill and cancel with ParyonUSD were done (txids below). The public site is view-only on mainnet until opened, and orders are capped at 25 PUSD. |
 
 ## Verify it yourself on Chipnet
 
@@ -40,7 +40,16 @@ All of these were signed in Cashonize and broadcast from the app:
 | A sells into B's bid (v3 test) | `e3098a63bb4163ef1d8aaa11d419f073b14e0ccda3bac4307ad46b730a7b83ae` |
 | Conflict rejected, then rebuilt and accepted | `1f0ff030c55407152db8e18d228c93c0c69cdcd7625186d3ae95d7393b52a57f` |
 
-Explorer: `https://chipnet.imaginary.cash/tx/<txid>`. The full log is in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
+**On BCH mainnet with real ParyonUSD** (owner-approved, small amounts; explorer `https://blockchair.com/bitcoin-cash/transaction/<txid>`):
+
+| What | Transaction |
+|---|---|
+| Mainnet price record created from oracles.cash | `95734104aa53ada1642974ea3ea778c00da10bf9c42ef346bc395006693c5473` |
+| Maker ask: 0.0005 BCH at +50 BPS | `650e7000ddcc1a5a43d203b6ff625ad2f09a5228a2a0ac03c377403721117a24` |
+| Taker buys 0.0002 BCH for 0.05 ParyonUSD | `3bbf492694ed79255b6397b80c9aef3829d0245bbff250e1bb5134f278fb7cc0` |
+| Maker cancels the remainder | `c46482bf44c750556e51351cc6f62513d790f594d6addad7f6e04a9d4f4b4c1e` |
+
+Explorer for the Chipnet rows: `https://chipnet.imaginary.cash/tx/<txid>`. The full log is in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
 **Try it:** follow the five steps under *Try it in 5 minutes* in the [README](README.md) or on the About page. The
 Chipnet book is seeded with asks and bids around the oracle price.
