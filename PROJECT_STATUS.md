@@ -119,6 +119,21 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
 
 Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `2469acc5…2544` on mainnet, view only). Bottom-right **Chat** button opens the Telegram community panel (link set in `deployment.ts` → `COMMUNITY.telegramUrl`). Old `/penny-picker/...` links redirect via `static/_redirects`.
 
+## Mainnet version (ParyonUSD), code-ready, view only (2026-11-18)
+
+- **Network-aware app.** `network.ts` defines Chipnet and mainnet: address prefix, WalletConnect chain (`bch:bchtest` / `bch:bitcoincash`), explorers, storage namespace. The selected market sets the network. Switching it reloads the market, history and Electrum provider, and only uses a Cashonize session approved for that chain.
+- **Same contracts.** ParyonUSD has 2 decimals like PennyPickerUSD, so the order and oracle covenants are unchanged. The builders encode mainnet addresses from `MarketConfig.network`.
+- **Safety.**
+  - `MAINNET_WRITES_ENABLED = false` (`deployment.ts`) blocks mainnet signing (in `TxFlow`) and broadcasting (in `chain.ts`).
+  - `MAINNET_MAX_ORDER_UNITS = 2500` caps every mainnet order at 25.00 PUSD, enforced by the builder and the form.
+  - Mainnet screens show a real-money warning.
+- **Not deployed yet:** the mainnet price record (`MAINNET_DEPLOYMENT.oracleCategory`). Creating it is a real-money transaction that needs owner approval. The steps are in `DEPLOYMENT.md` §5, and `/admin` shows a readiness checklist.
+- **Verified:**
+  - 22 new mainnet checks in the exchange suite: addresses, cap, broadcast switch, and a ParyonUSD genesis, ask, bid and fill verified in the BCH 2025 VM.
+  - `scripts/pennypicker-mainnet-check.ts` (read-only) reaches mainnet Electrum and finds ParyonUSD.
+  - In Chrome: market switching both ways, and the Chipnet wallet restored after switching back.
+  - No mainnet wallet was paired and no mainnet transaction was made.
+
 ## Deployment (public demo)
 
 - **Live at https://pennypicker.pages.dev.** Cloudflare Pages builds from GitHub `main` (build `pnpm app:build`, output `docs`) and redeploys on every push. Full steps are in `DEPLOYMENT.md`.
@@ -137,12 +152,12 @@ Run from `packages/app`, using libauth's BCH 2025 VM:
 
 ```
 pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 28 covenant checks (incl. a real oracles.cash message)
-pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 63 builder checks (signed, chained txs, PUSD genesis + transfer, identity safeguards, error texts)
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 85 builder checks (signed, chained txs, PUSD genesis + transfer, identity safeguards, error texts, mainnet/ParyonUSD + cap)
 pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
 pnpm dlx tsx scripts/pennypicker-identity.test.ts    # 8 authchain/marking checks
 ```
 
-Read-only Chipnet helpers: `pennypicker-live-check.ts`, `-balances.ts`, `-utxos-full.ts`, `-oracle-history.ts`, `-verify-trades.ts`, `-wait-confirm.ts`.
+Read-only mainnet check: `pennypicker-mainnet-check.ts`. Read-only Chipnet helpers: `pennypicker-live-check.ts`, `-balances.ts`, `-utxos-full.ts`, `-oracle-history.ts`, `-verify-trades.ts`, `-wait-confirm.ts`.
 
 The UI has been driven end to end in Chrome by the agent (see the live test table). Type-check: no errors in PennyPicker files; 121 legacy Vox errors remain.
 
@@ -155,7 +170,7 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 - **Discovery limits.** It scans the last 300 oracle-history transactions and makes one Electrum call per announced order.
 - **Fees.** Estimated at about 1 sat/byte. Order outputs keep a 1,000-sat reserve, and the minimum trade is 5,000 sats.
 - **Local state.** Transaction history and config live in localStorage per browser unless set via `VITE_PENNYPICKER_*`.
-- **Legacy modules.** `orderCommitment.ts` (only `makerPkhFromChipnetAddress` is still used), `orderbookIndex.ts`, `electrumOrderbook.ts`, `orderLifecycle.ts`, `executionOracle.ts` and `market.ts` (simulator) belong to earlier designs.
+- **Legacy modules.** `orderCommitment.ts` (only `makerPkhFromAddress` is still used), `orderbookIndex.ts`, `electrumOrderbook.ts`, `orderLifecycle.ts`, `executionOracle.ts` and `market.ts` (simulator) belong to earlier designs.
 - **No security review.** The covenants have not been independently reviewed.
 
 ## External actions required (you)

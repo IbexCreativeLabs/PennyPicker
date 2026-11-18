@@ -2,6 +2,17 @@
 	import { pp, formatAge } from '$lib/pennypicker/ui/session.svelte';
 	import { formatPrice } from '$lib/pennypicker/contracts';
 	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
+	import { MAINNET_DEPLOYMENT, MAINNET_MAX_ORDER_UNITS, MAINNET_WRITES_ENABLED, MARKETS } from '$lib/pennypicker/deployment';
+	import { formatUnits } from '$lib/pennypicker/exchange';
+
+	const paryon = MARKETS.find((m) => m.id === 'paryonusd')!;
+	const mainnetChecks = [
+		{ label: 'Stablecoin: ParyonUSD category', done: !!MAINNET_DEPLOYMENT.pusdCategory, detail: MAINNET_DEPLOYMENT.pusdCategory?.slice(0, 16) + '…' },
+		{ label: 'Mainnet price record (oracle) deployed', done: !!MAINNET_DEPLOYMENT.oracleCategory, detail: MAINNET_DEPLOYMENT.oracleCategory ? MAINNET_DEPLOYMENT.oracleCategory.slice(0, 16) + '…' : 'Needs an operator wallet and ~2,000 sats; owner approval' },
+		{ label: 'Mainnet transactions enabled in this build', done: MAINNET_WRITES_ENABLED, detail: 'MAINNET_WRITES_ENABLED in deployment.ts' },
+		{ label: 'Per-order cap', done: true, detail: `${formatUnits(MAINNET_MAX_ORDER_UNITS)} PUSD` },
+		{ label: 'Security review of the contracts', done: false, detail: 'Not done yet' }
+	];
 
 	const openOrders = $derived(pp.discovery?.orders.filter((o) => !o.exhausted).length ?? 0);
 	const icon = { done: '✓', pending: '○', blocked: '·' } as const;
@@ -95,9 +106,22 @@
 		</details>
 	{/if}
 	{#if pp.marketError}<p class="pp-error">{pp.marketError}</p>{/if}
+	<section class="pp-card" style="margin-top: 1rem">
+		<div class="pp-card-head">
+			<h2>Mainnet readiness · {paryon.name}</h2>
+			<span class="pp-badge {paryon.status === 'live' ? 'ok' : 'warn'}">{paryon.status === 'live' ? 'Live' : 'View only'}</span>
+		</div>
+		<ul class="ready">
+			{#each mainnetChecks as c (c.label)}
+				<li><span class="pp-badge {c.done ? 'ok' : 'warn'} plain">{c.done ? '✓' : '○'}</span> <strong>{c.label}</strong> <span class="small muted">{c.detail}</span></li>
+			{/each}
+		</ul>
+		<p class="small muted">Going-live steps are in DEPLOYMENT.md ("Going live on mainnet"). Every mainnet transaction needs the project owner's approval.</p>
+	</section>
 </main>
 
 <style>
+	.ready { list-style: none; padding: 0; margin: 0.5rem 0; display: grid; gap: 0.4rem; }
 	.steps { list-style: none; padding: 0; margin: 0.5rem 0 0; }
 	.steps li { display: grid; grid-template-columns: 1.5rem 1fr auto; grid-template-areas: 'dot label go' 'dot detail go'; column-gap: 0.5rem; padding: 0.45rem 0; border-bottom: 1px solid var(--pp-border); }
 	.steps li:last-child { border-bottom: 0; }

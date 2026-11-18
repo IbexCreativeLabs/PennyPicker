@@ -1,4 +1,5 @@
 import { assertSideDelta, MAX_TOKEN_UNITS, type OrderSide } from './market';
+import { NETWORKS, networkOfAddress, type NetworkId } from './network';
 import { binToHex, cashAddressToLockingBytecode } from '@bitauth/libauth';
 export { MAX_TOKEN_UNITS };
 
@@ -68,8 +69,13 @@ function validateMakerPkh(makerPkh: string): string {
 
 /** Extract the maker hash from a public Cashonize Chipnet P2PKH address. */
 export function makerPkhFromChipnetAddress(address: string): string {
-	if (!address.startsWith('bchtest:')) {
-		throw new Error('Maker address must be a prefixed BCH Chipnet address.');
+	return makerPkhFromAddress(address, 'chipnet');
+}
+
+/** Extract the maker hash from a prefixed P2PKH address on the given network. */
+export function makerPkhFromAddress(address: string, network: NetworkId): string {
+	if (networkOfAddress(address) !== network) {
+		throw new Error(`Maker address must be a prefixed BCH ${NETWORKS[network].label} address (${NETWORKS[network].prefix}:…).`);
 	}
 	const decoded = cashAddressToLockingBytecode(address);
 	if (typeof decoded === 'string') throw new Error(`Invalid maker address: ${decoded}`);

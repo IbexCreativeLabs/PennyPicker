@@ -1,6 +1,11 @@
 import type SignClient from '@walletconnect/sign-client';
 
 export const CHIPNET_CHAIN = 'bch:bchtest';
+export const MAINNET_CHAIN = 'bch:bitcoincash';
+export type BchChain = typeof CHIPNET_CHAIN | typeof MAINNET_CHAIN;
+
+const chainLabel = (chain: BchChain) => (chain === MAINNET_CHAIN ? 'BCH mainnet' : 'BCH Chipnet');
+const chainPrefix = (chain: BchChain) => (chain === MAINNET_CHAIN ? 'bitcoincash:' : 'bchtest:');
 
 const BCH_METHODS = ['bch_getAddresses', 'bch_signTransaction'];
 const BCH_EVENTS = ['addressesChanged'];
@@ -25,7 +30,7 @@ async function initializeCashonizeClient(): Promise<CashonizeClient> {
 		projectId,
 		metadata: {
 			name: 'PennyPicker',
-			description: 'PennyPicker: oracle-relative BCH/PUSD orderbook on Chipnet',
+			description: 'PennyPicker: oracle-relative BCH/stablecoin orderbook',
 			url: window.location.origin,
 			icons: [new URL('/pennypicker.svg', window.location.origin).toString()]
 		}
@@ -40,21 +45,25 @@ export function createCashonizeClient(): Promise<CashonizeClient> {
 	return clientPromise;
 }
 
-export function getApprovedChipnetSession(client: CashonizeClient): CashonizeSession | undefined {
+export function getApprovedSession(client: CashonizeClient, chain: BchChain): CashonizeSession | undefined {
 	return client.session
 		.getAll()
 		.find((session) => {
 			const namespace = session.namespaces.bch;
-			return namespace?.chains?.includes(CHIPNET_CHAIN) === true &&
+			return namespace?.chains?.includes(chain) === true &&
 				namespace.methods.includes('bch_signTransaction');
 		});
 }
 
-export function requestCashonizeChipnetSession(client: CashonizeClient) {
+export function getApprovedChipnetSession(client: CashonizeClient): CashonizeSession | undefined {
+	return getApprovedSession(client, CHIPNET_CHAIN);
+}
+
+export function requestCashonizeSession(client: CashonizeClient, chain: BchChain) {
 	return client.connect({
 		requiredNamespaces: {
 			bch: {
-				chains: [CHIPNET_CHAIN],
+				chains: [chain],
 				methods: BCH_METHODS,
 				events: BCH_EVENTS
 			}
@@ -62,13 +71,22 @@ export function requestCashonizeChipnetSession(client: CashonizeClient) {
 	});
 }
 
-export async function requestChipnetAddresses(
+export function requestCashonizeChipnetSession(client: CashonizeClient) {
+	return requestCashonizeSession(client, CHIPNET_CHAIN);
+}
+
+export function requestChipnetAddresses(client: CashonizeClient, session: CashonizeSession): Promise<string[]> {
+	return requestAddresses(client, session, CHIPNET_CHAIN);
+}
+
+export async function requestAddresses(
 	client: CashonizeClient,
-	session: CashonizeSession
+	session: CashonizeSession,
+	chain: BchChain
 ): Promise<string[]> {
 	const bchNamespace = session.namespaces.bch;
-	if (!bchNamespace?.chains?.includes(CHIPNET_CHAIN)) {
-		throw new Error('Cashonize did not approve a BCH Chipnet session.');
+	if (!bchNamespace?.chains?.includes(chain)) {
+		throw new Error(`Cashonize did not approve a ${chainLabel(chain)} session.`);
 	}
 	if (!bchNamespace.methods.includes('bch_getAddresses')) {
 		throw new Error('The session does not permit BCH address requests.');
@@ -76,17 +94,17 @@ export async function requestChipnetAddresses(
 
 	const addresses = await client.request<string[]>({
 		topic: session.topic,
-		chainId: CHIPNET_CHAIN,
+		chainId: chain,
 		request: {
 			method: 'bch_getAddresses',
 			params: {}
 		}
 	});
-	const chipnetAddresses = addresses.filter((address) => address.startsWith('bchtest:'));
-	if (chipnetAddresses.length === 0) {
-		throw new Error('Cashonize returned no BCH Chipnet address.');
+	const onChain = addresses.filter((address) => address.startsWith(chainPrefix(chain)));
+	if (onChain.length === 0) {
+		throw new Error(`Cashonize returned no ${chainLabel(chain)} address.`);
 	}
-	return chipnetAddresses;
+	return onChain;
 }
 
 export async function requestCashonizeTransactionSignature(
@@ -94,15 +112,16 @@ export async function requestCashonizeTransactionSignature(
 	session: CashonizeSession,
 	unsignedTransaction: string,
 	sourceOutputs: unknown,
-	userPrompt = 'Review the PennyPicker transaction before signing.'
+	userPrompt = 'Review the PennyPicker transaction before signing.',
+	chain: BchChain = CHIPNET_CHAIN
 ): Promise<{ signedTransaction: string; signedTransactionHash: string }> {
 	const namespace = session.namespaces.bch;
-	if (!namespace?.chains?.includes(CHIPNET_CHAIN) || !namespace.methods.includes('bch_signTransaction')) {
-		throw new Error('The active session does not allow Chipnet transaction signing.');
+	if (!namespace?.chains?.includes(chain) || !namespace.methods.includes('bch_signTransaction')) {
+		throw new Error(`The active session does not allow ${chainLabel(chain)} transaction signing.`);
 	}
 	const response = await client.request<{ signedTransaction?: string; signedTransactionHash?: string }>({
 		topic: session.topic,
-		chainId: CHIPNET_CHAIN,
+		chainId: chain,
 		request: {
 			method: 'bch_signTransaction',
 			params: {

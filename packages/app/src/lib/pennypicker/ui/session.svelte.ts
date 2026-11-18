@@ -7,9 +7,9 @@ import {
 	createCashonizeClient,
 	describeWalletConnectError,
 	disconnectCashonizeSession,
-	getApprovedChipnetSession,
-	requestCashonizeChipnetSession,
-	requestChipnetAddresses
+	getApprovedSession,
+	requestAddresses,
+	requestCashonizeSession
 } from '$lib/cashonize/walletconnect';
 import {
 	discoverOracleCategory,
@@ -25,12 +25,13 @@ import {
 	type DiscoveryResult,
 	type TxRecord,
 	fetchLatestOracleMessage,
-	oracleAddress
+	marketOracleAddress
 } from '$lib/pennypicker/chain';
 import { oracleStateFromMessage, type OracleMessage } from '$lib/pennypicker/contracts';
 import { MARKETS, type MarketId } from '$lib/pennypicker/deployment';
 import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
-import { makerPkhFromChipnetAddress } from '$lib/pennypicker/orderCommitment';
+import { makerPkhFromAddress } from '$lib/pennypicker/orderCommitment';
+import { NETWORKS, type NetworkId } from '$lib/pennypicker/network';
 import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identity';
 import { balancesOf, errorText, type ConnectedWallet } from './wallet';
 
@@ -51,18 +52,42 @@ class PennyPickerSession {
 	pairingUri = $state('');
 	walletError = $state('');
 
-	config = $state(loadMarketConfig());
 	/** Stablecoin selected in the header menu. Only 'live' markets can trade. */
 	selectedMarketId = $state<MarketId>('pennypickerusd');
 	selectedMarket = $derived(MARKETS.find((m) => m.id === this.selectedMarketId) ?? MARKETS[0]!);
+	/** Network of the selected market: drives Electrum, addresses, WalletConnect chain and explorers. */
+	network = $derived<NetworkId>(this.selectedMarket.network);
+	networkInfo = $derived(NETWORKS[this.network]);
+	config = $state(loadMarketConfig('chipnet'));
+	/** The selected market can create orders and fills in this build. */
+	canTrade = $derived(this.selectedMarket.status === 'live');
 
 	selectMarket(id: MarketId) {
+		if (!MARKETS.some((m) => m.id === id)) return;
+		const before = this.network;
 		this.selectedMarketId = id;
 		try {
 			localStorage.setItem('pennypicker:selected-market', id);
 		} catch {
 			/* storage unavailable */
 		}
+		if (this.network !== before) void this.switchNetwork();
+	}
+
+	/** Drop everything tied to the previous network, then reload for the new one. */
+	private async switchNetwork() {
+		this.oracle = undefined;
+		this.oracleLoaded = false;
+		this.discovery = undefined;
+		this.pusdIdentity = undefined;
+		this.marketError = '';
+		this.walletError = '';
+		this.history = loadTxHistory(this.network);
+		this.reloadConfig();
+		if (this.wallet && this.wallet.network !== this.network) this.forgetWallet();
+		this.walletStatus = 'checking';
+		await this.restoreSession();
+		await this.refreshAll();
 	}
 	utxos = $state<ChainUtxo[]>([]);
 	utxosLoaded = $state(false);
@@ -89,6 +114,8 @@ class PennyPickerSession {
 	/** The price the next order or fill settles at (the bundled feed price, else the on-chain state). */
 	effectiveState = $derived(this.refreshMessage ? oracleStateFromMessage(this.refreshMessage) : this.oracle?.state);
 	price = $derived(this.effectiveState?.price);
+	/** Price to display: the market's settlement price, else the live oracles.cash feed (markets without an on-chain record). */
+	displayPrice = $derived(this.price ?? (this.feed ? oracleStateFromMessage(this.feed).price : undefined));
 	oracleAge = $derived(this.effectiveState ? Math.max(0, this.nowSec - this.effectiveState.timestamp) : undefined);
 	oracleStale = $derived(this.oracleAge !== undefined && this.oracleAge > STALE_AFTER_SECONDS);
 	isOperator = $derived(!!this.wallet && !!this.config.oracleOperatorPkh && this.wallet.pkh === this.config.oracleOperatorPkh);
@@ -117,7 +144,7 @@ class PennyPickerSession {
 		});
 		const oracleExists = !!this.oracle;
 		return [
-			step('wallet', 'Wallet connected', this.walletStatus === 'connected', this.wallet ? 'Cashonize on Chipnet' : 'Connect Cashonize', '/wallet'),
+			step('wallet', 'Wallet connected', this.walletStatus === 'connected', this.wallet ? `Cashonize on ${this.networkInfo.label}` : 'Connect Cashonize', '/wallet'),
 			step('pusd', 'PUSD genesis', !!pusd, pusd ? `Category ${pusd.slice(0, 8)}…` : 'Create the token', '/admin/token'),
 			step('pusd-verified', 'PUSD category verified', pusdSeen, pusdSeen ? 'Seen on-chain' : 'No PUSD UTXO observed yet', '/admin/token', !pusd),
 			step('vout0', 'Oracle genesis input', oracleExists || !!this.genesisReadyUtxo, oracleExists ? 'Used by oracle genesis' : this.genesisReadyUtxo ? `${this.genesisReadyUtxo.txid.slice(0, 8)}…:0 ready` : 'Needs a BCH-only output 0', '/admin/token'),
@@ -137,13 +164,14 @@ class PennyPickerSession {
 	start() {
 		if (this.started) return;
 		this.started = true;
-		this.history = loadTxHistory();
 		try {
 			const saved = localStorage.getItem('pennypicker:selected-market');
 			if (MARKETS.some((m) => m.id === saved)) this.selectedMarketId = saved as MarketId;
 		} catch {
 			/* storage unavailable */
 		}
+		this.history = loadTxHistory(this.network);
+		this.reloadConfig();
 		setInterval(() => (this.nowSec = Math.floor(Date.now() / 1000)), 5_000);
 		void this.refreshFeed();
 		setInterval(() => void this.refreshFeed(), 60_000);
@@ -151,7 +179,7 @@ class PennyPickerSession {
 	}
 
 	reloadConfig() {
-		this.config = loadMarketConfig();
+		this.config = loadMarketConfig(this.network);
 	}
 
 	/** Reuse an existing approved Cashonize session without prompting. */
@@ -162,7 +190,7 @@ class PennyPickerSession {
 				return;
 			}
 			const client = await createCashonizeClient();
-			const session = getApprovedChipnetSession(client);
+			const session = getApprovedSession(client, this.networkInfo.walletConnectChain);
 			if (!session) {
 				this.walletStatus = 'disconnected';
 				return;
@@ -175,9 +203,12 @@ class PennyPickerSession {
 	}
 
 	private async adopt(client: ConnectedWallet['client'], session: ConnectedWallet['session']) {
-		const [address] = await requestChipnetAddresses(client, session);
-		if (!address) throw new Error('Cashonize returned no Chipnet address.');
-		this.wallet = { client, session, address, pkh: makerPkhFromChipnetAddress(address) };
+		const network = this.network;
+		const [address] = await requestAddresses(client, session, NETWORKS[network].walletConnectChain);
+		if (!address) throw new Error(`Cashonize returned no ${NETWORKS[network].label} address.`);
+		// The user may have switched markets while Cashonize was answering.
+		if (network !== this.network) return;
+		this.wallet = { client, session, address, pkh: makerPkhFromAddress(address, network), network };
 		this.walletStatus = 'connected';
 		const clear = ({ topic }: { topic: string }) => {
 			if (this.wallet?.session.topic === topic) this.forgetWallet();
@@ -200,11 +231,12 @@ class PennyPickerSession {
 		this.walletError = '';
 		try {
 			const client = await createCashonizeClient();
-			const existing = getApprovedChipnetSession(client);
+			const chain = this.networkInfo.walletConnectChain;
+			const existing = getApprovedSession(client, chain);
 			if (existing) {
 				await this.adopt(client, existing);
 			} else {
-				const { uri, approval } = await requestCashonizeChipnetSession(client);
+				const { uri, approval } = await requestCashonizeSession(client, chain);
 				this.pairingUri = uri ?? '';
 				const session = await approval();
 				this.pairingUri = '';
@@ -235,7 +267,9 @@ class PennyPickerSession {
 			const raw = await getAddressUtxos(this.wallet.address);
 			const category = this.config.pusdCategory;
 			let head: IdentityHead | undefined;
-			if (category) {
+			// Identity outputs only matter where this app mints or manages the token (Chipnet PUSD).
+			const tracksIdentity = this.network === 'chipnet';
+			if (category && tracksIdentity) {
 				try {
 					head = await getIdentityHead(category, this.wallet.address);
 					this.identityError = '';
@@ -244,7 +278,7 @@ class PennyPickerSession {
 				}
 			}
 			this.pusdIdentity = head;
-			this.utxos = markIdentityOutputs(raw, head ? [head] : [], category && !head ? [category] : []);
+			this.utxos = markIdentityOutputs(raw, head ? [head] : [], tracksIdentity && category && !head ? [category] : []);
 			this.utxosLoaded = true;
 		} catch (cause) {
 			this.walletError = `Balance query failed: ${errorText(cause)}`;
@@ -257,13 +291,13 @@ class PennyPickerSession {
 		this.reloadConfig();
 		if (!this.config.oracleCategory && this.config.oracleOperatorPkh) {
 			try {
-				const found = await discoverOracleCategory(this.config.oracleOperatorPkh);
+				const found = await discoverOracleCategory(this.config.oracleOperatorPkh, this.network);
 				if (found) {
 					this.config = { ...this.config, oracleCategory: found, source: { ...this.config.source, oracleCategory: 'discovered' } };
 				}
 				this.marketError = '';
 			} catch (cause) {
-				this.marketError = `Chipnet Electrum server unreachable: ${errorText(cause)}`;
+				this.marketError = `${this.networkInfo.label} Electrum server unreachable: ${errorText(cause)}`;
 				this.oracleLoaded = true;
 				return;
 			}
@@ -303,13 +337,13 @@ class PennyPickerSession {
 
 	recordBroadcast(txid: string, unsigned: UnsignedExchangeTransaction | { kind: string; summary: string[] }) {
 		this.history = [{ txid, kind: unsigned.kind, summary: unsigned.summary, at: Date.now(), status: 'broadcast' }, ...this.history];
-		saveTxHistory(this.history);
+		saveTxHistory(this.history, this.network);
 		setTimeout(() => void this.refreshAll(), 2_500);
 	}
 
 	async refreshHistory() {
-		// Any Chipnet address works for an Electrum lookup; the wallet need not be connected.
-		const anyAddress = this.wallet?.address ?? (this.market ? oracleAddress(this.market.oracleOperatorPkh, this.market.oraclePublicKey) : undefined);
+		// Any address on this network works for an Electrum lookup; the wallet need not be connected.
+		const anyAddress = this.wallet?.address ?? (this.market ? marketOracleAddress(this.market) : undefined);
 		if (!anyAddress) return;
 		let changed = false;
 		for (const record of this.history.filter((r) => r.status !== 'confirmed').slice(0, 10)) {
@@ -322,15 +356,19 @@ class PennyPickerSession {
 		}
 		if (changed) {
 			this.history = [...this.history];
-			saveTxHistory(this.history);
+			saveTxHistory(this.history, this.network);
 		}
 	}
 }
 
 export const pp = new PennyPickerSession();
 
-export function explorerTx(txid: string): string {
-	return `https://chipnet.imaginary.cash/tx/${txid}`;
+export function explorerTx(txid: string, network: NetworkId = pp.network): string {
+	return NETWORKS[network].explorerTx(txid);
+}
+
+export function explorerAddress(address: string, network: NetworkId = pp.network): string {
+	return NETWORKS[network].explorerAddress(address);
 }
 
 export function formatAge(seconds: number | undefined): string {

@@ -1,29 +1,14 @@
-import {
-	createCashonizeClient,
-	getApprovedChipnetSession,
-	requestChipnetAddresses,
-	type CashonizeClient,
-	type CashonizeSession
-} from '$lib/cashonize/walletconnect';
-import { makerPkhFromChipnetAddress } from '$lib/pennypicker/orderCommitment';
+import type { CashonizeClient, CashonizeSession } from '$lib/cashonize/walletconnect';
 import { getAddressUtxos } from '$lib/pennypicker/chain';
 import type { ChainUtxo } from '$lib/pennypicker/exchange';
+import type { NetworkId } from '$lib/pennypicker/network';
 
 export interface ConnectedWallet {
 	client: CashonizeClient;
 	session: CashonizeSession;
 	address: string;
 	pkh: string;
-}
-
-/** Use the existing Cashonize Chipnet session (created on /cashonize). */
-export async function connectCashonize(): Promise<ConnectedWallet> {
-	const client = await createCashonizeClient();
-	const session = getApprovedChipnetSession(client);
-	if (!session) throw new Error('No Cashonize Chipnet session. Connect on the Cashonize page first.');
-	const [address] = await requestChipnetAddresses(client, session);
-	if (!address) throw new Error('Cashonize returned no Chipnet address.');
-	return { client, session, address, pkh: makerPkhFromChipnetAddress(address) };
+	network: NetworkId;
 }
 
 export interface Balances {

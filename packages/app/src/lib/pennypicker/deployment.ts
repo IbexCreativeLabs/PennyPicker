@@ -1,3 +1,5 @@
+import type { NetworkId } from './network';
+
 /**
  * Public, committed identifiers of the shared PennyPicker Chipnet market.
  * These are on-chain identifiers, not secrets. Precedence in the app:
@@ -19,6 +21,33 @@ export const CHIPNET_DEPLOYMENT = {
 	oracleCategory: 'adcf011756ad2726f8521c371ea950ae293fb1a1e6507bfdc13cbe2b2d4f74b5' as string | undefined
 } as const;
 
+/** ParyonUSD (mainnet), 2 decimals like PennyPickerUSD. */
+export const PARYONUSD_CATEGORY = '2469acc5afa4b10cb5b5c04afb89c3a3ffd61c5da9c01e26d00951cae2a02544';
+
+/**
+ * Mainnet market against the real ParyonUSD. The price record (PennyPickerOracle)
+ * is not deployed on mainnet yet: deploying it is a real-money transaction that
+ * needs the project owner's approval (see DEPLOYMENT.md, "Going live on mainnet").
+ */
+export const MAINNET_DEPLOYMENT = {
+	pusdCategory: PARYONUSD_CATEGORY as string | undefined,
+	oracleOperatorPkh: undefined as string | undefined,
+	oracleCategory: undefined as string | undefined
+} as const;
+
+/**
+ * Master switch for mainnet transactions. While false, this build cannot sign or
+ * broadcast anything on mainnet (enforced in chain.ts as well as in the UI).
+ */
+export const MAINNET_WRITES_ENABLED = false;
+
+/** Mainnet per-order cap while the contracts are unreviewed: 25.00 PUSD (in cents). */
+export const MAINNET_MAX_ORDER_UNITS = 2_500n;
+
+export type DeploymentIds = { pusdCategory: string | undefined; oracleOperatorPkh: string | undefined; oracleCategory: string | undefined };
+
+export const DEPLOYMENTS: Record<NetworkId, DeploymentIds> = { chipnet: CHIPNET_DEPLOYMENT, mainnet: MAINNET_DEPLOYMENT };
+
 /** Public community links. Set the Telegram invite link here (t.me/…) once the group exists. */
 export const COMMUNITY = {
 	telegramUrl: 'https://t.me/bethechange_global' as string,
@@ -32,9 +61,13 @@ export interface StablecoinMarket {
 	id: MarketId;
 	name: string;
 	symbol: string;
-	network: 'chipnet' | 'mainnet';
+	network: NetworkId;
 	/** 'live': trading enabled in this build. 'view-only': shown for information; no transactions. */
 	status: 'live' | 'view-only';
+	/** Why a view-only market cannot trade yet. */
+	statusReason?: string;
+	/** Per-order cap in stablecoin base units (cents), if any. */
+	maxOrderUnits?: bigint;
 	category: string | undefined;
 	summary: string;
 	links: { label: string; href: string }[];
@@ -42,9 +75,17 @@ export interface StablecoinMarket {
 
 /**
  * Stablecoin markets offered in the selector. Both use the same General Protocols
- * BCH/USD oracle (oracles.cash). Only Chipnet markets trade in this build; mainnet
- * markets are view-only until a reviewed mainnet deployment exists.
+ * BCH/USD oracle (oracles.cash). A mainnet market trades only once its price record is
+ * deployed and MAINNET_WRITES_ENABLED is on.
  */
+function mainnetStatus(): Pick<StablecoinMarket, 'status' | 'statusReason'> {
+	if (!MAINNET_DEPLOYMENT.oracleCategory || !MAINNET_DEPLOYMENT.oracleOperatorPkh) {
+		return { status: 'view-only', statusReason: 'The mainnet price record has not been deployed yet.' };
+	}
+	if (!MAINNET_WRITES_ENABLED) return { status: 'view-only', statusReason: 'Mainnet trading is switched off in this build.' };
+	return { status: 'live' };
+}
+
 export const MARKETS: StablecoinMarket[] = [
 	{
 		id: 'pennypickerusd',
@@ -61,9 +102,10 @@ export const MARKETS: StablecoinMarket[] = [
 		name: 'ParyonUSD',
 		symbol: 'PUSD',
 		network: 'mainnet',
-		status: 'view-only',
-		category: '2469acc5afa4b10cb5b5c04afb89c3a3ffd61c5da9c01e26d00951cae2a02544',
-		summary: 'The BCH-collateralised USD stablecoin on Bitcoin Cash mainnet. It uses the same oracles.cash BCH/USD oracle as PennyPicker. Shown for reference: PennyPicker trades only on Chipnet for now.',
+		...mainnetStatus(),
+		category: PARYONUSD_CATEGORY,
+		maxOrderUnits: MAINNET_MAX_ORDER_UNITS,
+		summary: 'The BCH-collateralised USD stablecoin on Bitcoin Cash mainnet, priced by the same oracles.cash BCH/USD oracle as PennyPicker. Real money: orders are capped while the contracts are unreviewed.',
 		links: [
 			{ label: 'paryonusd.com', href: 'https://paryonusd.com' },
 			{ label: 'Cauldron', href: 'https://app.cauldron.quest/tokens' },

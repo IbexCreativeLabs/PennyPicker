@@ -34,6 +34,7 @@ import {
 } from '@bitauth/libauth';
 import orderArtifact from './contracts/PennyPickerOrder.json';
 import oracleArtifact from './contracts/PennyPickerOracle.json';
+import { NETWORKS, type NetworkId } from './network';
 import {
 	askFillUnitsDue,
 	assertOrderDelta,
@@ -83,6 +84,10 @@ export interface MarketConfig {
 	oracleOperatorPkh: string;
 	/** Price oracle whose signed messages update the state (default: oracles.cash BCH/USD). */
 	oraclePublicKey?: string;
+	/** Network the market lives on (default Chipnet). Only changes how addresses are encoded. */
+	network?: NetworkId;
+	/** Largest order the app will build, in stablecoin base units (cents); mainnet safety cap. */
+	maxOrderUnits?: bigint;
 }
 
 /** A spendable output with its outpoint, as returned by Electrum listunspent. */
@@ -141,14 +146,18 @@ export function addressToLockingBytecode(address: string): Uint8Array {
 	return decoded.bytecode;
 }
 
-export function lockingBytecodeToChipnetAddress(bytecode: Uint8Array, tokenSupport = false): string {
-	const result = lockingBytecodeToCashAddress({ prefix: CHIPNET_PREFIX, bytecode, tokenSupport });
+export function lockingBytecodeToAddress(bytecode: Uint8Array, network: NetworkId = 'chipnet', tokenSupport = false): string {
+	const result = lockingBytecodeToCashAddress({ prefix: NETWORKS[network].prefix, bytecode, tokenSupport });
 	if (typeof result === 'string') throw new Error(`Cannot encode address: ${result}`);
 	return result.address;
 }
 
-export function contractAddress(instance: ContractInstance, tokenSupport = true): string {
-	return lockingBytecodeToChipnetAddress(instance.lockingBytecode, tokenSupport);
+export function lockingBytecodeToChipnetAddress(bytecode: Uint8Array, tokenSupport = false): string {
+	return lockingBytecodeToAddress(bytecode, 'chipnet', tokenSupport);
+}
+
+export function contractAddress(instance: ContractInstance, tokenSupport = true, network: NetworkId = 'chipnet'): string {
+	return lockingBytecodeToAddress(instance.lockingBytecode, network, tokenSupport);
 }
 
 function utxoToOutput(utxo: ChainUtxo, lockingBytecode: Uint8Array): Output {
@@ -277,7 +286,7 @@ function fundWithWalletBch(
 		const next = candidates.shift();
 		if (!next) {
 			throw new Error(
-				`Insufficient BCH in the connected wallet: short by ${(-available).toString()} satoshis (including fee). Get Chipnet tBCH from a faucet.`
+				`Insufficient BCH in the connected wallet: short by ${(-available).toString()} satoshis (including fee).`
 			);
 		}
 		alreadyUsed.add(`${next.txid}:${next.vout}`);
@@ -501,7 +510,7 @@ export function describeOrder(market: MarketConfig, order: OrderTerms): Announce
 		deltaBps: order.deltaBps,
 		makerPkh: order.makerPkh,
 		lockingBytecodeHex: binToHex(instance.lockingBytecode),
-		address: contractAddress(instance)
+		address: contractAddress(instance, true, market.network ?? 'chipnet')
 	};
 }
 
@@ -569,6 +578,25 @@ export interface CreateOrderRequest {
 }
 
 /**
+ * Stablecoin value of an order in base units (cents): a bid's escrow, or what an
+ * ask's BCH is worth at the given limit price (price is units-per-BCH scaled by 1e8).
+ */
+export function orderValueUnits(side: OrderSide, amount: bigint, limitPrice: bigint): bigint {
+	return side === 'bid' ? amount : (amount * limitPrice) / 100_000_000_000_000n;
+}
+
+/** Enforce the market's per-order safety cap (mainnet), if any. */
+export function assertWithinOrderCap(market: MarketConfig, request: CreateOrderRequest, limitPrice: bigint): void {
+	if (market.maxOrderUnits === undefined) return;
+	const value = orderValueUnits(request.side, request.amount, limitPrice);
+	if (value > market.maxOrderUnits) {
+		throw new Error(
+			`Orders are limited to ${formatUnits(market.maxOrderUnits)} PUSD each on this market while the contracts are unreviewed (this one is worth ${formatUnits(value)} PUSD).`
+		);
+	}
+}
+
+/**
  * Create an order. Reads the oracle (so the order is indexed with the market),
  * locks the escrow in a fresh order contract and announces its terms.
  * Asks escrow BCH (plus a reserve); bids escrow PUSD (plus the reserve).
@@ -596,6 +624,7 @@ export function buildCreateOrder(
 	const orderLocking = hexToBin(order.lockingBytecodeHex);
 	const limit = (oracleRead.state.price * (10_000n + BigInt(request.deltaBps))) / 10_000n;
 	const summary: string[] = [];
+	assertWithinOrderCap(market, request, limit);
 
 	if (request.side === 'bid') {
 		if (request.amount <= 0n || request.amount > MAX_TOKEN_UNITS) throw new Error('Enter a positive PUSD amount.');

@@ -12,6 +12,7 @@
 	import {
 		buildCancelOrder,
 		buildCreateOrder,
+		orderValueUnits,
 		buildFillOrders,
 		formatSats,
 		formatUnits,
@@ -57,6 +58,14 @@
 		amountInput = next === 'ask' ? '0.01' : '5.00';
 	}
 
+	/** Mainnet safety cap (same rule the transaction builder enforces). */
+	const cap = $derived(pp.market?.maxOrderUnits ?? pp.selectedMarket.maxOrderUnits);
+	function assertCap(orderSide: OrderSide, amount: bigint, limit: bigint) {
+		if (cap === undefined) return;
+		const value = orderValueUnits(orderSide, amount, limit);
+		if (value > cap) throw new Error(`Orders are limited to ${formatUnits(cap)} PUSD each on this market (this one is worth ${formatUnits(value)} PUSD).`);
+	}
+
 	const maker = $derived.by(() => {
 		if (!price) return { error: 'No reference price yet.' };
 		try {
@@ -67,10 +76,12 @@
 			if (side === 'ask') {
 				const sats = parseBch(amountInput);
 				if (sats < MIN_TRADE_SATOSHIS) throw new Error(`Minimum ask is ${formatSats(MIN_TRADE_SATOSHIS)} BCH.`);
+				assertCap('ask', sats, limit);
 				return { delta, limit, sats, units: askFillUnitsDue(sats, price, delta) };
 			}
 			const units = parsePusd(amountInput);
 			if (units <= 0n) throw new Error('Enter a PUSD amount.');
+			assertCap('bid', units, limit);
 			return { delta, limit, units, sats: bidSatsForUnits(units, price, delta) };
 		} catch (cause) {
 			return { error: errorText(cause) };
@@ -175,12 +186,33 @@
 	<section class="pp-card mainnet">
 		<div class="pp-card-head">
 			<h1>BCH / {pp.selectedMarket.name}</h1>
-			<span class="pp-badge warn">Mainnet · view only</span>
+			<span class="pp-badge warn">{pp.networkInfo.label} · view only</span>
 		</div>
 		<p>{pp.selectedMarket.summary}</p>
-		<p class="small muted">
-			PennyPicker runs on BCH Chipnet while it is being tested, so no {pp.selectedMarket.name} orders can be placed here yet.
-			The order covenants are network-independent and use the same oracles.cash BCH/USD oracle as {pp.selectedMarket.name}; a reviewed mainnet deployment will open this market.
+		<div class="vo-stats">
+			<div>
+				<div class="pp-stat-label">Reference (oracles.cash)</div>
+				<div class="pp-stat-value">{pp.displayPrice ? formatPrice(pp.displayPrice) : '—'}</div>
+				<div class="small muted">{pp.feed ? `message #${pp.feed.messageSequence}` : pp.feedError || 'loading…'}</div>
+			</div>
+			{#if pp.selectedMarket.maxOrderUnits !== undefined}
+				<div>
+					<div class="pp-stat-label">Per-order cap</div>
+					<div class="pp-stat-value">{formatUnits(pp.selectedMarket.maxOrderUnits)} PUSD</div>
+					<div class="small muted">until the contracts are reviewed</div>
+				</div>
+			{/if}
+			{#if pp.wallet}
+				<div>
+					<div class="pp-stat-label">Your balance</div>
+					<div class="pp-stat-value">{formatUnits(pp.balances.pusdUnits)} PUSD</div>
+					<div class="small muted">{formatSats(pp.balances.bchSats)} BCH</div>
+				</div>
+			{/if}
+		</div>
+		<p class="pp-callout warn small">
+			<strong>Trading is not open yet.</strong> {pp.selectedMarket.statusReason ?? ''}
+			The order covenants are the same ones running on Chipnet and use the same oracles.cash BCH/USD oracle as {pp.selectedMarket.name}.
 		</p>
 		<div class="pp-row">
 			<button class="pp-btn pp-btn-primary" type="button" onclick={() => pp.selectMarket('pennypickerusd')}>Trade the Chipnet market (PennyPickerUSD)</button>
@@ -189,11 +221,14 @@
 		</div>
 	</section>
 	{:else}
+	{#if pp.networkInfo.realFunds}
+		<p class="pp-callout bad small" style="margin-bottom: 1rem"><strong>BCH mainnet: real money.</strong> The contracts have not been security reviewed. Only trade amounts you can afford to lose.</p>
+	{/if}
 	<!-- Market header -->
 	<section class="pp-card market">
 		<div class="pair">
 			<h1>BCH <span class="faint">/</span> PUSD</h1>
-			<span class="small muted">Oracle-relative BPS orderbook · Chipnet</span>
+			<span class="small muted">Oracle-relative BPS orderbook · {pp.networkInfo.label}</span>
 		</div>
 		<div class="m-stat">
 			<div class="pp-stat-label">Reference</div>
@@ -330,6 +365,9 @@
 						</div>
 						<p class="pp-hint">The limit moves with the reference: the order always trades at {pct(Math.abs(maker.delta))} {maker.delta >= 0 ? 'above' : 'below'} the latest published price.</p>
 					{/if}
+					{#if pp.networkInfo.realFunds}
+						<p class="pp-callout bad small">Real money on BCH mainnet. Contracts unreviewed{cap !== undefined ? `; orders capped at ${formatUnits(cap)} PUSD` : ''}.</p>
+					{/if}
 					<button type="button" class="pp-btn pp-btn-block {side === 'ask' ? 'pp-btn-ask' : 'pp-btn-bid'}" onclick={placeOrder} disabled={!pp.wallet || !pp.oracle || 'error' in maker}>
 						Review {side === 'ask' ? 'sell' : 'buy'} order
 					</button>
@@ -431,6 +469,7 @@
 <style>
 	.mainnet h1 { font-size: 1.4rem; margin: 0; }
 	.mainnet .pp-row { margin-top: 0.75rem; flex-wrap: wrap; }
+	.vo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.9rem; margin: 0.9rem 0; }
 	.market { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-bottom: 1rem; }
 	.pair { margin-right: auto; }
 	.pair h1 { font-size: 1.5rem; }

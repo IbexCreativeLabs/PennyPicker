@@ -7,6 +7,12 @@
 	import DemoNotice from '$lib/pennypicker/ui/DemoNotice.svelte';
 	import TelegramChat from '$lib/pennypicker/ui/TelegramChat.svelte';
 	import { MARKETS, COMMUNITY } from '$lib/pennypicker/deployment';
+	import { NETWORKS } from '$lib/pennypicker/network';
+
+	const shortAddress = (address: string) => {
+		const body = address.split(':')[1] ?? address;
+		return `${body.slice(0, 6)}…${body.slice(-4)}`;
+	};
 
 	const build = __PENNYPICKER_BUILD__;
 	let notice: DemoNotice | undefined = $state();
@@ -46,7 +52,7 @@
 			<div class="market">
 				<button class="market-btn" type="button" aria-haspopup="listbox" aria-expanded={marketOpen} onclick={() => (marketOpen = !marketOpen)}>
 					<span class="pair">BCH / {pp.selectedMarket.name}</span>
-					<span class="net {pp.selectedMarket.network}">{pp.selectedMarket.network === 'chipnet' ? 'Chipnet' : 'Mainnet'}</span>
+					<span class="net {pp.selectedMarket.network}">{pp.networkInfo.label}</span>
 					<span aria-hidden="true">▾</span>
 				</button>
 				{#if marketOpen}
@@ -55,7 +61,7 @@
 							<li>
 								<button type="button" role="option" aria-selected={m.id === pp.selectedMarketId} class:sel={m.id === pp.selectedMarketId} onclick={() => { pp.selectMarket(m.id); marketOpen = false; }}>
 									<span><strong>{m.name}</strong> <span class="muted small">{m.symbol}</span></span>
-									<span class="small muted">{m.network === 'chipnet' ? 'Chipnet · tradable' : 'Mainnet · view only'}</span>
+									<span class="small muted">{NETWORKS[m.network].label} · {m.status === 'live' ? 'tradable' : 'view only'}{NETWORKS[m.network].realFunds ? ' · real money' : ' · test coins'}</span>
 								</button>
 							</li>
 						{/each}
@@ -69,11 +75,11 @@
 				{/each}
 			</nav>
 			<div class="status">
-				{#if pp.marketError}<span class="pp-badge bad plain" title={pp.marketError}>Chipnet offline</span>{/if}
+				{#if pp.marketError}<span class="pp-badge bad plain" title={pp.marketError}>{pp.networkInfo.label} offline</span>{/if}
 				<button class="pp-badge warn plain demo" type="button" onclick={() => notice?.show()} title="About this experimental demo">Demo</button>
-				{#if pp.price}
-					<a href="/oracle" class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}" title="Reference price: oracles.cash BCH/USD">
-						{formatPrice(pp.price)}
+				{#if pp.displayPrice}
+					<a href="/oracle" class="pp-badge {pp.price && pp.oracleStale ? 'warn' : 'ok'}" title="Reference price: oracles.cash BCH/USD">
+						{formatPrice(pp.displayPrice)}
 					</a>
 				{:else if pp.market}
 					<span class="pp-badge warn">No oracle</span>
@@ -81,7 +87,7 @@
 					<span class="pp-badge warn">Market not set</span>
 				{/if}
 				{#if pp.walletStatus === 'connected' && pp.wallet}
-					<a href="/wallet" class="pp-badge ok" title={pp.wallet.address}>{pp.wallet.address.slice(8, 14)}…{pp.wallet.address.slice(-4)}</a>
+					<a href="/wallet" class="pp-badge ok" title={pp.wallet.address}>{shortAddress(pp.wallet.address)}</a>
 				{:else if pp.walletStatus === 'checking'}
 					<span class="pp-badge">Wallet…</span>
 				{:else}
@@ -92,7 +98,7 @@
 		{#if pp.marketError}
 			<div class="net-strip" role="alert">
 				<div class="bar small">
-					<span><strong>Chipnet connection problem.</strong> {pp.marketError}</span>
+					<span><strong>{pp.networkInfo.label} connection problem.</strong> {pp.marketError}</span>
 					<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Retrying…' : 'Retry'}</button>
 				</div>
 			</div>
@@ -125,7 +131,7 @@
 
 	<footer class="foot">
 		<div class="bar small muted">
-			<span>Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing. Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
+			<span>{#if pp.networkInfo.realFunds}Experimental prototype. {pp.selectedMarket.name} on BCH mainnet is real money; the contracts are unreviewed and orders are capped.{:else}Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing.{/if} Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
 			<span><a href="/about">About</a> · <a href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Source code</a></span>
 		</div>
 	</footer>

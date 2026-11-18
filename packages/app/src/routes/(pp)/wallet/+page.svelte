@@ -1,18 +1,17 @@
 <script lang="ts">
 	import { pp, explorerTx } from '$lib/pennypicker/ui/session.svelte';
-	import { CHIPNET_CHAIN } from '$lib/cashonize/walletconnect';
 	import {
 		buildPusdTransfer,
 		formatSats,
 		formatUnits,
-		lockingBytecodeToChipnetAddress,
+		lockingBytecodeToAddress,
 		p2pkhLockingBytecode,
 		type UnsignedExchangeTransaction
 	} from '$lib/pennypicker/exchange';
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
 	import { errorText, parsePusd } from '$lib/pennypicker/ui/wallet';
 
-	const tokenAddress = $derived(pp.wallet ? lockingBytecodeToChipnetAddress(p2pkhLockingBytecode(pp.wallet.pkh), true) : '');
+	const tokenAddress = $derived(pp.wallet ? lockingBytecodeToAddress(p2pkhLockingBytecode(pp.wallet.pkh), pp.wallet.network, true) : '');
 	let copied = $state(false);
 	async function copyAddress() {
 		try {
@@ -97,7 +96,7 @@
 			</div>
 			<dl class="pp-kv">
 				<dt>Wallet</dt><dd>Cashonize (WalletConnect v2)</dd>
-				<dt>Network</dt><dd>BCH Chipnet <span class="faint mono">{CHIPNET_CHAIN}</span></dd>
+				<dt>Network</dt><dd>BCH {pp.networkInfo.label} <span class="faint mono">{pp.networkInfo.walletConnectChain}</span>{#if pp.networkInfo.realFunds} <span class="pp-badge bad plain">real money</span>{/if}<br /><span class="small muted">Follows the market selected at the top. Switch to {pp.network === 'chipnet' ? 'ParyonUSD for mainnet' : 'PennyPickerUSD for Chipnet'}.</span></dd>
 				{#if pp.wallet}
 					<dt>Address</dt><dd class="mono">{pp.wallet.address}</dd>
 					<dt>Token address</dt>
@@ -118,7 +117,7 @@
 			</div>
 			{#if pp.pairingUri}
 				<div class="pairing">
-					<p class="small">Scan with Cashonize (set to Chipnet), or paste the URI into Cashonize's WalletConnect screen.</p>
+					<p class="small">Scan with Cashonize (set to {pp.networkInfo.label}), or paste the URI into Cashonize's WalletConnect screen.</p>
 					<qr-code contents={pp.pairingUri} aria-label="WalletConnect pairing QR code"></qr-code>
 					<div class="pair-copy">
 						<button class="pp-btn pp-btn-sm" type="button" onclick={copyPairingUri}>{uriCopied ? 'Copied ✓' : 'Copy pairing URI'}</button>
@@ -158,6 +157,7 @@
 	</div>
 
 	{#if pp.wallet && pp.utxosLoaded}
+		{#if pp.network === 'chipnet'}
 		<section class="pp-card" style="margin-top: 1rem">
 			<div class="pp-card-head">
 				<h2>Send PUSD <span class="pp-badge ok plain">On-chain</span></h2>
@@ -183,6 +183,7 @@
 				{#if sendError}<p class="pp-error">{sendError}</p>{/if}
 			{/if}
 		</section>
+		{/if}
 
 		<section class="pp-card" style="margin-top: 1rem">
 			<h2>Unspent outputs</h2>
@@ -210,7 +211,7 @@
 								</td>
 							</tr>
 						{:else}
-							<tr><td colspan="4" class="muted small">No UTXOs. Fund this address from a Chipnet faucet.</td></tr>
+							<tr><td colspan="4" class="muted small">No UTXOs.{pp.network === 'chipnet' ? ' Fund this address from a Chipnet faucet.' : ''}</td></tr>
 						{/each}
 					</tbody>
 				</table>

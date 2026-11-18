@@ -4,7 +4,11 @@
 	import { errorText } from '$lib/pennypicker/ui/wallet';
 	import { formatPrice, GP_BCH_USD_ORACLE, oracleStateFromMessage } from '$lib/pennypicker/contracts';
 	import { buildOracleGenesis, buildOracleRefresh, formatSats, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
-	import { getOracleState, oracleAddress, ORACLE_CATEGORY_STORAGE_KEY, ORACLE_OPERATOR_STORAGE_KEY, writeStorage } from '$lib/pennypicker/chain';
+	import { getOracleState, oracleAddress, ORACLE_CATEGORY_STORAGE_KEY, ORACLE_OPERATOR_STORAGE_KEY, storageKey, writeStorage } from '$lib/pennypicker/chain';
+	import { MAINNET_WRITES_ENABLED } from '$lib/pennypicker/deployment';
+
+	/** Mainnet records are created only once the build enables mainnet transactions. */
+	const canWrite = $derived(pp.network === 'chipnet' || MAINNET_WRITES_ENABLED);
 
 	let pending = $state<UnsignedExchangeTransaction | undefined>();
 	let error = $state('');
@@ -48,8 +52,8 @@
 
 	function broadcasted(txid: string, unsigned: UnsignedExchangeTransaction) {
 		if (unsigned.kind === 'oracle-genesis' && unsigned.createdCategory && pp.wallet) {
-			writeStorage(ORACLE_CATEGORY_STORAGE_KEY, unsigned.createdCategory);
-			writeStorage(ORACLE_OPERATOR_STORAGE_KEY, pp.wallet.pkh);
+			writeStorage(storageKey(pp.network, ORACLE_CATEGORY_STORAGE_KEY), unsigned.createdCategory);
+			writeStorage(storageKey(pp.network, ORACLE_OPERATOR_STORAGE_KEY), pp.wallet.pkh);
 			pp.reloadConfig();
 			notice = 'Oracle genesis broadcast. Its identifiers are saved in this browser; status updates once Electrum sees the transaction.';
 		}
@@ -63,7 +67,7 @@
 	<div class="pp-page-head">
 		<div>
 			<h1>Reference oracle</h1>
-			<p>Every order is priced against the live BCH/USD price signed by <a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a> (General Protocols). PUSD stands in for a USD stablecoin, so 1 PUSD is treated as 1 USD.</p>
+			<p>Every order is priced against the live BCH/USD price signed by <a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a> (General Protocols). {pp.network === 'chipnet' ? 'PUSD stands in for a USD stablecoin, so 1 PUSD is treated as 1 USD.' : `${pp.selectedMarket.name} is a USD stablecoin, so 1 PUSD is treated as 1 USD.`}</p>
 		</div>
 		<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
 	</div>
@@ -114,7 +118,7 @@
 				<dl class="pp-kv">
 					<dt>Created by</dt><dd class="mono">{operatorPkh ?? '—'} {pp.wallet && operatorPkh === pp.wallet.pkh ? '(your wallet)' : ''}</dd>
 					<dt>Oracle category</dt><dd class="mono">{pp.config.oracleCategory ?? '—'}</dd>
-					{#if operatorPkh}<dt>Contract</dt><dd class="mono">{oracleAddress(operatorPkh)}</dd>{/if}
+					{#if operatorPkh}<dt>Contract</dt><dd class="mono">{oracleAddress(operatorPkh, undefined, pp.network)}</dd>{/if}
 					{#if oracle}<dt>State UTXO</dt><dd class="mono"><a href={explorerTx(oracle.txid)} target="_blank" rel="noopener">{oracle.txid}:{oracle.vout} ↗</a></dd>{/if}
 				</dl>
 			</details>
@@ -128,7 +132,11 @@
 				<li><strong>No operator.</strong> Anyone may submit a newer signed message. No wallet can type in a price.</li>
 				<li><strong>Why an on-chain record at all.</strong> Orders rest in the book for hours or days. If a taker could attach <em>any</em> signed message, they would pick an old one that suits them. Here each update must be newer than the last and spends the previous record, so a superseded price can never be used again.</li>
 				<li><strong>Freshness.</strong> Orders and fills bring the record up to date in the same transaction. The chain cannot see the clock, so a taker can still choose among messages published since the last update (a window of minutes while the book is active).</li>
-				<li><strong>PUSD = USD for pricing.</strong> PUSD here is an experimental test token with no real backing; it stands in for the stablecoin the design targets.</li>
+				{#if pp.network === 'chipnet'}
+					<li><strong>PUSD = USD for pricing.</strong> PennyPickerUSD is an experimental test token with no real backing; it stands in for the stablecoin the design targets.</li>
+				{:else}
+					<li><strong>PUSD = USD for pricing.</strong> {pp.selectedMarket.name} is a USD stablecoin, so the BCH/USD price is used directly as PUSD per BCH.</li>
+				{/if}
 			</ul>
 		</section>
 	</div>
@@ -140,7 +148,10 @@
 	{#if error}<p class="pp-callout bad">{error}</p>{/if}
 
 	<section class="pp-card" style="margin-top: 1rem">
-		{#if !pp.wallet}
+		{#if !canWrite}
+			<h2>{pp.networkInfo.label} price record</h2>
+			<p class="muted">{exists ? 'The on-chain record exists, but this build does not send mainnet transactions.' : `The ${pp.selectedMarket.name} market has no on-chain price record yet. Creating it is a real-money mainnet transaction and will be done by the project owner when mainnet trading opens.`} The live oracles.cash price above is what it will use.</p>
+		{:else if !pp.wallet}
 			<h2>Update the on-chain price</h2>
 			<p class="muted">Any connected wallet can push the latest signed oracles.cash price on-chain (it pays only the network fee). <a href="/wallet">Wallet →</a></p>
 		{:else if !exists && !pp.config.oracleCategory}

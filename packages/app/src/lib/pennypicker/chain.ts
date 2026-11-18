@@ -1,15 +1,16 @@
 /**
- * Chipnet I/O for the PennyPicker exchange: market configuration, oracle state,
- * order discovery and broadcasting. Reads use the app's Electrum Chipnet
- * provider; broadcasting is only ever called from an explicit user action.
+ * Chain I/O for the PennyPicker exchange (Chipnet and mainnet): market
+ * configuration, oracle state, order discovery and broadcasting. The Electrum
+ * provider is picked from the address prefix; broadcasting is only ever called
+ * from an explicit user action, and refuses mainnet unless MAINNET_WRITES_ENABLED.
  */
 import { binToHex, decodeTransaction, hexToBin, secp256k1, sha256, type TransactionCommon } from '@bitauth/libauth';
-import { TestNetWatchWallet } from '@unspent/wallet';
+import { TestNetWatchWallet, WatchWallet } from '@unspent/wallet';
 import { decodeOracleCommitment, GP_BCH_USD_ORACLE, oracleContract, parseOracleMessage, type OracleMessage, type OracleState } from './contracts';
 import {
 	contractAddress,
 	describeOrder,
-	lockingBytecodeToChipnetAddress,
+	lockingBytecodeToAddress,
 	findOracleUtxo,
 	parseAnnouncement,
 	toOpenOrder,
@@ -20,12 +21,18 @@ import {
 	type OracleUtxo
 } from './exchange';
 import { PUSD_CATEGORY_STORAGE_KEY } from './pusdGenesis';
-import { CHIPNET_DEPLOYMENT } from './deployment';
+import { DEPLOYMENTS, MAINNET_MAX_ORDER_UNITS, MAINNET_WRITES_ENABLED } from './deployment';
+import { NETWORKS, networkOfAddress, type NetworkId } from './network';
 import { resolveIdentityHead, type IdentityHead } from './identity';
 
 export const ORACLE_CATEGORY_STORAGE_KEY = 'pennypicker:chipnet:oracle-category';
 export const ORACLE_OPERATOR_STORAGE_KEY = 'pennypicker:chipnet:oracle-operator-pkh';
 export const TX_HISTORY_STORAGE_KEY = 'pennypicker:chipnet:tx-history';
+
+/** Per-network storage key (Chipnet keeps its historical key names). */
+export function storageKey(network: NetworkId, chipnetKey: string): string {
+	return network === 'chipnet' ? chipnetKey : chipnetKey.replace(NETWORKS.chipnet.storagePrefix, NETWORKS[network].storagePrefix);
+}
 /** Most recent oracle-address transactions scanned for order announcements. */
 export const DISCOVERY_HISTORY_LIMIT = 300;
 
@@ -55,20 +62,26 @@ export type ConfigSource = 'env' | 'local' | 'default' | 'discovered' | 'missing
  * over values stored locally after this browser ran a genesis, then over the
  * committed public defaults in deployment.ts.
  */
-export function loadMarketConfig(): Partial<MarketConfig> & { source: Record<string, ConfigSource> } {
+export function loadMarketConfig(network: NetworkId = 'chipnet'): Partial<MarketConfig> & { source: Record<string, ConfigSource> } {
 	const env = import.meta.env ?? {};
-	const pick = (envKey: string, storageKey: string, fallback: string | undefined, pattern: RegExp) => {
-		const fromEnv = String(env[envKey] ?? '').trim().toLowerCase();
+	const deployment = DEPLOYMENTS[network];
+	// Chipnet keeps the original variable names; mainnet uses VITE_PENNYPICKER_MAINNET_*.
+	const envName = (name: string) => (network === 'chipnet' ? `VITE_PENNYPICKER_${name}` : `VITE_PENNYPICKER_MAINNET_${name}`);
+	const pick = (name: string, key: string | undefined, fallback: string | undefined, pattern: RegExp) => {
+		const fromEnv = String(env[envName(name)] ?? '').trim().toLowerCase();
 		if (pattern.test(fromEnv)) return { value: fromEnv, source: 'env' as const };
-		const local = readStorage(storageKey);
+		const local = key ? readStorage(storageKey(network, key)) : '';
 		if (pattern.test(local)) return { value: local, source: 'local' as const };
 		if (fallback && pattern.test(fallback)) return { value: fallback, source: 'default' as const };
 		return { value: undefined, source: 'missing' as const };
 	};
-	const pusd = pick('VITE_PENNYPICKER_PUSD_CATEGORY', PUSD_CATEGORY_STORAGE_KEY, CHIPNET_DEPLOYMENT.pusdCategory, hex32);
-	const oracle = pick('VITE_PENNYPICKER_ORACLE_CATEGORY', ORACLE_CATEGORY_STORAGE_KEY, CHIPNET_DEPLOYMENT.oracleCategory, hex32);
-	const operator = pick('VITE_PENNYPICKER_ORACLE_OPERATOR_PKH', ORACLE_OPERATOR_STORAGE_KEY, CHIPNET_DEPLOYMENT.oracleOperatorPkh, hex20);
+	// The mainnet stablecoin is fixed (ParyonUSD): no browser override.
+	const pusd = pick('PUSD_CATEGORY', network === 'chipnet' ? PUSD_CATEGORY_STORAGE_KEY : undefined, deployment.pusdCategory, hex32);
+	const oracle = pick('ORACLE_CATEGORY', ORACLE_CATEGORY_STORAGE_KEY, deployment.oracleCategory, hex32);
+	const operator = pick('ORACLE_OPERATOR_PKH', ORACLE_OPERATOR_STORAGE_KEY, deployment.oracleOperatorPkh, hex20);
 	return {
+		network,
+		...(network === 'mainnet' ? { maxOrderUnits: MAINNET_MAX_ORDER_UNITS } : {}),
 		pusdCategory: pusd.value,
 		oracleCategory: oracle.value,
 		oracleOperatorPkh: operator.value,
@@ -83,9 +96,9 @@ export function loadMarketConfig(): Partial<MarketConfig> & { source: Record<str
  * address (i.e. the operator created it). Returns undefined when there is no
  * oracle yet, or when the result is ambiguous.
  */
-export async function discoverOracleCategory(operatorPkh: string): Promise<string | undefined> {
-	const address = oracleAddress(operatorPkh);
-	const provider = await chipnetProvider(address);
+export async function discoverOracleCategory(operatorPkh: string, network: NetworkId = 'chipnet'): Promise<string | undefined> {
+	const address = oracleAddress(operatorPkh, undefined, network);
+	const provider = await providerFor(address);
 	const candidates = (await provider.getUtxos(address))
 		.map(toChainUtxo)
 		.filter((utxo) => utxo.token?.nft?.capability === 'mutable')
@@ -117,8 +130,12 @@ export function isCompleteMarket(config: Partial<MarketConfig>): config is Marke
 	return !!config.pusdCategory && !!config.oracleCategory && !!config.oracleOperatorPkh;
 }
 
-export function oracleAddress(operatorPkh: string, oraclePublicKey?: string): string {
-	return contractAddress(oracleContract({ operatorPkh, oraclePublicKey }));
+export function oracleAddress(operatorPkh: string, oraclePublicKey?: string, network: NetworkId = 'chipnet'): string {
+	return contractAddress(oracleContract({ operatorPkh, oraclePublicKey }), true, network);
+}
+
+export function marketOracleAddress(market: MarketConfig): string {
+	return oracleAddress(market.oracleOperatorPkh, market.oraclePublicKey, market.network ?? 'chipnet');
 }
 
 /**
@@ -142,33 +159,45 @@ export async function fetchLatestOracleMessage(publicKey: string = GP_BCH_USD_OR
 }
 
 type Provider = Awaited<ReturnType<typeof TestNetWatchWallet.watchOnly>>['provider'];
-let providerPromise: Promise<Provider> | undefined;
+const providers: Partial<Record<NetworkId, Promise<Provider>>> = {};
 
-/** Shared Electrum Chipnet provider (via the wallet package's testnet network). */
-export function chipnetProvider(anyAddress: string): Promise<Provider> {
-	providerPromise ??= TestNetWatchWallet.watchOnly(anyAddress)
+/** Network of an address, or an error for anything that is not a Chipnet/mainnet CashAddress. */
+export function requireNetwork(address: string): NetworkId {
+	const network = networkOfAddress(address);
+	if (!network) throw new Error(`Not a BCH Chipnet or mainnet address: ${address.slice(0, 24)}…`);
+	return network;
+}
+
+/** Shared Electrum provider for the address's network (one connection per network). */
+export function providerFor(anyAddress: string): Promise<Provider> {
+	const network = requireNetwork(anyAddress);
+	const Watch = network === 'mainnet' ? WatchWallet : TestNetWatchWallet;
+	providers[network] ??= Watch.watchOnly(anyAddress)
 		.then((wallet) => wallet.provider)
 		.catch((cause) => {
 			// Do not cache a failed connection; the next refresh retries.
-			providerPromise = undefined;
+			delete providers[network];
 			throw cause;
 		});
-	return providerPromise;
+	return providers[network]!;
 }
 
+/** @deprecated use providerFor; kept for Chipnet-only scripts. */
+export const chipnetProvider = providerFor;
+
 export async function getAddressUtxos(address: string): Promise<ChainUtxo[]> {
-	const provider = await chipnetProvider(address);
+	const provider = await providerFor(address);
 	return (await provider.getUtxos(address)).map(toChainUtxo);
 }
 
 /** Number of transactions Electrum has ever indexed for this address (confirmed + mempool). */
 export async function getAddressHistoryCount(address: string): Promise<number> {
-	const provider = await chipnetProvider(address);
+	const provider = await providerFor(address);
 	return (await provider.getHistory(address)).length;
 }
 
 export async function getOracleState(market: MarketConfig): Promise<OracleUtxo | undefined> {
-	return findOracleUtxo(await getAddressUtxos(oracleAddress(market.oracleOperatorPkh, market.oraclePublicKey)), market);
+	return findOracleUtxo(await getAddressUtxos(marketOracleAddress(market)), market);
 }
 
 export interface ActivityEvent {
@@ -201,8 +230,8 @@ export interface DiscoveryResult {
  * different script), then each address is queried for its live UTXO.
  */
 export async function discoverOrders(market: MarketConfig): Promise<DiscoveryResult> {
-	const address = oracleAddress(market.oracleOperatorPkh, market.oraclePublicKey);
-	const provider = await chipnetProvider(address);
+	const address = marketOracleAddress(market);
+	const provider = await providerFor(address);
 	const history = await provider.getHistory(address);
 	const recent = history.slice(-DISCOVERY_HISTORY_LIMIT);
 	const decodedTxs: { entry: ActivityEvent; tx: TransactionCommon }[] = [];
@@ -297,8 +326,16 @@ async function inBatches<T>(items: T[], size: number, task: (item: T) => Promise
 
 /** Broadcast a wallet-signed transaction. Call only from an explicit user action. */
 export async function broadcastSignedTransaction(anyAddress: string, signedHex: string): Promise<string> {
-	const provider = await chipnetProvider(anyAddress);
+	assertBroadcastAllowed(requireNetwork(anyAddress));
+	const provider = await providerFor(anyAddress);
 	return provider.sendRawTransaction(signedHex, false);
+}
+
+/** Safety net behind every UI path: no mainnet broadcast unless the build enables it. */
+export function assertBroadcastAllowed(network: NetworkId, writesEnabled = MAINNET_WRITES_ENABLED): void {
+	if (network === 'mainnet' && !writesEnabled) {
+		throw new Error('Mainnet transactions are switched off in this build. Nothing was broadcast.');
+	}
 }
 
 export interface TxRecord {
@@ -309,22 +346,22 @@ export interface TxRecord {
 	status: 'broadcast' | 'confirmed' | 'unknown';
 }
 
-export function loadTxHistory(): TxRecord[] {
+export function loadTxHistory(network: NetworkId = 'chipnet'): TxRecord[] {
 	try {
-		const parsed = JSON.parse(globalThis.localStorage?.getItem(TX_HISTORY_STORAGE_KEY) ?? '[]');
+		const parsed = JSON.parse(globalThis.localStorage?.getItem(storageKey(network, TX_HISTORY_STORAGE_KEY)) ?? '[]');
 		return Array.isArray(parsed) ? (parsed as TxRecord[]) : [];
 	} catch {
 		return [];
 	}
 }
 
-export function saveTxHistory(records: TxRecord[]): void {
-	writeStorage(TX_HISTORY_STORAGE_KEY, JSON.stringify(records.slice(0, 50)));
+export function saveTxHistory(records: TxRecord[], network: NetworkId = 'chipnet'): void {
+	writeStorage(storageKey(network, TX_HISTORY_STORAGE_KEY), JSON.stringify(records.slice(0, 50)));
 }
 
 /** Confirmation height of a transaction (0/negative = mempool, undefined = unknown). */
 export async function transactionHeight(anyAddress: string, txid: string): Promise<number | undefined> {
-	const provider = await chipnetProvider(anyAddress);
+	const provider = await providerFor(anyAddress);
 	try {
 		const verbose = await provider.getRawTransaction(txid, true);
 		return (verbose.confirmations ?? 0) > 0 ? verbose.confirmations : 0;
@@ -333,9 +370,10 @@ export async function transactionHeight(anyAddress: string, txid: string): Promi
 	}
 }
 
-/** Resolve a token category's current identity output (BCMR authchain head) from Chipnet. */
+/** Resolve a token category's current identity output (BCMR authchain head) on the address's network. */
 export async function getIdentityHead(category: string, anyAddress: string): Promise<IdentityHead> {
-	const provider = await chipnetProvider(anyAddress);
+	const network = requireNetwork(anyAddress);
+	const provider = await providerFor(anyAddress);
 	const cache = new Map<string, TransactionCommon>();
 	return resolveIdentityHead(category, {
 		async getTransaction(txid) {
@@ -347,10 +385,10 @@ export async function getIdentityHead(category: string, anyAddress: string): Pro
 			return tx;
 		},
 		async getHistoryTxids(lockingBytecode) {
-			return (await provider.getHistory(lockingBytecodeToChipnetAddress(lockingBytecode))).map((entry) => entry.tx_hash);
+			return (await provider.getHistory(lockingBytecodeToAddress(lockingBytecode, network))).map((entry) => entry.tx_hash);
 		},
 		async isUnspent(txid, lockingBytecode) {
-			const utxos = await provider.getUtxos(lockingBytecodeToChipnetAddress(lockingBytecode));
+			const utxos = await provider.getUtxos(lockingBytecodeToAddress(lockingBytecode, network));
 			return utxos.some((utxo) => utxo.txid === txid && utxo.vout === 0);
 		}
 	});

@@ -75,8 +75,29 @@ user's own wallet.
 
 1. Open the production URL. The Exchange loads directly at `/` and shows the experimental-demo notice.
 2. The header shows the stablecoin selector and the **Demo** badge. `/admin` asks for the admin password.
-3. **Wallet → Connect Cashonize**: pair Cashonize (set to Chipnet) and confirm the address appears.
+3. **Wallet → Connect Cashonize**: pair Cashonize (set to Chipnet for PennyPickerUSD, or mainnet for ParyonUSD) and confirm the address appears.
 4. Old `/penny-picker/...` links redirect (`static/_redirects`).
+
+## 5. Going live on mainnet (ParyonUSD)
+
+The mainnet market uses the same contracts as Chipnet, with the real ParyonUSD token
+(`2469acc5…2544`). This build ships it **view only**: `MAINNET_WRITES_ENABLED = false` in
+`packages/app/src/lib/pennypicker/deployment.ts` stops every mainnet signature and broadcast,
+in the UI and in `chain.ts`. Each step below spends real BCH and needs the project owner's approval.
+
+1. **Operator wallet.** Use a dedicated mainnet Cashonize wallet holding a few thousand sats. It needs a
+   BCH-only coin at output index 0 (any payment *to* the wallet lands there).
+2. **Enable writes in a local build only.** Set `MAINNET_WRITES_ENABLED = true` and run `pnpm --filter app dev`.
+3. **Create the price record.** Select ParyonUSD, connect the operator wallet, open **Oracle → Create the
+   oracle**, review, sign and broadcast. This costs about 1,000 sats kept in the record plus the fee.
+4. **Commit the identifiers.** Copy the new oracle category and the operator key hash (Oracle → Identity) into
+   `MAINNET_DEPLOYMENT` in `deployment.ts`.
+5. **Choose the cap.** `MAINNET_MAX_ORDER_UNITS` (default 2,500 = 25.00 PUSD per order) applies to every new order.
+6. **Ship it.** Commit with `MAINNET_WRITES_ENABLED = true` and push. The ParyonUSD market turns *live*.
+7. **Smoke test with small amounts.** One ask, one bid, one fill and one cancel; record the txids in `PROJECT_STATUS.md`.
+
+`pnpm dlx tsx scripts/pennypicker-mainnet-check.ts` (from `packages/app`) runs a read-only readiness check
+against mainnet: it connects, finds ParyonUSD, and verifies the live oracle message.
 
 ## Local equivalents
 

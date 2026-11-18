@@ -2,8 +2,9 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { binToHex, stringify } from '@bitauth/libauth';
 	import { requestCashonizeTransactionSignature } from '$lib/cashonize/walletconnect';
-	import { lockingBytecodeToChipnetAddress, verifySignedMatchesUnsigned, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
-	import { broadcastSignedTransaction, transactionHeight } from '$lib/pennypicker/chain';
+	import { lockingBytecodeToAddress, verifySignedMatchesUnsigned, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
+	import { assertBroadcastAllowed, broadcastSignedTransaction, transactionHeight } from '$lib/pennypicker/chain';
+	import { NETWORKS } from '$lib/pennypicker/network';
 	import { formatBchFromSatoshis } from '$lib/pennypicker/market';
 	import { explorerTx } from './session.svelte';
 	import { describeBroadcastError, describeSignError } from './txErrors';
@@ -17,6 +18,7 @@
 		onDismiss: () => void;
 	}
 	let { unsigned, wallet, title, onBroadcast, onDismiss }: Props = $props();
+	const net = $derived(NETWORKS[wallet.network]);
 
 	type Stage = 'preview' | 'signing' | 'signed' | 'broadcasting' | 'broadcast' | 'confirmed';
 	let stage = $state<Stage>('preview');
@@ -48,7 +50,7 @@
 			let to = 'OP_RETURN (order announcement)';
 			if (output.lockingBytecode[0] !== 0x6a) {
 				try {
-					to = lockingBytecodeToChipnetAddress(output.lockingBytecode, !!output.token);
+					to = lockingBytecodeToAddress(output.lockingBytecode, wallet.network, !!output.token);
 				} catch {
 					to = binToHex(output.lockingBytecode);
 				}
@@ -84,18 +86,21 @@
 		error = '';
 		slowTimer = setTimeout(() => (slow = true), 45_000);
 		try {
+			// Do not even ask the wallet to sign what this build may not broadcast.
+			assertBroadcastAllowed(wallet.network);
 			const result = await requestCashonizeTransactionSignature(
 				wallet.client,
 				wallet.session,
 				unsigned.unsignedHex,
 				JSON.parse(stringify(unsigned.sourceOutputs)),
-				`PennyPicker: ${unsigned.summary[0] ?? unsigned.kind}`
+				`PennyPicker: ${unsigned.summary[0] ?? unsigned.kind}`,
+				net.walletConnectChain
 			);
 			txid = verifySignedMatchesUnsigned(unsigned, result.signedTransaction, result.signedTransactionHash);
 			signedHex = result.signedTransaction;
 			stage = 'signed';
 		} catch (cause) {
-			error = describeSignError(cause);
+			error = describeSignError(cause, net.label);
 			stage = 'preview';
 		} finally {
 			clearTimeout(slowTimer);
@@ -108,13 +113,13 @@
 		error = '';
 		try {
 			const accepted = await broadcastSignedTransaction(wallet.address, signedHex);
-			if (accepted !== txid) throw new Error('The Chipnet provider returned a different transaction id.');
+			if (accepted !== txid) throw new Error(`The ${net.label} server returned a different transaction id.`);
 			stage = 'broadcast';
 			onBroadcast(txid, unsigned);
 			poll = setInterval(checkConfirmation, 20_000);
 		} catch (cause) {
-			const explained = describeBroadcastError(cause);
-			if (explained.startsWith('Chipnet already has')) {
+			const explained = describeBroadcastError(cause, net.label);
+			if (explained.startsWith(`${net.label} already has`)) {
 				stage = 'broadcast';
 				onBroadcast(txid, unsigned);
 				poll = setInterval(checkConfirmation, 20_000);
@@ -162,6 +167,12 @@
 		{#each unsigned.summary as line}<li>{line}</li>{/each}
 	</ul>
 
+	{#if net.realFunds}
+		<p class="pp-callout bad small">
+			<strong>Real money on BCH mainnet.</strong> These contracts have not been security reviewed; only trade amounts you can afford to lose.
+		</p>
+	{/if}
+
 	<details class="pp-details">
 		<summary>Transaction details · {inputs.length} inputs · {rows.length} outputs · fee {unsigned.feeSatoshis.toString()} sats</summary>
 		<div class="pp-table-wrap">
@@ -195,20 +206,20 @@
 				</button>
 				<button type="button" class="pp-btn pp-btn-ghost" onclick={onDismiss} disabled={stage === 'signing'}>Discard</button>
 			</div>
-			{#if slow}<p class="pp-callout warn small" style="margin-top: 0.6rem">Still waiting. Open Cashonize on the device you paired, make sure it is on Chipnet, and look for the signing request. If the session ended, reconnect on the Wallet page.</p>{/if}
+			{#if slow}<p class="pp-callout warn small" style="margin-top: 0.6rem">Still waiting. Open Cashonize on the device you paired, make sure it is on {net.label}, and look for the signing request. If the session ended, reconnect on the Wallet page.</p>{/if}
 		{:else if stage === 'signed' || stage === 'broadcasting'}
 			<p class="pp-callout ok small">Signed and checked: the signed transaction spends and creates exactly what was previewed. <strong>Not broadcast yet.</strong></p>
 			<p class="small mono">{txid}</p>
 			<div class="pp-row">
 				<button type="button" class="pp-btn pp-btn-danger" onclick={broadcast} disabled={stage === 'broadcasting'}>
-					{stage === 'broadcasting' ? 'Broadcasting…' : 'Broadcast to Chipnet'}
+					{stage === 'broadcasting' ? 'Broadcasting…' : `Broadcast to ${net.label}`}
 				</button>
 				<button type="button" class="pp-btn pp-btn-ghost" onclick={onDismiss} disabled={stage === 'broadcasting'}>Discard signed transaction</button>
 			</div>
 		{:else}
 			<p class="pp-callout {stage === 'confirmed' ? 'ok' : ''} small">
-				{stage === 'confirmed' ? `Confirmed (${confirmations} confirmation${confirmations === 1 ? '' : 's'}).` : 'Broadcast accepted. Waiting for the next Chipnet block (checked every 20 s)…'}
-				<a href={explorerTx(txid)} target="_blank" rel="noopener">View on explorer ↗</a>
+				{stage === 'confirmed' ? `Confirmed (${confirmations} confirmation${confirmations === 1 ? '' : 's'}).` : `Broadcast accepted. Waiting for the next ${net.label} block (checked every 20 s)…`}
+				<a href={explorerTx(txid, wallet.network)} target="_blank" rel="noopener">View on explorer ↗</a>
 			</p>
 			<p class="small mono">{txid}</p>
 			<div class="pp-row">

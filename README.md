@@ -41,9 +41,14 @@ Status, live Chipnet transactions and design notes: [`PROJECT_STATUS.md`](PROJEC
 
 ## Status
 
-Experimental hackathon prototype. **Chipnet only**: PennyPickerUSD is a fixed-supply test token priced as 1 USD with
-no backing. ParyonUSD (mainnet) is shown view-only. The contracts have not been security reviewed. A reviewed mainnet
-deployment is the goal.
+Experimental hackathon prototype. Two markets:
+
+- **PennyPickerUSD on Chipnet, tradable.** A fixed-supply test token priced as 1 USD, with no backing.
+- **ParyonUSD on BCH mainnet, code-ready, view only.** The app supports mainnet end to end: addresses, Cashonize
+  chain and Electrum. Orders are capped at 25 PUSD while the contracts are unreviewed. Trading opens once the mainnet
+  price record is deployed (see `DEPLOYMENT.md`).
+
+The contracts have not been security reviewed.
 
 Real two-wallet trades, fills in both directions, cancels and oracle updates have been signed in Cashonize and
 confirmed on Chipnet; the transaction IDs are listed in `PROJECT_STATUS.md`.
@@ -63,6 +68,7 @@ pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # covenant checks, incl. a 
 pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # transaction builders, signed and VM-verified
 pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts
 pnpm dlx tsx scripts/pennypicker-identity.test.ts
+pnpm dlx tsx scripts/pennypicker-mainnet-check.ts      # read-only: reaches mainnet, finds ParyonUSD
 ```
 
 ## Credits

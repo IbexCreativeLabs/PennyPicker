@@ -1,6 +1,6 @@
 /**
- * Plain-language explanations for WalletConnect signing failures and Chipnet
- * broadcast rejections. Pure functions, so they can be unit tested.
+ * Plain-language explanations for WalletConnect signing failures and broadcast
+ * rejections (Chipnet or mainnet). Pure functions, so they can be unit tested.
  */
 
 const text = (cause: unknown) => {
@@ -9,7 +9,7 @@ const text = (cause: unknown) => {
 	return String(cause);
 };
 
-export function describeSignError(cause: unknown): string {
+export function describeSignError(cause: unknown, networkLabel = 'Chipnet'): string {
 	const code = (cause as { code?: number })?.code;
 	const message = text(cause);
 	if (code === 5000 || code === 4001 || /user rejected|user denied|rejected|cancel/i.test(message)) {
@@ -19,16 +19,18 @@ export function describeSignError(cause: unknown): string {
 		return 'The WalletConnect session has ended. Reconnect Cashonize on the Wallet page, then review the transaction again.';
 	}
 	if (/timeout|timed out/i.test(message)) {
-		return 'Cashonize did not answer in time. Open Cashonize (Chipnet), check for a pending request, and try again.';
+		return `Cashonize did not answer in time. Open Cashonize (${networkLabel}), check for a pending request, and try again.`;
 	}
+	if (/switched off in this build/i.test(message)) return message;
 	if (/does not match|different|preview/i.test(message)) {
 		return `Signed transaction rejected by PennyPicker: ${message} It was not broadcast.`;
 	}
 	return `Cashonize could not sign: ${message}`;
 }
 
-export function describeBroadcastError(cause: unknown): string {
+export function describeBroadcastError(cause: unknown, networkLabel = 'Chipnet'): string {
 	const message = text(cause);
+	if (/switched off in this build/i.test(message)) return message;
 	if (/missing ?inputs|missingorspent|inputs-missing|txn-mempool-conflict|conflict/i.test(message)) {
 		return 'An input was already spent, usually because someone else used the oracle or this order first. Discard this transaction, refresh, and build it again. Nothing was broadcast.';
 	}
@@ -39,10 +41,10 @@ export function describeBroadcastError(cause: unknown): string {
 		return `The covenant rejected this transaction (${message}). Nothing was broadcast. Please report it in the community chat with the transaction details.`;
 	}
 	if (/already (in|known)|txn-already/i.test(message)) {
-		return 'Chipnet already has this transaction.';
+		return `${networkLabel} already has this transaction.`;
 	}
 	if (/unreachable|connect|socket|network|timeout/i.test(message)) {
-		return `Could not reach the Chipnet server (${message}). The signed transaction is kept here; try Broadcast again.`;
+		return `Could not reach the ${networkLabel} server (${message}). The signed transaction is kept here; try Broadcast again.`;
 	}
-	return `Chipnet rejected the transaction: ${message}`;
+	return `${networkLabel} rejected the transaction: ${message}`;
 }

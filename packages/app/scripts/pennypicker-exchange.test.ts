@@ -31,7 +31,9 @@ import {
 	buildPusdGenesis,
 	describeOrder,
 	findOracleUtxo,
+	lockingBytecodeToAddress,
 	lockingBytecodeToChipnetAddress,
+	orderValueUnits,
 	orderParams,
 	p2pkhLockingBytecode,
 	parseAnnouncement,
@@ -42,6 +44,10 @@ import {
 } from '../src/lib/pennypicker/exchange';
 
 import { describeBroadcastError, describeSignError } from '../src/lib/pennypicker/ui/txErrors';
+import { makerPkhFromAddress } from '../src/lib/pennypicker/orderCommitment';
+import { networkOfAddress } from '../src/lib/pennypicker/network';
+import { assertBroadcastAllowed, loadMarketConfig } from '../src/lib/pennypicker/chain';
+import { MAINNET_MAX_ORDER_UNITS, MAINNET_WRITES_ENABLED, MARKETS, PARYONUSD_CATEGORY } from '../src/lib/pennypicker/deployment';
 
 const vm = createVirtualMachineBch2025(false);
 let failures = 0;
@@ -315,6 +321,67 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	const after = findOracleUtxo(outputsTo(fv.txid, fv.tx, oracleLocking), market)!;
 	check('bundled refresh moved the reference to 600.00', after.state.price === 600n * 100_000_000n && after.state.sequence === msg.messageSequence);
 	check('the fill settled at the refreshed price (0.005 BCH = 3.00 PUSD)', fv.tx.outputs[1]!.token?.amount === 300n);
+}
+// 13. Mainnet: same covenants with ParyonUSD, mainnet addresses, the per-order cap and the broadcast switch.
+{
+	const mainKey = (byte: string) => {
+		const k = key(byte);
+		return { ...k, address: lockingBytecodeToAddress(k.locking, 'mainnet') };
+	};
+	const mOperator = mainKey('21');
+	const mMaker = mainKey('22');
+	const mTaker = mainKey('23');
+	check('mainnet address uses the bitcoincash: prefix', mMaker.address.startsWith('bitcoincash:') && networkOfAddress(mMaker.address) === 'mainnet');
+	check('mainnet maker hash extracted', makerPkhFromAddress(mMaker.address, 'mainnet') === mMaker.pkh);
+	let wrongNet = false;
+	try { makerPkhFromAddress(maker.address, 'mainnet'); } catch { wrongNet = true; }
+	check('a Chipnet address is refused as a mainnet maker', wrongNet);
+	let wrongNet2 = false;
+	try { makerPkhFromAddress(mMaker.address, 'chipnet'); } catch { wrongNet2 = true; }
+	check('a mainnet address is refused as a Chipnet maker', wrongNet2);
+
+	const cfg = loadMarketConfig('mainnet');
+	check('mainnet config: ParyonUSD category, capped, network set', cfg.pusdCategory === PARYONUSD_CATEGORY && cfg.maxOrderUnits === MAINNET_MAX_ORDER_UNITS && cfg.network === 'mainnet');
+	check('mainnet config has no oracle until it is deployed', !cfg.oracleCategory);
+	const paryon = MARKETS.find((m) => m.id === 'paryonusd')!;
+	check('ParyonUSD market is view-only in this build', paryon.status === 'view-only' && paryon.network === 'mainnet' && !!paryon.statusReason);
+	check('mainnet writes are switched off in this build', MAINNET_WRITES_ENABLED === false);
+	let blocked = '';
+	try { assertBroadcastAllowed('mainnet'); } catch (e) { blocked = String(e); }
+	check('mainnet broadcast is refused', blocked.includes('switched off'));
+	check('the refusal is shown verbatim to the user', describeBroadcastError(new Error(blocked.replace(/^Error: /, ''))).startsWith('Mainnet transactions are switched off'));
+	let chipnetOk = true;
+	try { assertBroadcastAllowed('chipnet'); assertBroadcastAllowed('mainnet', true); } catch { chipnetOk = false; }
+	check('Chipnet broadcast (and an explicitly enabled mainnet) is allowed', chipnetOk);
+
+	const mg = buildOracleGenesis(mOperator.address, mOperator.pkh, [{ ...fund(mOperator, 200, 1_000_000n) }], { price: RATE, timestamp: 1_800_000_000, sequence: 1 }, ORACLE_PK);
+	const mgv = verify('mainnet oracle genesis verifies', mg, mOperator);
+	const mMarket: MarketConfig = { pusdCategory: PARYONUSD_CATEGORY, oracleCategory: mg.createdCategory!, oracleOperatorPkh: mOperator.pkh, oraclePublicKey: ORACLE_PK, network: 'mainnet', maxOrderUnits: MAINNET_MAX_ORDER_UNITS };
+	const mLocking = oracleContract({ operatorPkh: mOperator.pkh, oraclePublicKey: ORACLE_PK }).lockingBytecode;
+	let mOracle = findOracleUtxo(outputsTo(mgv.txid, mgv.tx, mLocking), mMarket)!;
+	check('mainnet oracle found', !!mOracle && mOracle.state.price === RATE);
+
+	// Cap at 500.00/BCH: 25.00 PUSD = 0.05 BCH.
+	check('order value of 0.05 BCH at 500.00 is 25.00 PUSD', orderValueUnits('ask', 5_000_000n, RATE) === 2_500n);
+	const capRefused = (f: () => unknown) => { try { f(); return false; } catch (e) { return String(e).includes('limited to 25.00 PUSD'); } };
+	check('mainnet ask over the cap (0.0501 BCH) is refused', capRefused(() => buildCreateOrder(mMarket, mOracle, mMaker.address, mMaker.pkh, [fund(mMaker, 201, 10_000_000n)], { side: 'ask', deltaBps: 0, amount: 5_010_000n })));
+	const pusdFund = (owner: ReturnType<typeof mainKey>, seed: number, units: bigint): ChainUtxo => ({ ...fund(owner, seed, 1_000n), token: { category: PARYONUSD_CATEGORY, amount: units } });
+	check('mainnet bid over the cap (25.01 PUSD) is refused', capRefused(() => buildCreateOrder(mMarket, mOracle, mMaker.address, mMaker.pkh, [fund(mMaker, 202, 100_000n), pusdFund(mMaker, 203, 10_000n)], { side: 'bid', deltaBps: 0, amount: 2_501n })));
+	check('the cap does not apply to Chipnet markets', !capRefused(() => buildCreateOrder(market, oracle, maker.address, maker.pkh, [fund(maker, 204, 10_000_000n)], { side: 'ask', deltaBps: 0, amount: 5_010_000n })));
+
+	const ask = buildCreateOrder(mMarket, mOracle, mMaker.address, mMaker.pkh, [fund(mMaker, 205, 10_000_000n)], { side: 'ask', deltaBps: 25, amount: 4_000_000n });
+	check('mainnet order contract has a mainnet address', ask.order!.address.startsWith('bitcoincash:'));
+	const av = verify('mainnet ask within the cap (0.04 BCH) verifies', ask, mMaker);
+	mOracle = findOracleUtxo(outputsTo(av.txid, av.tx, mLocking), mMarket)!;
+	const bid = buildCreateOrder(mMarket, mOracle, mMaker.address, mMaker.pkh, [fund(mMaker, 206, 100_000n), pusdFund(mMaker, 207, 10_000n)], { side: 'bid', deltaBps: -25, amount: 2_500n });
+	const bv = verify('mainnet bid at exactly the cap (25.00 PUSD) verifies', bid, mMaker);
+	mOracle = findOracleUtxo(outputsTo(bv.txid, bv.tx, mLocking), mMarket)!;
+	const askOpen = toOpenOrder(ask.order!, outputsTo(av.txid, av.tx, hexToBin(ask.order!.lockingBytecodeHex))[0]!, mMarket)!;
+	const fill = buildFillOrders(mMarket, mOracle, mTaker.address, [fund(mTaker, 208, 100_000n), pusdFund(mTaker, 209, 5_000n)], [{ order: askOpen, sats: 1_000_000n }]);
+	const fv = verify('mainnet fill of the ParyonUSD ask verifies', fill, mTaker);
+	// 0.01 BCH × 500 × 1.0025 = 5.0125 → 5.02 PUSD to the maker (rounded up).
+	const paid = fv.tx.outputs[1]!;
+	check('mainnet fill pays the ask 5.02 ParyonUSD (0.01 BCH × 500 × 1.0025, rounded up)', binToHex(paid.lockingBytecode) === ask.order!.lockingBytecodeHex && !!paid.token && binToHex(paid.token.category) === PARYONUSD_CATEGORY && paid.token.amount === 502n);
 }
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 
