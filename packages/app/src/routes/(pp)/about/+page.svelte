@@ -49,6 +49,18 @@
 		</li>
 	</ol>
 
+	<section class="pp-card try" id="try" style="margin-top: 1.25rem">
+		<h2>Try it in 5 minutes (free test coins)</h2>
+		<ol>
+			<li><strong>Get a wallet.</strong> Open <a href="https://cashonize.com" target="_blank" rel="noopener">Cashonize</a> (web, extension or app), create a wallet, and in <em>Settings</em> switch the network to <strong>Chipnet</strong>.</li>
+			<li><strong>Get test BCH.</strong> Copy your Chipnet address and request coins from the <a href="https://tbch.googol.cash" target="_blank" rel="noopener">Chipnet faucet</a>. They have no value.</li>
+			<li><strong>Connect.</strong> Here, open <a href="/wallet">Wallet</a> and press <em>Connect Cashonize</em>. Scan the QR code, or use <em>Open in Cashonize web</em>, and approve.</li>
+			<li><strong>Trade now.</strong> On the <a href="/">Exchange</a>, choose <em>Trade now → Sell BCH</em>, enter 0.001 and review. You sell into the best bid and receive test PUSD. Cashonize shows the transaction before you sign, and nothing is broadcast until you press <em>Broadcast</em>.</li>
+			<li><strong>Place an order.</strong> In <em>Limit order</em>, pick a side and a deviation in BPS, such as +25. The order's price follows the live BCH/USD price, so it never goes stale. Cancel it any time from <em>My orders</em>.</li>
+		</ol>
+		<p class="small muted">Need test PUSD or a counterparty? Ask in the community chat (bottom-right button). Every transaction links to the Chipnet explorer.</p>
+	</section>
+
 	<section class="pp-card" style="margin-top: 1.25rem">
 		<h2>How this prototype works</h2>
 		<dl class="pp-kv">
@@ -91,6 +103,9 @@
 	.pillars li::before { content: counter(pillar); position: absolute; top: 0.9rem; left: 1rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--pp-accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 0.85rem; }
 	.pillars h2 { font-size: 1rem; margin: 0 0 0.4rem; }
 	.pillars p { margin: 0; font-size: 0.93rem; }
+	.try { scroll-margin-top: 5rem; }
+	.try ol { margin: 0.4rem 0 0.6rem; padding-left: 1.2rem; }
+	.try li { margin: 0.35rem 0; }
 	.notes { margin: 0; padding-left: 1.1rem; }
 	.notes li { margin: 0.25rem 0; }
 	.credits { margin: 1.5rem 0 0.5rem; border-top: 1px solid var(--pp-border); padding-top: 1rem; }

@@ -20,6 +20,18 @@ three separate protocol mechanics with a single P2P market:
 3. **Market-based redemptions.** Redemption-eligible loans sit on the orderbook, making redemption pricing 100%
    market-driven instead of hardcoded fees and baseRate decay math.
 
+## Try it in 5 minutes (free test coins)
+
+1. **Wallet:** open [Cashonize](https://cashonize.com), create a wallet, and switch it to **Chipnet** in Settings.
+2. **Test BCH:** request free Chipnet coins for your address from the [faucet](https://tbch.googol.cash).
+3. **Connect:** on https://pennypicker.pages.dev open **Wallet → Connect Cashonize**, then scan the QR code or use
+   *Open in Cashonize web*.
+4. **Trade:** on the Exchange, choose **Trade now → Sell BCH 0.001** to sell into a resting bid and receive test PUSD.
+   Or place a **Limit order** at ±BPS from the oracle price.
+
+The Chipnet book is seeded with asks at +10/+25/+50 BPS and bids at −10/−25/−50 BPS. Every transaction is previewed,
+signed in Cashonize and broadcast only when you press Broadcast.
+
 ## How it works
 
 - **Orders are covenants.** Each limit order is its own P2SH32 CashScript contract (`PennyPickerOrder`) holding the

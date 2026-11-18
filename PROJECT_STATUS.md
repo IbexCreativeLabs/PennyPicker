@@ -57,6 +57,19 @@ The v2 PUSD (`b9d9ef3c…`) and oracle (`03f6c31a…`) still exist on Chipnet bu
 Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:5173` have separate storage), switch the Cashonize wallet, then
 **Wallet → Connect → "Open in Cashonize web"** (deep link `https://cashonize.com/?uri=…`) and approve. On two devices this is not needed.
 
+**Seeded Chipnet book (2026-11-18, PP Trader B, so judges can trade immediately):**
+
+| Order | Transaction |
+| --- | --- |
+| Ask 0.001 BCH at +10 BPS | `46414cdd37bc2de1e68482b04e4fb62611a52e480768caaf0a7cff7372f2f349` |
+| Ask 0.001 BCH at +25 BPS | `8656868d575c76b7a10d37fcce809103defcc6793aa88ec4446ebfe8cf555661` |
+| Ask 0.001 BCH at +50 BPS | `5de6040494e4bfd8d48f8bb394aed2974373c3bb1f3dcb7c65dd484198278015` |
+| Bid 30.00 PUSD at −10 BPS | `91410e7bdc11671e9bd9db5374b4dc1ea92bacc6eeae5b4017d293e742e078bd` |
+| Bid 30.00 PUSD at −25 BPS | `66f703e261e67e1d59acb715c7e273ae23b5614751f7bbd79cb494a6007b384e` |
+| Bid 30.00 PUSD at −50 BPS | `ef8d872eb396e4ff84413eca12a26e11c4d75b5d60241f927ac27f4beb4ee882` |
+
+Together with the earlier +20 BPS ask, the book shows a 20 BPS spread around the oracle price.
+
 ## Pricing convention (protocol v2, changed before any oracle or order existed)
 
 - **Pair:** BCH/PUSD. Price = **PUSD per BCH** = the oracles.cash **BCH/USD** price with 1 PUSD treated as 1 USD (PUSD stands in for a USD stablecoin, per the project pitch). The oracle stores it × 1e8 (`210.99` → `21099000000`).
