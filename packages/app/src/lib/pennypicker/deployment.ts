@@ -26,13 +26,15 @@ export const PARYONUSD_CATEGORY = '2469acc5afa4b10cb5b5c04afb89c3a3ffd61c5da9c01
 
 /**
  * Mainnet market against the real ParyonUSD. The price record (PennyPickerOracle)
- * is not deployed on mainnet yet: deploying it is a real-money transaction that
- * needs the project owner's approval (see DEPLOYMENT.md, "Going live on mainnet").
+ * was created on 2026-11-18 with the owner's approval. Trading stays off until
+ * MAINNET_WRITES_COMMITTED is switched on (see DEPLOYMENT.md, "Going live on mainnet").
  */
 export const MAINNET_DEPLOYMENT = {
 	pusdCategory: PARYONUSD_CATEGORY as string | undefined,
-	oracleOperatorPkh: undefined as string | undefined,
-	oracleCategory: undefined as string | undefined
+	/** Operator: PP Mainnet Maker, bitcoincash:qrha2a6sntr3xgu3ay4zendhfeaxns8v7qru2jmsy0 */
+	oracleOperatorPkh: 'efd577509ac7132391e92a2ccdb74e7a69c0ecf0' as string | undefined,
+	/** Genesis 95734104aa53ada1642974ea3ea778c00da10bf9c42ef346bc395006693c5473 (2026-11-18, 207.73). */
+	oracleCategory: 'f9a9812abc5f8de2847b10945c81a392ff86707f07eff25f091eda27a17503d6' as string | undefined
 } as const;
 
 /**

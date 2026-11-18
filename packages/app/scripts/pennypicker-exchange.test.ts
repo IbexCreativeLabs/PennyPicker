@@ -343,7 +343,7 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 
 	const cfg = loadMarketConfig('mainnet');
 	check('mainnet config: ParyonUSD category, capped, network set', cfg.pusdCategory === PARYONUSD_CATEGORY && cfg.maxOrderUnits === MAINNET_MAX_ORDER_UNITS && cfg.network === 'mainnet');
-	check('mainnet config has no oracle until it is deployed', !cfg.oracleCategory);
+	check('mainnet config names the deployed oracle (2026-11-18)', cfg.oracleCategory === 'f9a9812abc5f8de2847b10945c81a392ff86707f07eff25f091eda27a17503d6' && cfg.oracleOperatorPkh === 'efd577509ac7132391e92a2ccdb74e7a69c0ecf0');
 	const paryon = MARKETS.find((m) => m.id === 'paryonusd')!;
 	check('ParyonUSD market is view-only in this build', paryon.status === 'view-only' && paryon.network === 'mainnet' && !!paryon.statusReason);
 	check('mainnet writes are switched off in this build', MAINNET_WRITES_ENABLED === false);

@@ -158,7 +158,24 @@ A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe
 
 Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `2469acc5…2544` on mainnet, view only). Bottom-right **Chat** button opens the Telegram community panel (link set in `deployment.ts` → `COMMUNITY.telegramUrl`). Old `/penny-picker/...` links redirect via `static/_redirects`.
 
-## Mainnet version (ParyonUSD), code-ready, view only (2026-11-18)
+## Mainnet (ParyonUSD), live on-chain, public site view-only (2026-11-18)
+
+Approved by the owner. Done from a local dev build with `VITE_PENNYPICKER_MAINNET_WRITES=1`, using new
+single-address Cashonize mainnet wallets funded by the owner.
+
+| Wallet | Address |
+| --- | --- |
+| PP Mainnet Maker (oracle operator) | `bitcoincash:qrha2a6sntr3xgu3ay4zendhfeaxns8v7qru2jmsy0` (PKH `efd577509ac7132391e92a2ccdb74e7a69c0ecf0`) |
+| PP Mainnet Taker | `bitcoincash:qpm8n7nr2syegnnyf678yqqfsphe837lhsgkllaptd` |
+
+| # | Step | Transaction |
+| --- | --- | --- |
+| 1 | Mainnet price record created from oracles.cash (207.73), category `f9a9812abc5f8de2847b10945c81a392ff86707f07eff25f091eda27a17503d6` | `95734104aa53ada1642974ea3ea778c00da10bf9c42ef346bc395006693c5473` |
+| 2 | Maker ask: 0.0005 BCH at +50 BPS | `650e7000ddcc1a5a43d203b6ff625ad2f09a5228a2a0ac03c377403721117a24` |
+| 3 | Taker buys 0.0002 BCH from the ask (pays ParyonUSD) | pending: the Taker has no ParyonUSD yet |
+| 4 | Maker cancels the remainder | pending |
+
+## Mainnet version (ParyonUSD), code-ready (2026-11-18)
 
 - **Network-aware app.** `network.ts` defines Chipnet and mainnet: address prefix, WalletConnect chain (`bch:bchtest` / `bch:bitcoincash`), explorers, storage namespace. The selected market sets the network. Switching it reloads the market, history and Electrum provider, and only uses a Cashonize session approved for that chain.
 - **Same contracts.** ParyonUSD has 2 decimals like PennyPickerUSD, so the order and oracle covenants are unchanged. The builders encode mainnet addresses from `MarketConfig.network`.
