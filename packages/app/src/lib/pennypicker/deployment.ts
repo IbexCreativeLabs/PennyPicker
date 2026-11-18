@@ -21,7 +21,7 @@ export const CHIPNET_DEPLOYMENT = {
 
 /** Public community links. Set the Telegram invite link here (t.me/…) once the group exists. */
 export const COMMUNITY = {
-	telegramUrl: '' as string,
+	telegramUrl: 'https://t.me/bethechange_global' as string,
 	sourceUrl: 'https://github.com/IbexCreativeLabs/PennyPicker',
 	forkedFromUrl: 'https://github.com/2qx/vox'
 } as const;
