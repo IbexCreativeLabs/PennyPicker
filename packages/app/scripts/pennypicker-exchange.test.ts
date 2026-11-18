@@ -383,6 +383,20 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	const paid = fv.tx.outputs[1]!;
 	check('mainnet fill pays the ask 5.02 ParyonUSD (0.01 BCH × 500 × 1.0025, rounded up)', binToHex(paid.lockingBytecode) === ask.order!.lockingBytecodeHex && !!paid.token && binToHex(paid.token.category) === PARYONUSD_CATEGORY && paid.token.amount === 502n);
 }
+// 14. A stale ID saved in the browser never overrides the committed deployment (and is cleaned up).
+{
+	const store = new Map<string, string>();
+	(globalThis as { localStorage?: unknown }).localStorage = {
+		getItem: (k: string) => store.get(k) ?? null,
+		setItem: (k: string, v: string) => void store.set(k, v),
+		removeItem: (k: string) => void store.delete(k)
+	};
+	store.set('pennypicker:chipnet:oracle-category', '88'.repeat(32));
+	const cfg = loadMarketConfig('chipnet');
+	check('committed oracle category wins over a stale saved one', cfg.source.oracleCategory === 'default' && cfg.oracleCategory !== '88'.repeat(32));
+	check('the stale saved oracle category is removed', !store.has('pennypicker:chipnet:oracle-category'));
+	delete (globalThis as { localStorage?: unknown }).localStorage;
+}
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 
 console.log(failures === 0 ? '\nAll exchange builder checks passed.' : `\n${failures} check(s) failed.`);

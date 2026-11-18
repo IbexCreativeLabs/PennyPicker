@@ -47,6 +47,14 @@ function readStorage(key: string): string {
 	}
 }
 
+function removeStorage(key: string): void {
+	try {
+		globalThis.localStorage?.removeItem(key);
+	} catch {
+		/* storage unavailable */
+	}
+}
+
 export function writeStorage(key: string, value: string): void {
 	try {
 		globalThis.localStorage?.setItem(key, value);
@@ -58,21 +66,27 @@ export function writeStorage(key: string, value: string): void {
 export type ConfigSource = 'env' | 'local' | 'default' | 'discovered' | 'missing';
 
 /**
- * Market identity: environment variables (shared deployment) take precedence
- * over values stored locally after this browser ran a genesis, then over the
- * committed public defaults in deployment.ts.
+ * Market identity: environment variables first, then the committed public IDs in
+ * deployment.ts, then values this browser saved after running a genesis itself.
  */
 export function loadMarketConfig(network: NetworkId = 'chipnet'): Partial<MarketConfig> & { source: Record<string, ConfigSource> } {
 	const env = import.meta.env ?? {};
 	const deployment = DEPLOYMENTS[network];
 	// Chipnet keeps the original variable names; mainnet uses VITE_PENNYPICKER_MAINNET_*.
 	const envName = (name: string) => (network === 'chipnet' ? `VITE_PENNYPICKER_${name}` : `VITE_PENNYPICKER_MAINNET_${name}`);
+	// Precedence: env > committed deployment > this browser. A value saved in the browser only fills a
+	// gap (a genesis run here before its IDs were committed); once the deployment names an ID, a stale
+	// saved one from an earlier market version is ignored and removed.
 	const pick = (name: string, key: string | undefined, fallback: string | undefined, pattern: RegExp) => {
 		const fromEnv = String(env[envName(name)] ?? '').trim().toLowerCase();
 		if (pattern.test(fromEnv)) return { value: fromEnv, source: 'env' as const };
-		const local = key ? readStorage(storageKey(network, key)) : '';
+		const localKey = key ? storageKey(network, key) : undefined;
+		const local = localKey ? readStorage(localKey) : '';
+		if (fallback && pattern.test(fallback)) {
+			if (localKey && local && local !== fallback) removeStorage(localKey);
+			return { value: fallback, source: 'default' as const };
+		}
 		if (pattern.test(local)) return { value: local, source: 'local' as const };
-		if (fallback && pattern.test(fallback)) return { value: fallback, source: 'default' as const };
 		return { value: undefined, source: 'missing' as const };
 	};
 	// The mainnet stablecoin is fixed (ParyonUSD): no browser override.
