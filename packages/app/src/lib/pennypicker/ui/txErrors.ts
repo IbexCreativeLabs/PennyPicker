@@ -13,7 +13,12 @@ export function describeSignError(cause: unknown, networkLabel = 'Chipnet'): str
 	const code = (cause as { code?: number })?.code;
 	const message = text(cause);
 	if (code === 5000 || code === 4001 || /user rejected|user denied|rejected|cancel/i.test(message)) {
-		return 'You declined the signature in Cashonize. Nothing was signed or broadcast.';
+		// Keep the wallet's own reason when it says more than "user rejected".
+		const reason = message.trim();
+		const generic = !reason || /^(user (rejected|denied)|rejected|cancel(l?ed)?)[\s.!]*(the request)?[\s.!]*$/i.test(reason);
+		return generic
+			? 'You declined the signature in Cashonize. Nothing was signed or broadcast.'
+			: `Cashonize did not sign: ${reason}. Nothing was signed or broadcast.`;
 	}
 	if (/expired|no matching key|session.*(not found|deleted)|missing or invalid.*topic/i.test(message)) {
 		return 'The WalletConnect session has ended. Reconnect Cashonize on the Wallet page, then review the transaction again.';

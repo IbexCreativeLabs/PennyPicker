@@ -86,6 +86,16 @@ A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe
   (`60e72307…` never reached the network). It now waits for the server's verdict. TxFlow also flags a transaction the
   server stops knowing after about a minute.
 
+**Token metadata (BCMR), 2026-11-18:**
+- The registry is served at `https://pennypicker.pages.dev/.well-known/bitcoin-cash-metadata-registry.json`
+  (sha256 `468ca6eba7ad1eae55b90a3793f50cb0398f99dc0c2df44f41dce90af5b41a2b`): name PennyPickerUSD, ticker PUSD,
+  2 decimals, a PNG icon.
+- It was published in PUSD's identity chain from Cashonize (operator wallet, Wallet tools → Identities → publish
+  metadata): `2cbeb3483efa771d4ab7206b3482b328587dfdb5f4557ce1d61af0653c4a40bf`.
+- `bcmr-chipnet.paytaca.com`, the indexer Cashonize uses on Chipnet, returns the name immediately.
+- Cashonize refuses app (WalletConnect) requests to spend identity coins by default, so the app's own builder
+  (`buildBcmrPublication`, VM-tested) serves other wallets.
+
 ## Pricing convention (protocol v2, changed before any oracle or order existed)
 
 - **Pair:** BCH/PUSD. Price = **PUSD per BCH** = the oracles.cash **BCH/USD** price with 1 PUSD treated as 1 USD (PUSD stands in for a USD stablecoin, per the project pitch). The oracle stores it × 1e8 (`210.99` → `21099000000`).
@@ -228,4 +238,3 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
   - Mainnet price record and keeper.
   - External audit.
   - Vault contracts for liquidations and redemptions (pricing simulations only).
-  - Token metadata (BCMR) so wallets show the PennyPickerUSD name.

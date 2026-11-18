@@ -109,6 +109,8 @@ class PennyPickerSession {
 	/** Latest signed BCH/USD message from oracles.cash (polled every minute). */
 	feed = $state<OracleMessage | undefined>();
 	feedError = $state('');
+	/** Price of the oracle message before the current one, to show the direction of the last move. */
+	previousFeedPrice = $state<bigint | undefined>();
 	/** The feed's message when it is newer than the on-chain state: new orders and fills carry it. */
 	refreshMessage = $derived(this.feed && this.oracle && this.feed.messageSequence > this.oracle.state.sequence ? this.feed : undefined);
 	/** The price the next order or fill settles at (the bundled feed price, else the on-chain state). */
@@ -323,7 +325,9 @@ class PennyPickerSession {
 
 	async refreshFeed() {
 		try {
-			this.feed = await fetchLatestOracleMessage(this.config.oraclePublicKey);
+			const next = await fetchLatestOracleMessage(this.config.oraclePublicKey);
+			if (this.feed && next.messageSequence !== this.feed.messageSequence) this.previousFeedPrice = oracleStateFromMessage(this.feed).price;
+			this.feed = next;
 			this.feedError = '';
 		} catch (cause) {
 			this.feedError = `oracles.cash price feed unavailable: ${errorText(cause)}`;

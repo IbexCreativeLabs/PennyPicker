@@ -7,7 +7,8 @@
 		assertOrderDelta,
 		bidSatsForUnits,
 		formatPrice,
-		limitPrice
+		limitPrice,
+		oracleStateFromMessage
 	} from '$lib/pennypicker/contracts';
 	import {
 		buildCancelOrder,
@@ -200,6 +201,52 @@
 	}
 
 	const signed = (n: number) => `${n > 0 ? '+' : ''}${n}`;
+
+	// Depth bars: each row's size relative to the largest order on the book (in sats).
+	const maxDepth = $derived([...asks.map((o) => o.availableSats), ...bids.map((o) => bidSizeSats(o))].reduce((m, v) => (v > m ? v : m), 1n));
+	const depth = (sats: bigint) => `${Math.max(4, Math.min(100, Number((sats * 100n) / maxDepth)))}%`;
+
+	// Direction of the last oracle move (current feed vs the message before it).
+	const move = $derived.by(() => {
+		const now = pp.feed ? oracleStateFromMessage(pp.feed).price : undefined;
+		const before = pp.previousFeedPrice;
+		if (!now || !before || now === before) return undefined;
+		// Change in basis points (1 BPS = 0.01%), with one decimal.
+		const bps = Number(((now - before) * 100_000n) / before) / 10;
+		return { up: now > before, label: `${now > before ? '▲' : '▼'} ${Math.abs(bps).toFixed(1)} BPS` };
+	});
+
+	// Getting-started guide for visitors without a funded, connected wallet.
+	let guideHidden = $state(false);
+	$effect(() => {
+		try {
+			guideHidden = localStorage.getItem('pennypicker:guide-hidden') === '1';
+		} catch {
+			/* storage unavailable */
+		}
+	});
+	function hideGuide() {
+		guideHidden = true;
+		try {
+			localStorage.setItem('pennypicker:guide-hidden', '1');
+		} catch {
+			/* storage unavailable */
+		}
+	}
+	const funded = $derived(!!pp.wallet && pp.utxosLoaded && pp.balances.bchSats > 0n);
+	const showGuide = $derived(!guideHidden && !funded);
+
+	const kindLabel: Record<string, string> = {
+		'order-create': 'Order placed',
+		'order-fill': 'Trade',
+		'order-cancel': 'Order canceled',
+		'oracle-update': 'Price update',
+		'oracle-genesis': 'Oracle created',
+		'pusd-send': 'PUSD sent',
+		'pusd-genesis': 'PUSD created',
+		'identity-separation': 'Identity separated',
+		'bcmr-publication': 'Metadata published'
+	};
 	const pct = (bps: number) => `${(bps / 100).toFixed(2)}%`;
 	const quickBps = $derived(side === 'ask' ? [0, 10, 25, 50, 100] : [0, -10, -25, -50, -100]);
 </script>
@@ -249,16 +296,46 @@
 	{#if pp.networkInfo.realFunds}
 		<p class="pp-callout bad small" style="margin-bottom: 1rem"><strong>BCH mainnet: real money.</strong> The contracts have not been security reviewed. Only trade amounts you can afford to lose.</p>
 	{/if}
+	{#if showGuide}
+		<section class="pp-card guide">
+			<div class="pp-card-head">
+				<div>
+					<h2>Start trading in three steps</h2>
+					<p class="small muted">Free test coins on BCH Chipnet. Nothing here has real value.</p>
+				</div>
+				<button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={hideGuide}>Hide</button>
+			</div>
+			<ol class="pp-steps">
+				<li class:done={!!pp.wallet}>
+					<strong>Get Cashonize</strong>
+					<span class="small muted">Open <a href="https://cashonize.com" target="_blank" rel="noopener">cashonize.com</a>, create a wallet and switch it to <em>Chipnet</em> in Settings.</span>
+				</li>
+				<li class:done={!!pp.wallet}>
+					<strong>Connect</strong>
+					<span class="small muted">{#if pp.wallet}Connected as <span class="mono">{pp.wallet.address.slice(8, 16)}…</span>{:else}Pair it with PennyPicker over WalletConnect.{/if}</span>
+					{#if !pp.wallet}<div style="margin-top: 0.4rem"><a class="pp-btn pp-btn-primary pp-btn-sm" href="/wallet">Connect wallet</a></div>{/if}
+				</li>
+				<li class:done={funded}>
+					<strong>Get test BCH</strong>
+					<span class="small muted">Request free coins for your address from the <a href="https://tbch.googol.cash" target="_blank" rel="noopener">Chipnet faucet</a>, then sell 0.001 BCH below to get PUSD.</span>
+				</li>
+			</ol>
+		</section>
+	{/if}
+
 	<!-- Market header -->
 	<section class="pp-card market">
 		<div class="pair">
-			<h1>BCH <span class="faint">/</span> PUSD</h1>
-			<span class="small muted">Oracle-relative BPS orderbook · {pp.networkInfo.label}</span>
+			<img class="coin" src="/pennypickerusd-256.png" alt="" width="40" height="40" />
+			<div>
+				<h1>BCH <span class="faint">/</span> PUSD</h1>
+				<span class="small muted">{pp.selectedMarket.name} · priced in BPS from the live oracle · {pp.networkInfo.label}</span>
+			</div>
 		</div>
 		<div class="m-stat">
-			<div class="pp-stat-label">Reference</div>
+			<div class="pp-stat-label"><span class="pp-live"></span> Reference</div>
 			<div class="pp-stat-value">{price ? formatPrice(price) : '—'}</div>
-			<div class="small muted">PUSD per BCH</div>
+			<div class="small muted">PUSD per BCH {#if move}<span class={move.up ? 'bid-c' : 'ask-c'}>{move.label}</span>{/if}</div>
 		</div>
 		<div class="m-stat">
 			<div class="pp-stat-label">Freshness</div>
@@ -308,7 +385,7 @@
 					<tbody>
 						{#each asks as order (order.address)}
 							{@const l = price ? limitPrice(price, order.deltaBps) : 0n}
-							<tr class="ask-row" class:mine={order.makerPkh === myPkh}>
+							<tr class="ask-row" class:mine={order.makerPkh === myPkh} style="--depth: {depth(order.availableSats)}">
 								<td class="ask-c">{signed(order.deltaBps)}</td>
 								<td class="r ask-c">{price ? formatPrice(l) : '—'}</td>
 								<td class="r">{formatSats(order.availableSats)}</td>
@@ -323,13 +400,13 @@
 						{/each}
 						<tr class="ref-row">
 							<td colspan="5">
-								<span>Reference <strong class="num">{price ? formatPrice(price) : '—'}</strong> PUSD/BCH</span>
+								<span><span class="pp-live"></span> Reference <strong class="num">{price ? formatPrice(price) : '—'}</strong> PUSD/BCH</span>
 								{#if bestAsk && bestBid}<span class="muted small"> · spread {bestAsk.deltaBps - bestBid.deltaBps} BPS</span>{/if}
 							</td>
 						</tr>
 						{#each bids as order (order.address)}
 							{@const l = price ? limitPrice(price, order.deltaBps) : 0n}
-							<tr class="bid-row" class:mine={order.makerPkh === myPkh}>
+							<tr class="bid-row" class:mine={order.makerPkh === myPkh} style="--depth: {depth(bidSizeSats(order))}">
 								<td class="bid-c">{signed(order.deltaBps)}</td>
 								<td class="r bid-c">{price ? formatPrice(l) : '—'}</td>
 								<td class="r">{formatSats(bidSizeSats(order))}</td>
@@ -468,7 +545,7 @@
 			{#each pp.history.slice(0, 8) as record (record.txid)}
 				<div class="tx">
 					<span class="pp-badge {record.status === 'confirmed' ? 'ok' : record.status === 'broadcast' ? 'warn' : 'plain'}">{record.status}</span>
-					<span class="grow"><strong>{record.kind}</strong><br /><span class="small muted">{record.summary[0]}</span></span>
+					<span class="grow"><strong>{kindLabel[record.kind] ?? record.kind}</strong><br /><span class="small muted">{record.summary[0]}</span></span>
 					<a class="small" href={explorerTx(record.txid)} target="_blank" rel="noopener">{record.txid.slice(0, 8)}… ↗</a>
 				</div>
 			{:else}
@@ -480,8 +557,8 @@
 			{#each (pp.discovery?.fills ?? []).slice(0, 8) as fill (fill.txid)}
 				<div class="tx">
 					<span class="pp-badge {fill.height > 0 ? 'ok' : 'warn'}">{fill.height > 0 ? `block ${fill.height}` : 'mempool'}</span>
-					<span class="grow mono small">{fill.txid}</span>
-					<a class="small" href={explorerTx(fill.txid)} target="_blank" rel="noopener">↗</a>
+					<span class="grow"><strong>Trade</strong><br /><span class="mono small muted">{fill.txid.slice(0, 16)}…</span></span>
+					<a class="small" href={explorerTx(fill.txid)} target="_blank" rel="noopener">View ↗</a>
 				</div>
 			{:else}
 				<p class="small muted">No fills observed on this market yet.</p>
@@ -496,8 +573,11 @@
 	.mainnet .pp-row { margin-top: 0.75rem; flex-wrap: wrap; }
 	.vo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.9rem; margin: 0.9rem 0; }
 	.market { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-bottom: 1rem; }
-	.pair { margin-right: auto; }
+	.pair { margin-right: auto; display: flex; align-items: center; gap: 0.75rem; }
 	.pair h1 { font-size: 1.5rem; }
+	.coin { width: 40px; height: 40px; border-radius: 50%; box-shadow: var(--pp-shadow); }
+	.guide { margin-bottom: 1rem; border-color: color-mix(in srgb, var(--pp-accent) 35%, var(--pp-border)); }
+	.guide h2 { font-size: 1.1rem; }
 	.m-stat { min-width: 7rem; }
 	.m-stat .pp-stat-value { font-size: 1.4rem; }
 	.main-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 1fr); gap: 1rem; align-items: start; }
@@ -512,8 +592,9 @@
 	.calc .lim { border-top: 1px dashed var(--pp-border-strong); border-bottom: 1px dashed var(--pp-border-strong); margin: 0.25rem 0; padding: 0.35rem 0; }
 	.ask-c { color: var(--pp-ask); }
 	.bid-c { color: var(--pp-bid); }
-	tr.ask-row td:first-child { box-shadow: inset 3px 0 0 var(--pp-ask-soft); }
-	tr.bid-row td:first-child { box-shadow: inset 3px 0 0 var(--pp-bid-soft); }
+	tr.ask-row { background: linear-gradient(to left, var(--pp-ask-soft) var(--depth, 0%), transparent var(--depth, 0%)); }
+	tr.bid-row { background: linear-gradient(to left, var(--pp-bid-soft) var(--depth, 0%), transparent var(--depth, 0%)); }
+	tr.ask-row:hover, tr.bid-row:hover { filter: brightness(0.97); }
 	tr.mine { background: var(--pp-accent-soft); }
 	tr.ref-row td { background: var(--pp-surface-2); text-align: center; padding: 0.55rem; }
 	.tx { display: flex; gap: 0.6rem; align-items: center; padding: 0.45rem 0; border-bottom: 1px solid var(--pp-border); }

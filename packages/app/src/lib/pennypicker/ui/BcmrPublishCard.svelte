@@ -72,6 +72,11 @@
 		<dt>Public copy</dt><dd class="mono small">{liveHash || '—'} {liveHash && liveHash === localHash ? '✓ matches' : liveHash ? '✗ differs (deploy first)' : ''}</dd>
 		<dt>Identity output</dt><dd class="mono small">{pp.pusdIdentity ? `${pp.pusdIdentity.txid}:0` : '—'} {pp.ownIdentityUtxo ? '(in this wallet)' : ''}</dd>
 	</dl>
+	<p class="pp-callout small" style="margin-top: 0.6rem">
+		<strong>With Cashonize:</strong> by default it refuses an app's request to spend an identity coin, so publish from the wallet itself:
+		Settings → Wallet tools → Identities → <em>publish metadata</em>, location <span class="mono">pennypicker.pages.dev</span>. It fetches this file, checks the hash and spends the identity in front of you.
+		The button below builds the same transaction for wallets that allow it.
+	</p>
 	{#if checkError}<p class="pp-error small">{checkError}</p>{/if}
 	{#if pending && pp.wallet}
 		<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={(txid, u) => { pp.recordBroadcast(txid, u); pending = undefined; }} onDismiss={() => (pending = undefined)} />

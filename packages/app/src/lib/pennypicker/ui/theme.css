@@ -19,15 +19,20 @@
 	--pp-warn-soft: #fff1d9;
 	--pp-info-soft: #eaf1fb;
 	--pp-danger: #b3261e;
-	--pp-radius: 12px;
+	--pp-radius: 14px;
 	--pp-radius-sm: 8px;
-	--pp-shadow: 0 1px 2px rgba(29, 26, 23, 0.05), 0 2px 8px rgba(29, 26, 23, 0.04);
-	--pp-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--pp-shadow: 0 1px 2px rgba(29, 26, 23, 0.04), 0 4px 16px rgba(29, 26, 23, 0.05);
+	--pp-shadow-lg: 0 2px 6px rgba(29, 26, 23, 0.06), 0 12px 32px rgba(29, 26, 23, 0.08);
+	--pp-font: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 	--pp-mono: 'Fira Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
 	color-scheme: light;
 	min-height: 100vh;
-	background: var(--pp-bg);
+	background:
+		radial-gradient(1100px 420px at 50% -160px, var(--pp-accent-soft), transparent 72%),
+		var(--pp-bg);
+	background-repeat: no-repeat;
+	background-color: var(--pp-bg);
 	color: var(--pp-text);
 	font-family: var(--pp-font);
 	font-size: 15px;
@@ -155,13 +160,15 @@
 	font: inherit;
 	font-weight: 550;
 	cursor: pointer;
-	transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+	transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.1s, box-shadow 0.15s;
 	text-decoration: none;
 	white-space: nowrap;
 }
 .pp .pp-btn:hover:not(:disabled) { background: var(--pp-surface-2); text-decoration: none; }
+.pp .pp-btn:active:not(:disabled) { transform: translateY(1px); }
+.pp .pp-btn:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
 .pp .pp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.pp .pp-btn-primary { background: var(--pp-accent); border-color: var(--pp-accent); color: var(--pp-accent-ink); }
+.pp .pp-btn-primary { background: var(--pp-accent); border-color: var(--pp-accent); color: var(--pp-accent-ink); box-shadow: 0 2px 8px color-mix(in srgb, var(--pp-accent) 30%, transparent); }
 .pp .pp-btn-primary:hover:not(:disabled) { background: var(--pp-accent); filter: brightness(1.06); }
 .pp .pp-btn-bid { background: var(--pp-bid); border-color: var(--pp-bid); color: #fff; }
 .pp .pp-btn-ask { background: var(--pp-ask); border-color: var(--pp-ask); color: #fff; }
@@ -244,6 +251,20 @@
 .pp table.pp-table td { padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--pp-border); vertical-align: middle; }
 .pp table.pp-table tr:last-child td { border-bottom: 0; }
 .pp table.pp-table .r { text-align: right; }
+.pp table.pp-table tbody tr { transition: background 0.12s; }
+.pp table.pp-table tbody tr:hover { background: var(--pp-surface-2); }
+
+/* Numbered steps */
+.pp .pp-steps { list-style: none; counter-reset: step; padding: 0; margin: 0; display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.pp .pp-steps > li { counter-increment: step; position: relative; padding: 0.85rem 0.9rem 0.85rem 3.1rem; border: 1px solid var(--pp-border); border-radius: var(--pp-radius-sm); background: var(--pp-surface-2); }
+.pp .pp-steps > li::before { content: counter(step); position: absolute; left: 0.85rem; top: 0.85rem; width: 1.65rem; height: 1.65rem; border-radius: 50%; display: grid; place-items: center; background: var(--pp-accent); color: var(--pp-accent-ink); font-weight: 700; font-size: 0.85rem; }
+.pp .pp-steps > li.done::before { content: '✓'; background: var(--pp-bid); }
+.pp .pp-steps strong { display: block; margin-bottom: 0.15rem; }
+
+/* Live dot */
+.pp .pp-live { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--pp-bid); box-shadow: 0 0 0 0 color-mix(in srgb, var(--pp-bid) 60%, transparent); animation: pp-pulse 2s infinite; vertical-align: middle; }
+@keyframes pp-pulse { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .pp .pp-live { animation: none; } }
 
 /* Disclosure */
 .pp details.pp-details { border: 1px solid var(--pp-border); border-radius: var(--pp-radius-sm); padding: 0.5rem 0.75rem; background: var(--pp-surface-2); }

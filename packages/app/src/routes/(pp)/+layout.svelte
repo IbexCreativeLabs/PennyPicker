@@ -181,4 +181,9 @@
 		nav.open { display: flex; }
 		.status { flex-basis: 100%; }
 	}
+	@media (max-width: 560px) {
+		/* Keep the coin, market selector and menu on one row on phones. */
+		.bar { gap: 0.5rem; }
+		.brand strong { display: none; }
+	}
 </style>

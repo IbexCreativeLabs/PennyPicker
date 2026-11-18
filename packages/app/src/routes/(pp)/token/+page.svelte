@@ -13,9 +13,12 @@
 
 <main class="pp-container">
 	<div class="pp-page-head">
-		<div>
-			<h1>{market.name} <span class="muted">({market.symbol})</span></h1>
-			<p>{market.summary}</p>
+		<div class="title">
+			{#if market.id === 'pennypickerusd'}<img src="/pennypickerusd-256.png" alt="" width="56" height="56" />{/if}
+			<div>
+				<h1>{market.name} <span class="muted">({market.symbol})</span></h1>
+				<p>{market.summary}</p>
+			</div>
 		</div>
 		<span class="pp-badge {market.status === 'live' ? 'ok' : 'warn'}">{statusLabel(market)}</span>
 	</div>
@@ -31,6 +34,7 @@
 					<dt>Supply</dt><dd>1,000,000.00, fixed (no minting baton)</dd>
 					<dt>Decimals</dt><dd>2 (1 PUSD = 100 base units)</dd>
 					<dt>Price</dt><dd>Treated as 1 USD for trading; a test token with no backing or value</dd>
+					<dt>Metadata</dt><dd>Published on-chain (BCMR), so Cashonize and other wallets show it as <strong>PennyPickerUSD</strong> with this icon. <a href="/.well-known/bitcoin-cash-metadata-registry.json" target="_blank" rel="noopener">Registry ↗</a></dd>
 				{/if}
 				<dt>Category</dt>
 				<dd class="mono small">
@@ -78,6 +82,8 @@
 </main>
 
 <style>
+	.title { display: flex; gap: 1rem; align-items: center; }
+	.title img { border-radius: 50%; box-shadow: var(--pp-shadow); flex: none; }
 	.markets { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.6rem; }
 	.mkt { text-align: left; display: flex; flex-direction: column; gap: 0.2rem; cursor: pointer; font: inherit; color: var(--pp-text); }
 	.mkt.sel { border-color: var(--pp-accent); box-shadow: inset 3px 0 0 var(--pp-accent); }
