@@ -1,4 +1,4 @@
-/* PennyPicker design tokens and primitives. Scoped under .pp so Vox pages are untouched. */
+/* PennyPicker design tokens and primitives. Scoped under the .pp wrapper. */
 .pp {
 	--pp-bg: #f6f4f1;
 	--pp-surface: #ffffff;
