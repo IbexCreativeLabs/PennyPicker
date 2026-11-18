@@ -58,7 +58,7 @@ Contracts: [`packages/app/src/lib/pennypicker/contracts`](packages/app/src/lib/p
 Transaction builders: [`exchange.ts`](packages/app/src/lib/pennypicker/exchange.ts) ·
 Status, live Chipnet transactions and design notes: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) ·
 Security review: [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md) ·
-Hackathon submission: [`SUBMISSION.md`](SUBMISSION.md) · Demo script: [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md)
+Hackathon submission: [`SUBMISSION.md`](SUBMISSION.md) · Demo script: [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md) · Status report and plan: [`REPORT.md`](REPORT.md)
 
 ## Status
 
