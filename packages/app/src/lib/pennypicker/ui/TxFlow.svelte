@@ -187,7 +187,7 @@
 
 	{#if net.realFunds}
 		<p class="pp-callout bad small">
-			<strong>Real money on BCH mainnet.</strong> These contracts have not been security reviewed; only trade amounts you can afford to lose.
+			<strong>Real money on BCH mainnet.</strong> These contracts have had no independent audit; only trade amounts you can afford to lose.
 		</p>
 	{/if}
 

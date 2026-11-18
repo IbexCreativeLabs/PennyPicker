@@ -68,7 +68,7 @@
 			<dt>Reference price</dt><dd>The live BCH/USD price signed by the General Protocols oracle behind <a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a> (key <span class="mono small">{GP_BCH_USD_ORACLE.publicKey.slice(0, 10)}…</span>). The contract verifies the signature; ParyonUSD uses the same oracle.</dd>
 			<dt>Settlement</dt><dd>Every fill is checked by the order covenant with exact integer arithmetic. Amounts are rounded to 0.01 PUSD in the order maker's favour.</dd>
 			<dt>Wallet</dt><dd>Cashonize over WalletConnect. Keys never leave the wallet; every transaction is previewed, signed in Cashonize and broadcast only when you press Broadcast.</dd>
-			<dt>Networks</dt><dd>PennyPickerUSD trades on BCH Chipnet (test network) as a test token priced as 1 USD with no backing. ParyonUSD is the mainnet market: the same contracts with the real stablecoin, live with real money and capped at 25 PUSD per order while the contracts are unreviewed.</dd>
+			<dt>Networks</dt><dd>PennyPickerUSD trades on BCH Chipnet (test network) as a test token priced as 1 USD with no backing. ParyonUSD is the mainnet market: the same contracts with the real stablecoin, live with real money and capped at 25 PUSD per order until the contracts are independently audited.</dd>
 		</dl>
 	</section>
 
@@ -77,7 +77,7 @@
 	<section class="pp-card" style="margin-top: 1.25rem">
 		<h2>Status and disclaimers</h2>
 		<ul class="small notes">
-			<li>Experimental hackathon prototype. The contracts have not been security reviewed.</li>
+			<li>Experimental hackathon prototype. The contracts have had an internal security review only, no independent audit.</li>
 			<li>PennyPickerUSD trades on Chipnet with test coins. ParyonUSD on mainnet is real money, capped at 25 PUSD per order. There is no price keeper yet: an order resting in a quiet market can be filled at a price up to the last on-chain update old, so keep mainnet orders small and short-lived.</li>
 			<li>The chain cannot see the clock, so a taker can choose among oracle messages published since the last on-chain price update (minutes while the book is active).</li>
 		</ul>

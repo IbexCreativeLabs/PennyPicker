@@ -594,7 +594,7 @@ export function assertWithinOrderCap(market: MarketConfig, request: CreateOrderR
 	const value = orderValueUnits(request.side, request.amount, limitPrice);
 	if (value > market.maxOrderUnits) {
 		throw new Error(
-			`Orders are limited to ${formatUnits(market.maxOrderUnits)} PUSD each on this market while the contracts are unreviewed (this one is worth ${formatUnits(value)} PUSD).`
+			`Orders are limited to ${formatUnits(market.maxOrderUnits)} PUSD each on this market until the contracts are independently audited (this one is worth ${formatUnits(value)} PUSD).`
 		);
 	}
 }

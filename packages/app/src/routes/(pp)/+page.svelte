@@ -233,6 +233,7 @@
 			/* storage unavailable */
 		}
 	}
+	const mainnet = $derived(pp.networkInfo.realFunds);
 	const funded = $derived(!!pp.wallet && pp.utxosLoaded && pp.balances.bchSats > 0n);
 	const showGuide = $derived(!guideHidden && !funded);
 
@@ -294,21 +295,21 @@
 	</section>
 	{:else}
 	{#if pp.networkInfo.realFunds}
-		<p class="pp-callout bad small" style="margin-bottom: 1rem"><strong>BCH mainnet: real money.</strong> The contracts have not been security reviewed. Only trade amounts you can afford to lose.</p>
+		<p class="pp-callout bad small" style="margin-bottom: 1rem"><strong>BCH mainnet: real money.</strong> The contracts have had an internal security review only, no independent audit. Only trade amounts you can afford to lose.</p>
 	{/if}
 	{#if showGuide}
 		<section class="pp-card guide">
 			<div class="pp-card-head">
 				<div>
 					<h2>Start trading in three steps</h2>
-					<p class="small muted">Free test coins on BCH Chipnet. Nothing here has real value.</p>
+					<p class="small muted">{#if mainnet}Real BCH and {pp.selectedMarket.name} on mainnet. Orders are capped; use small amounts.{:else}Free test coins on BCH Chipnet. Nothing here has real value.{/if}</p>
 				</div>
 				<button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={hideGuide}>Hide</button>
 			</div>
 			<ol class="pp-steps">
 				<li class:done={!!pp.wallet}>
 					<strong>Get Cashonize</strong>
-					<span class="small muted">Open <a href="https://cashonize.com" target="_blank" rel="noopener">cashonize.com</a>, create a wallet and switch it to <em>Chipnet</em> in Settings.</span>
+					<span class="small muted">Open <a href="https://cashonize.com" target="_blank" rel="noopener">cashonize.com</a>, create a wallet and switch it to <em>{mainnet ? 'Mainnet' : 'Chipnet'}</em> in Settings.</span>
 				</li>
 				<li class:done={!!pp.wallet}>
 					<strong>Connect</strong>
@@ -316,8 +317,13 @@
 					{#if !pp.wallet}<div style="margin-top: 0.4rem"><a class="pp-btn pp-btn-primary pp-btn-sm" href="/wallet">Connect wallet</a></div>{/if}
 				</li>
 				<li class:done={funded}>
-					<strong>Get test BCH</strong>
-					<span class="small muted">Request free coins for your address from the <a href="https://tbch.googol.cash" target="_blank" rel="noopener">Chipnet faucet</a>, then sell 0.001 BCH below to get PUSD.</span>
+					{#if mainnet}
+						<strong>Fund it</strong>
+						<span class="small muted">Send a little BCH (or {pp.selectedMarket.name}) to the wallet. Orders are capped at {formatUnits(pp.selectedMarket.maxOrderUnits ?? 0n)} PUSD, and fees are a few hundred sats.</span>
+					{:else}
+						<strong>Get test BCH</strong>
+						<span class="small muted">Request free coins for your address from the <a href="https://tbch.googol.cash" target="_blank" rel="noopener">Chipnet faucet</a>, then sell 0.001 BCH below to get PUSD.</span>
+					{/if}
 				</li>
 			</ol>
 		</section>
@@ -326,7 +332,7 @@
 	<!-- Market header -->
 	<section class="pp-card market">
 		<div class="pair">
-			<img class="coin" src="/pennypickerusd-256.png" alt="" width="40" height="40" />
+			{#if pp.selectedMarket.id === 'pennypickerusd'}<img class="coin" src="/pennypickerusd-256.png" alt="" width="40" height="40" />{:else}<span class="coin coin-generic" aria-hidden="true">$</span>{/if}
 			<div>
 				<h1>BCH <span class="faint">/</span> PUSD</h1>
 				<span class="small muted">{pp.selectedMarket.name} · priced in BPS from the live oracle · {pp.networkInfo.label}</span>
@@ -342,8 +348,10 @@
 			{#if pp.oracle}
 				<span class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}">{pp.oracleStale ? 'Stale' : 'Fresh'}</span>
 				<div class="small muted">{formatAge(pp.oracleAge)} · #{pp.oracle.state.sequence}</div>
-			{:else}
+			{:else if pp.oracleLoaded}
 				<span class="pp-badge warn">No oracle</span>
+			{:else}
+				<span class="pp-badge plain">Loading…</span>
 			{/if}
 		</div>
 		<div class="m-stat">
@@ -468,7 +476,7 @@
 						<p class="pp-hint">The limit moves with the reference: the order always trades at {pct(Math.abs(maker.delta))} {maker.delta >= 0 ? 'above' : 'below'} the latest published price.</p>
 					{/if}
 					{#if pp.networkInfo.realFunds}
-						<p class="pp-callout bad small">Real money on BCH mainnet. Contracts unreviewed{cap !== undefined ? `; orders capped at ${formatUnits(cap)} PUSD` : ''}.</p>
+						<p class="pp-callout bad small">Real money on BCH mainnet. Contracts not independently audited{cap !== undefined ? `; orders capped at ${formatUnits(cap)} PUSD` : ''}.</p>
 					{/if}
 					<button type="button" class="pp-btn pp-btn-block {side === 'ask' ? 'pp-btn-ask' : 'pp-btn-bid'}" onclick={placeOrder} disabled={!pp.wallet || !pp.oracle || 'error' in maker}>
 						Review {side === 'ask' ? 'sell' : 'buy'} order
@@ -576,6 +584,7 @@
 	.pair { margin-right: auto; display: flex; align-items: center; gap: 0.75rem; }
 	.pair h1 { font-size: 1.5rem; }
 	.coin { width: 40px; height: 40px; border-radius: 50%; box-shadow: var(--pp-shadow); }
+	.coin-generic { display: grid; place-items: center; flex: none; background: #2f8f5b; color: #fff; font-weight: 700; font-size: 1.2rem; }
 	.guide { margin-bottom: 1rem; border-color: color-mix(in srgb, var(--pp-accent) 35%, var(--pp-border)); }
 	.guide h2 { font-size: 1.1rem; }
 	.m-stat { min-width: 7rem; }

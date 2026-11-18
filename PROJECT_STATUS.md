@@ -188,7 +188,7 @@ Checked live after the deploy (build `71ce7ad`):
 - Missing files now return 404 (fallback `404.html`), app files are cached for one day, and the error page repairs the
   cache once and reloads.
 
-## Mainnet version (ParyonUSD), code-ready (2026-11-18)
+## Mainnet version (ParyonUSD), built 2026-11-18
 
 - **Network-aware app.** `network.ts` defines Chipnet and mainnet: address prefix, WalletConnect chain (`bch:bchtest` / `bch:bitcoincash`), explorers, storage namespace. The selected market sets the network. Switching it reloads the market, history and Electrum provider, and only uses a Cashonize session approved for that chain.
 - **Same contracts.** ParyonUSD has 2 decimals like PennyPickerUSD, so the order and oracle covenants are unchanged. The builders encode mainnet addresses from `MarketConfig.network`.
@@ -196,7 +196,7 @@ Checked live after the deploy (build `71ce7ad`):
   - `MAINNET_WRITES_COMMITTED` (`deployment.ts`) gates mainnet signing (in `TxFlow`) and broadcasting (in `chain.ts`). It is on since 2026-11-18.
   - `MAINNET_MAX_ORDER_UNITS = 2500` caps every mainnet order at 25.00 PUSD, enforced by the builder and the form.
   - Mainnet screens show a real-money warning.
-- **Not deployed yet:** the mainnet price record (`MAINNET_DEPLOYMENT.oracleCategory`). Creating it is a real-money transaction that needs owner approval. The steps are in `DEPLOYMENT.md` §5, and `/admin` shows a readiness checklist.
+- **Deployed since:** the mainnet price record (`MAINNET_DEPLOYMENT.oracleCategory`) was created on 2026-11-18 with owner approval (genesis `95734104…`), followed by a real order, fill and cancel. See the mainnet section above.
 - **Verified:**
   - 22 new mainnet checks in the exchange suite: addresses, cap, broadcast switch, and a ParyonUSD genesis, ask, bid and fill verified in the BCH 2025 VM.
   - `scripts/pennypicker-mainnet-check.ts` (read-only) reaches mainnet Electrum and finds ParyonUSD.

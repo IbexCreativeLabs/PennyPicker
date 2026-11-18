@@ -55,8 +55,8 @@
 				<a class="pp-btn pp-btn-primary" href="/wallet">Connect wallet</a>
 			{:else}
 				<div class="pp-grid-2">
-					<div><div class="pp-stat-label">BCH</div><div class="pp-stat-value">{formatSats(pp.balances.bchSats)}</div></div>
-					<div><div class="pp-stat-label">{market.symbol}</div><div class="pp-stat-value">{formatUnits(pp.balances.pusdUnits)}</div></div>
+					<div><div class="pp-stat-label">BCH</div><div class="pp-stat-value">{pp.utxosLoaded ? formatSats(pp.balances.bchSats) : "…"}</div></div>
+					<div><div class="pp-stat-label">{market.symbol}</div><div class="pp-stat-value">{pp.utxosLoaded ? formatUnits(pp.balances.pusdUnits) : "…"}</div></div>
 				</div>
 				{#if market.network === 'chipnet'}
 					<p class="small muted" style="margin-top: 0.6rem">Need test PUSD? Ask in the community chat, or sell test BCH into a bid on the <a href="/">Exchange</a>.</p>
@@ -77,7 +77,7 @@
 				</button>
 			{/each}
 		</div>
-		<p class="small muted" style="margin-top: 0.6rem">Both markets price orders against the same oracles.cash BCH/USD oracle. Mainnet orders are capped while the contracts are unreviewed.</p>
+		<p class="small muted" style="margin-top: 0.6rem">Both markets price orders against the same oracles.cash BCH/USD oracle. Mainnet orders are capped until the contracts are independently audited.</p>
 	</section>
 </main>
 

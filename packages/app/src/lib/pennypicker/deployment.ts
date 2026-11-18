@@ -50,7 +50,7 @@ const MAINNET_WRITES_COMMITTED = true;
 export const MAINNET_WRITES_ENABLED: boolean =
 	MAINNET_WRITES_COMMITTED || (import.meta.env?.DEV === true && import.meta.env?.VITE_PENNYPICKER_MAINNET_WRITES === '1');
 
-/** Mainnet per-order cap while the contracts are unreviewed: 25.00 PUSD (in cents). */
+/** Mainnet per-order cap until the contracts are independently audited: 25.00 PUSD (in cents). */
 export const MAINNET_MAX_ORDER_UNITS = 2_500n;
 
 export type DeploymentIds = { pusdCategory: string | undefined; oracleOperatorPkh: string | undefined; oracleCategory: string | undefined };
@@ -114,7 +114,7 @@ export const MARKETS: StablecoinMarket[] = [
 		...mainnetStatus(),
 		category: PARYONUSD_CATEGORY,
 		maxOrderUnits: MAINNET_MAX_ORDER_UNITS,
-		summary: 'The BCH-collateralised USD stablecoin on Bitcoin Cash mainnet, priced by the same oracles.cash BCH/USD oracle as PennyPicker. Real money: orders are capped while the contracts are unreviewed.',
+		summary: 'The BCH-collateralised USD stablecoin on Bitcoin Cash mainnet, priced by the same oracles.cash BCH/USD oracle as PennyPicker. Real money: orders are capped until the contracts are independently audited.',
 		links: [
 			{ label: 'paryonusd.com', href: 'https://paryonusd.com' },
 			{ label: 'Cauldron', href: 'https://app.cauldron.quest/tokens' },

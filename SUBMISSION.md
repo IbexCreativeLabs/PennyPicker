@@ -2,7 +2,8 @@
 
 **Oracle Delta Basis Points Denominated Orderbook DEX for Stablecoins, on Bitcoin Cash.**
 
-- Live demo (BCH Chipnet, free test coins): **https://pennypicker.pages.dev**
+- Live demo: **https://pennypicker.pages.dev**. PennyPickerUSD on BCH Chipnet (free test coins), and ParyonUSD on BCH
+  mainnet (real money, 25 PUSD cap per order), chosen in the header
 - Source: https://github.com/IbexCreativeLabs/PennyPicker
 - Recording of a real two-wallet trade: [`media/two-wallet-trade.gif`](media/two-wallet-trade.gif)
 
@@ -60,7 +61,7 @@ Run from `packages/app`. The covenants are executed in libauth's BCH 2025 virtua
 
 - **33 covenant checks:** valid and invalid fills, forged or replayed oracle messages, a real oracles.cash message, and
   attack cases.
-- **87 transaction-builder checks:** chained signed transactions, mainnet ParyonUSD order and fill, the order cap, and
+- **92 transaction-builder checks:** chained signed transactions, mainnet ParyonUSD order and fill, the order cap, and
   the broadcast switch.
 - **9 mechanism checks** and **8 token-identity checks.**
 
@@ -75,8 +76,9 @@ each oracle message. An independent audit is required before mainnet trading wit
 ## Limitations and next steps
 
 - **Single price record.** Concurrent traders conflict and rebuild. For scale, shard the state across several records.
-- **Mainnet.** It needs one approved transaction to create the mainnet price record, a keeper, and an external audit
-  before the cap is raised.
+- **Mainnet.** Live with a 25 PUSD cap per order. There is no price keeper yet, so a resting order can be filled at the
+  last stored price in a quiet market; keep mainnet orders small and short-lived. An external audit is needed before the
+  cap is raised.
 - **Liquidations and redemptions.** These are pricing simulations on the About page, not deployed vault contracts.
 
 ## Credits

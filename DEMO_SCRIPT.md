@@ -35,6 +35,7 @@ become market-priced."
 
 ## 2:40 — Mainnet and safety (20 s)
 *Selector → ParyonUSD.*
-"The same contracts work with ParyonUSD on mainnet. This build is view-only there, with a 25 PUSD cap until an
-external audit."
+"The same contracts run with the real ParyonUSD on BCH mainnet, live since November 18 with a 25 PUSD cap per order
+until an external audit. Here is a real order, fill and cancel." *(Show the mainnet Market fills, or the mainnet table in
+`SUBMISSION.md`.)*
 *End on the README GIF or the transaction table.*

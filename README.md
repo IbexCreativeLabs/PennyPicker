@@ -4,7 +4,7 @@
 
 **Oracle Delta Basis Points Denominated Orderbook DEX for Stablecoins**, on Bitcoin Cash.
 
-Live demo (BCH Chipnet): **https://pennypicker.pages.dev**
+Live demo: **https://pennypicker.pages.dev** (Chipnet with free test coins, plus a live ParyonUSD market on BCH mainnet)
 
 Instead of pricing limit orders at a static dollar price that goes stale every time BCH moves, orders are
 denominated in basis points (±bps) relative to the live oracle price.
@@ -36,7 +36,7 @@ three separate protocol mechanics with a single P2P market:
 4. **Trade:** on the Exchange, choose **Trade now → Sell BCH 0.001** to sell into a resting bid and receive test PUSD.
    Or place a **Limit order** at ±BPS from the oracle price.
 
-The Chipnet book is seeded with asks at +10/+25/+50 BPS and bids at −10/−25/−50 BPS. Every transaction is previewed,
+The Chipnet book is seeded with small asks at +20/+25/+50 BPS and 30 PUSD bids at −10/−25/−50 BPS. Every transaction is previewed,
 signed in Cashonize and broadcast only when you press Broadcast.
 
 ## How it works
@@ -69,7 +69,7 @@ Experimental hackathon prototype. Two markets:
   addresses, Cashonize chain and Electrum. The mainnet price record and a real order, fill and cancel are listed in
   `SUBMISSION.md`. There is no price keeper yet, so keep mainnet orders small and short-lived.
 
-The contracts have not been security reviewed.
+The contracts have had an internal security review only, no independent audit.
 
 Real two-wallet trades, fills in both directions, cancels and oracle updates have been signed in Cashonize and
 confirmed on Chipnet; the transaction IDs are listed in `PROJECT_STATUS.md`.

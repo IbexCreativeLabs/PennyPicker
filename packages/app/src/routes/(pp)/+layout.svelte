@@ -81,6 +81,8 @@
 					<a href="/oracle" class="pp-badge {pp.price && pp.oracleStale ? 'warn' : 'ok'}" title="Reference price: oracles.cash BCH/USD">
 						{formatPrice(pp.displayPrice)}
 					</a>
+				{:else if pp.market && !pp.oracleLoaded}
+					<span class="pp-badge plain">Loading…</span>
 				{:else if pp.market}
 					<span class="pp-badge warn">No oracle</span>
 				{:else}
@@ -131,7 +133,7 @@
 
 	<footer class="foot">
 		<div class="bar small muted">
-			<span>{#if pp.networkInfo.realFunds}Experimental prototype. {pp.selectedMarket.name} on BCH mainnet is real money; the contracts are unreviewed and orders are capped.{:else}Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing.{/if} Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
+			<span>{#if pp.networkInfo.realFunds}Experimental prototype. {pp.selectedMarket.name} on BCH mainnet is real money; the contracts are not independently audited and orders are capped.{:else}Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing.{/if} Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
 			<span><a href="/about">About</a> · <a href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Source code</a></span>
 		</div>
 	</footer>
