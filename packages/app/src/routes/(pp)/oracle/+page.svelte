@@ -150,7 +150,7 @@
 	<section class="pp-card" style="margin-top: 1rem">
 		{#if !canWrite}
 			<h2>{pp.networkInfo.label} price record</h2>
-			<p class="muted">{exists ? 'The on-chain record exists, but this build does not send mainnet transactions.' : `The ${pp.selectedMarket.name} market has no on-chain price record yet. Creating it is a real-money mainnet transaction and will be done by the project owner when mainnet trading opens.`} The live oracles.cash price above is what it will use.</p>
+			<p class="muted">{exists ? 'The on-chain record exists, but this build does not send mainnet transactions.' : `The ${pp.selectedMarket.name} market has no on-chain price record yet. Creating it is a real-money mainnet transaction done by the project owner.`} The live oracles.cash price above is what it will use.</p>
 		{:else if !pp.wallet}
 			<h2>Update the on-chain price</h2>
 			<p class="muted">Any connected wallet can push the latest signed oracles.cash price on-chain (it pays only the network fee). <a href="/wallet">Wallet →</a></p>

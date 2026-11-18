@@ -21,8 +21,8 @@ Live at **https://pennypicker.pages.dev** (BCH Chipnet, free test coins).
   Cashonize shows the name, ticker and icon.
 - **Markets:**
   - PennyPickerUSD on Chipnet: tradable.
-  - ParyonUSD on mainnet: view-only, with the same contracts, mainnet addresses and Cashonize chain. Mainnet sending
-    is switched off, and orders are capped at 25 PUSD.
+  - ParyonUSD on mainnet: live with real money since 2026-11-18, using the same contracts, capped at 25 PUSD per order,
+    with no price keeper.
 - **Pages:**
   - Exchange, with a getting-started guide, depth bars and live price movement.
   - Token, Oracle and Wallet.

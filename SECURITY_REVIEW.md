@@ -8,7 +8,8 @@
 
 **Reviewer:** the project's AI developer (Claude). This is **not** an independent audit. An external review is still
 required before mainnet trading with meaningful amounts. Until then, mainnet orders are capped at 25 PUSD
-(`MAINNET_MAX_ORDER_UNITS`) and mainnet transactions are switched off (`MAINNET_WRITES_ENABLED = false`).
+(`MAINNET_MAX_ORDER_UNITS`). Mainnet trading was opened by the project owner on 2026-11-18 without a keeper, so finding 1
+below applies in full.
 
 ## Result
 
@@ -27,7 +28,7 @@ or availability risks plus one wallet-safety improvement, which is fixed.
 | Only the maker can cancel | `cancel()` requires the maker's own P2PKH input right after the order. The maker's wallet signature (SIGHASH_ALL) commits to every output. | other address; maker input in the wrong position |
 | The wallet signs what the user saw | `verifySignedMatchesUnsigned` rejects a signed transaction whose inputs, outputs, version or locktime differ from the preview, or whose hash differs from the wallet's report. | — |
 | User tokens are never spent by accident | BCH funding uses BCH-only coins. Stablecoin inputs use fungible-only coins, so NFTs such as ParyonUSD loan NFTs are never touched. Token identity outputs are held back, and every builder checks token conservation. | identity safeguards |
-| No mainnet transaction by mistake | `MAINNET_WRITES_ENABLED = false` blocks signing (TxFlow) and broadcasting (`chain.ts`). Mainnet orders are capped in both the builder and the form. | mainnet suite |
+| No mainnet transaction by mistake | A single switch (`MAINNET_WRITES_COMMITTED`) gates mainnet signing (TxFlow) and broadcasting (`chain.ts`). It is on since 2026-11-18. Mainnet orders are capped in both the builder and the form, and every mainnet screen shows a real-money warning. | mainnet suite |
 
 ## Findings
 

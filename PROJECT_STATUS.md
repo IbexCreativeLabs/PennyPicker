@@ -147,7 +147,7 @@ A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe
 
 | Route | Purpose |
 | --- | --- |
-| `/` | Exchange: market header, orderbook, limit-order and trade-now panels, my orders, activity. With ParyonUSD selected: view-only mainnet card |
+| `/` | Exchange: market header, orderbook, limit-order and trade-now panels, my orders, activity. With ParyonUSD selected: the live mainnet market (real money, 25 PUSD cap) |
 | `/token` | Selected stablecoin's details (PennyPickerUSD or ParyonUSD), your balance, market list |
 | `/oracle` | Live oracles.cash price, on-chain reference, permissionless update, history |
 | `/wallet` | Connect Cashonize (QR, copy, Cashonize-web deep link), balances, **Send PUSD**, UTXO list |
@@ -156,9 +156,9 @@ A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe
 | `/admin/token` | **Admin**: PUSD genesis, identity, BCMR draft, vout-0 self-transfer |
 | `/admin/simulator` | **Admin**: the original in-memory simulator |
 
-Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `2469acc5…2544` on mainnet, view only). Bottom-right **Chat** button opens the Telegram community panel (link set in `deployment.ts` → `COMMUNITY.telegramUrl`). Old `/penny-picker/...` links redirect via `static/_redirects`.
+Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `2469acc5…2544` on mainnet, live with a 25 PUSD cap). Bottom-right **Chat** button opens the Telegram community panel (link set in `deployment.ts` → `COMMUNITY.telegramUrl`). Old `/penny-picker/...` links redirect via `static/_redirects`.
 
-## Mainnet (ParyonUSD), live on-chain, public site view-only (2026-11-18)
+## Mainnet (ParyonUSD): live, trading open on the public site (2026-11-18)
 
 Approved by the owner. Done from a local dev build with `VITE_PENNYPICKER_MAINNET_WRITES=1`, using new
 single-address Cashonize mainnet wallets funded by the owner.
@@ -176,14 +176,14 @@ single-address Cashonize mainnet wallets funded by the owner.
 | 4 | Maker cancels the remainder: 0.00031 BCH + 0.05 ParyonUSD back to the Maker | `c46482bf44c750556e51351cc6f62513d790f594d6addad7f6e04a9d4f4b4c1e` |
 
 Transactions 1 and 2 confirmed in block 977888. After the round trip the Maker holds 0.05 ParyonUSD and the Taker holds 0.95.
-The public site is still view-only on mainnet: `MAINNET_WRITES_COMMITTED = false`, and opening it needs the owner's approval.
+**Opened to the public by the owner on 2026-11-18** (`MAINNET_WRITES_COMMITTED = true`): 25 PUSD per-order cap, no keeper.
 
 ## Mainnet version (ParyonUSD), code-ready (2026-11-18)
 
 - **Network-aware app.** `network.ts` defines Chipnet and mainnet: address prefix, WalletConnect chain (`bch:bchtest` / `bch:bitcoincash`), explorers, storage namespace. The selected market sets the network. Switching it reloads the market, history and Electrum provider, and only uses a Cashonize session approved for that chain.
 - **Same contracts.** ParyonUSD has 2 decimals like PennyPickerUSD, so the order and oracle covenants are unchanged. The builders encode mainnet addresses from `MarketConfig.network`.
 - **Safety.**
-  - `MAINNET_WRITES_ENABLED = false` (`deployment.ts`) blocks mainnet signing (in `TxFlow`) and broadcasting (in `chain.ts`).
+  - `MAINNET_WRITES_COMMITTED` (`deployment.ts`) gates mainnet signing (in `TxFlow`) and broadcasting (in `chain.ts`). It is on since 2026-11-18.
   - `MAINNET_MAX_ORDER_UNITS = 2500` caps every mainnet order at 25.00 PUSD, enforced by the builder and the form.
   - Mainnet screens show a real-money warning.
 - **Not deployed yet:** the mainnet price record (`MAINNET_DEPLOYMENT.oracleCategory`). Creating it is a real-money transaction that needs owner approval. The steps are in `DEPLOYMENT.md` §5, and `/admin` shows a readiness checklist.
@@ -247,7 +247,7 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
   - Seeded Chipnet book.
   - Real two-wallet trades and the README GIF.
   - Recovery from contention, with real broadcast errors shown.
-  - Mainnet-ready, view-only ParyonUSD market.
+  - Live ParyonUSD mainnet market (25 PUSD cap, no keeper).
   - Internal security review.
   - Submission write-up (`SUBMISSION.md`) and demo script (`DEMO_SCRIPT.md`).
 - **Checked on the live site:**

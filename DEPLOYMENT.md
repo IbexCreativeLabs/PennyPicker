@@ -81,7 +81,8 @@ user's own wallet.
 ## 5. Going live on mainnet (ParyonUSD)
 
 The mainnet market uses the same contracts as Chipnet, with the real ParyonUSD token
-(`2469acc5…2544`). This build ships it **view only**: `MAINNET_WRITES_ENABLED = false` in
+(`2469acc5…2544`). **Status 2026-11-18: done.** The price record is deployed and `MAINNET_WRITES_COMMITTED = true`; the
+steps below are kept for redeploying. Originally the build shipped it **view only**, with the switch off in
 `packages/app/src/lib/pennypicker/deployment.ts` stops every mainnet signature and broadcast,
 in the UI and in `chain.ts`. Each step below spends real BCH and needs the project owner's approval.
 

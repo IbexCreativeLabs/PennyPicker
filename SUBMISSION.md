@@ -26,7 +26,7 @@ one P2P market of this kind could replace three protocol mechanics:
 | **Exchange UI** | Orderbook in BPS, limit orders, "trade now" routing across orders, my orders with cancel, activity, plus Token, Oracle, Wallet and About pages. A public site and a password-protected admin area. |
 | **Wallet** | Cashonize over WalletConnect. Keys never leave the wallet. Every transaction is previewed, signed in Cashonize, checked byte-for-byte against the preview, and broadcast only on an explicit click. |
 | **Contention handling** | If someone else uses the shared price record first, the app says nothing was broadcast and offers **Rebuild with the latest state**. |
-| **Mainnet** | Selecting ParyonUSD switches the whole app to BCH mainnet: addresses, Cashonize chain and Electrum. A mainnet price record exists, and a real order, fill and cancel with ParyonUSD were done (txids below). The public site is view-only on mainnet until opened, and orders are capped at 25 PUSD. |
+| **Mainnet** | Selecting ParyonUSD switches the whole app to BCH mainnet: addresses, Cashonize chain and Electrum. A mainnet price record exists, and a real order, fill and cancel with ParyonUSD were done (txids below). Mainnet trading is open on the public site, capped at 25 PUSD per order. |
 
 ## Verify it yourself on Chipnet
 

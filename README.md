@@ -65,9 +65,9 @@ Hackathon submission: [`SUBMISSION.md`](SUBMISSION.md) · Demo script: [`DEMO_SC
 Experimental hackathon prototype. Two markets:
 
 - **PennyPickerUSD on Chipnet, tradable.** A fixed-supply test token priced as 1 USD, with no backing.
-- **ParyonUSD on BCH mainnet, code-ready, view only.** The app supports mainnet end to end: addresses, Cashonize
-  chain and Electrum. Orders are capped at 25 PUSD while the contracts are unreviewed. Trading opens once the mainnet
-  price record is deployed (see `DEPLOYMENT.md`).
+- **ParyonUSD on BCH mainnet, live (real money, 25 PUSD cap per order).** The app supports mainnet end to end:
+  addresses, Cashonize chain and Electrum. The mainnet price record and a real order, fill and cancel are listed in
+  `SUBMISSION.md`. There is no price keeper yet, so keep mainnet orders small and short-lived.
 
 The contracts have not been security reviewed.
 
