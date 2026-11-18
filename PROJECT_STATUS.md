@@ -70,6 +70,11 @@ Use one app origin per wallet (`http://127.0.0.1:5173` and `http://localhost:517
 
 Together with the earlier +20 BPS ask, the book shows a 20 BPS spread around the oracle price.
 
+**Two-wallet trade recorded on the public site (2026-11-18):** PP Trader A bought 0.001 BCH from Trader B's +10 BPS
+ask for 0.21 PUSD, bundling the newest oracles.cash message (#1931898). The fill is
+`74966ac56d7fed89db2ff4e21f912f18e83541fdd6ba6efcd55099f341a71de7`. The recording is
+`pennypicker_two_wallet_trade.gif` (kept outside the repo).
+
 ## Pricing convention (protocol v2, changed before any oracle or order existed)
 
 - **Pair:** BCH/PUSD. Price = **PUSD per BCH** = the oracles.cash **BCH/USD** price with 1 PUSD treated as 1 USD (PUSD stands in for a USD stablecoin, per the project pitch). The oracle stores it × 1e8 (`210.99` → `21099000000`).
