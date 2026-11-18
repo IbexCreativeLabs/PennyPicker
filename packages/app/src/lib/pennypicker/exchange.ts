@@ -243,7 +243,10 @@ function spendable(utxos: ChainUtxo[]): ChainUtxo[] {
 }
 
 function bchOnly(utxos: ChainUtxo[]): ChainUtxo[] {
-	return sortLargestFirst(spendable(utxos).filter((utxo) => !utxo.token));
+	// Output-0 coins come last: on mainnet one may be the authbase of a token the user
+	// created (its identity history), which this app cannot always recognise.
+	const coins = sortLargestFirst(spendable(utxos).filter((utxo) => !utxo.token));
+	return [...coins.filter((utxo) => utxo.vout !== 0), ...coins.filter((utxo) => utxo.vout === 0)];
 }
 
 function pusdUtxos(utxos: ChainUtxo[], pusdCategory: string): ChainUtxo[] {

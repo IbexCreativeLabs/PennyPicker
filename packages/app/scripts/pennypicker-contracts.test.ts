@@ -174,6 +174,26 @@ const wallet = (pk: Uint8Array): Output => ({ lockingBytecode: p2pkh(pk), valueS
 	check('oracle update replaying an old message (same sequence)', mk(oracleMsg(1_800_000_060, 7, 5, 21_072n), encodeOracleCommitment({ price: 21_072n * 1_000_000n, timestamp: 1_800_000_060, sequence: 7 })), false);
 	check('oracle update with a metadata message (negative type)', mk(oracleMsg(1_800_000_060, 8, -54, 21_072n), state), false);
 }
+// --- Security review (2026-11-18): the oracle NFT can never leave its contract or lose its capability.
+{
+	const m = oracleMsg(1_800_000_060, 8, 5, 21_072n);
+	const state = encodeOracleCommitment({ price: 21_072n * 1_000_000n, timestamp: 1_800_000_060, sequence: 8 });
+	const spend = (unlocking: Uint8Array, out0: Output) => {
+		const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [input(0, unlocking), input(9, new Uint8Array())], outputs: [out0, { lockingBytecode: OP_TRUE, valueSatoshis: 4_000n }] };
+		return verify(tx, [oracleUtxo(), { lockingBytecode: OP_TRUE, valueSatoshis: 5_000n }]);
+	};
+	const upd = oracleUpdateUnlocking(operator, m.signature, m.message);
+	check('attack: update moving the oracle NFT to another script', spend(upd, { ...oracleUtxo(state), lockingBytecode: OP_TRUE }), false);
+	check('attack: read moving the oracle NFT to another script', spend(oracleReadUnlocking(operator), { ...oracleUtxo(), lockingBytecode: OP_TRUE }), false);
+	check('attack: update downgrading the NFT to immutable', spend(upd, oracleUtxo(state, ORACLE_CAT, 'none')), false);
+	check('attack: read draining the oracle value', spend(oracleReadUnlocking(operator), { ...oracleUtxo(), valueSatoshis: 546n }), false);
+}
+// --- Security review: an order can only be filled with the oracle at input 0.
+{
+	const { tx, sources } = fillTx(ask, askIn, out(ask.lockingBytecode, 6_001_000n, due));
+	const swapped: TransactionCommon = { ...tx, inputs: [tx.inputs[1]!, tx.inputs[0]!, tx.inputs[2]!], outputs: [tx.outputs[1]!, tx.outputs[0]!, tx.outputs[2]!] };
+	check('attack: order at input 0 (oracle elsewhere)', verify(swapped, [sources[1]!, sources[0]!, sources[2]!]), false);
+}
 // --- A real oracles.cash BCH/USD message (fetched 2026-11-17) verifies against the production key.
 {
 	const real = oracleContract({ operatorPkh: makerPkhFromPublicKey(operatorPk) }); // default: GP BCH/USD key
