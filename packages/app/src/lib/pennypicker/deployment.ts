@@ -39,7 +39,13 @@ export const MAINNET_DEPLOYMENT = {
  * Master switch for mainnet transactions. While false, this build cannot sign or
  * broadcast anything on mainnet (enforced in chain.ts as well as in the UI).
  */
-export const MAINNET_WRITES_ENABLED = false;
+const MAINNET_WRITES_COMMITTED = false;
+/**
+ * Effective switch. Besides the committed value, a local dev server may enable it for the one-time
+ * mainnet setup with VITE_PENNYPICKER_MAINNET_WRITES=1; production builds never honour the override.
+ */
+export const MAINNET_WRITES_ENABLED: boolean =
+	MAINNET_WRITES_COMMITTED || (import.meta.env?.DEV === true && import.meta.env?.VITE_PENNYPICKER_MAINNET_WRITES === '1');
 
 /** Mainnet per-order cap while the contracts are unreviewed: 25.00 PUSD (in cents). */
 export const MAINNET_MAX_ORDER_UNITS = 2_500n;
