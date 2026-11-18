@@ -57,7 +57,8 @@ signed in Cashonize and broadcast only when you press Broadcast.
 Contracts: [`packages/app/src/lib/pennypicker/contracts`](packages/app/src/lib/pennypicker/contracts) ·
 Transaction builders: [`exchange.ts`](packages/app/src/lib/pennypicker/exchange.ts) ·
 Status, live Chipnet transactions and design notes: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) ·
-Security review: [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md)
+Security review: [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md) ·
+Hackathon submission: [`SUBMISSION.md`](SUBMISSION.md) · Demo script: [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md)
 
 ## Status
 

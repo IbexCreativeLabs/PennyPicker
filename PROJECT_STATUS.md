@@ -204,10 +204,28 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 
 ## External actions required (you)
 
-1. **Push commits:** `git push ibex-backup main` from your terminal. This shell has no GitHub credentials. Each push redeploys the public site.
-2. Faucet top-ups (tbch.googol.cash uses a CAPTCHA the agent may not solve).
+1. **Pushing:** GitHub credentials are cached in memory (git `credential.helper cache`, 7 days from 2026-11-18). After
+   that expires, run `git fetch ibex-backup` once in your terminal so the agent can push again.
+2. **Faucet top-ups:** tbch.googol.cash uses a CAPTCHA the agent may not solve.
+3. **Mainnet go-live:** needs your approval (`DEPLOYMENT.md` §5).
 
-## Remaining tasks
+## Release status (2026-11-18)
 
-- ~~Live oracle genesis, order, fill, cancel and update~~ (done, see table above; Cashonize signs contract inputs fine).
-- ~~Mobile pass~~ (all pages checked at 390 px, no horizontal overflow). Optional: price chart from oracle history; a BCMR file for the v3 PUSD category.
+- **Done:**
+  - Public site: Exchange, Token, Oracle, Wallet and About.
+  - Admin area behind a password.
+  - Seeded Chipnet book.
+  - Real two-wallet trades and the README GIF.
+  - Recovery from contention, with real broadcast errors shown.
+  - Mainnet-ready, view-only ParyonUSD market.
+  - Internal security review.
+  - Submission write-up (`SUBMISSION.md`) and demo script (`DEMO_SCRIPT.md`).
+- **Checked on the live site:**
+  - No console errors on any page.
+  - No horizontal overflow at 390 px on any page.
+  - Stale saved IDs are ignored and removed.
+- **Not done (out of scope for the hackathon build):**
+  - Mainnet price record and keeper.
+  - External audit.
+  - Vault contracts for liquidations and redemptions (pricing simulations only).
+  - Token metadata (BCMR) so wallets show the PennyPickerUSD name.
