@@ -151,7 +151,7 @@ Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `246
 Run from `packages/app`, using libauth's BCH 2025 VM:
 
 ```
-pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 28 covenant checks (incl. a real oracles.cash message)
+pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 33 covenant checks (incl. a real oracles.cash message and attack cases)
 pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 85 builder checks (signed, chained txs, PUSD genesis + transfer, identity safeguards, error texts, mainnet/ParyonUSD + cap)
 pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
 pnpm dlx tsx scripts/pennypicker-identity.test.ts    # 8 authchain/marking checks
@@ -159,7 +159,7 @@ pnpm dlx tsx scripts/pennypicker-identity.test.ts    # 8 authchain/marking check
 
 Read-only mainnet check: `pennypicker-mainnet-check.ts`. Read-only Chipnet helpers: `pennypicker-live-check.ts`, `-balances.ts`, `-utxos-full.ts`, `-oracle-history.ts`, `-verify-trades.ts`, `-wait-confirm.ts`.
 
-The UI has been driven end to end in Chrome by the agent (see the live test table). Type-check: no errors in PennyPicker files; 121 legacy Vox errors remain.
+The UI has been driven end to end in Chrome by the agent (see the live test table). Type-check (`svelte-check`): 0 errors. The unused Vox apps, packages and contracts were removed on 2026-11-18; the workspace is now `packages/app` and `packages/wallet` (Electrum watch-only wallet from Vox). Internal security review: `SECURITY_REVIEW.md`.
 
 ## Known limitations
 
@@ -170,7 +170,7 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 - **Discovery limits.** It scans the last 300 oracle-history transactions and makes one Electrum call per announced order.
 - **Fees.** Estimated at about 1 sat/byte. Order outputs keep a 1,000-sat reserve, and the minimum trade is 5,000 sats.
 - **Local state.** Transaction history and config live in localStorage per browser unless set via `VITE_PENNYPICKER_*`.
-- **Legacy modules.** `orderCommitment.ts` (only `makerPkhFromAddress` is still used), `orderbookIndex.ts`, `electrumOrderbook.ts`, `orderLifecycle.ts`, `executionOracle.ts` and `market.ts` (simulator) belong to earlier designs.
+- **Older helpers.** `orderCommitment.ts` (address helpers) and `market.ts` (admin simulator math) come from earlier designs.
 - **No security review.** The covenants have not been independently reviewed.
 
 ## External actions required (you)

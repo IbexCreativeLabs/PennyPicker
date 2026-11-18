@@ -23,10 +23,7 @@ export default defineConfig({
 			transformMixedEsModules: true,
 			// linked modules in a monorepo must be explicitly included
 			include: [
-				/@fbch\/lib/,
-				/@unspent\/drip/,
 				/@unspent\/wallet/,
-				/@unspent\/wrap/,
 				/node_modules/
 			]
 		},

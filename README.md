@@ -37,7 +37,8 @@ three separate protocol mechanics with a single P2P market:
 
 Contracts: [`packages/app/src/lib/pennypicker/contracts`](packages/app/src/lib/pennypicker/contracts) ·
 Transaction builders: [`exchange.ts`](packages/app/src/lib/pennypicker/exchange.ts) ·
-Status, live Chipnet transactions and design notes: [`PROJECT_STATUS.md`](PROJECT_STATUS.md)
+Status, live Chipnet transactions and design notes: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) ·
+Security review: [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md)
 
 ## Status
 
