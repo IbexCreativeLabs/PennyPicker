@@ -340,7 +340,7 @@ export class BaseWallet implements WalletI {
    */
   public explorerUrl(txId: string) {
     const explorerUrlMap = {
-      mainnet: "https://blockchair.com/bitcoin-cash/transaction/",
+      mainnet: "https://bchexplorer.cash/tx/",
       testnet: "https://www.blockchain.com/bch-testnet/tx/",
       regtest: "",
     };

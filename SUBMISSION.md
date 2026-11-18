@@ -41,7 +41,7 @@ All of these were signed in Cashonize and broadcast from the app:
 | A sells into B's bid (v3 test) | `e3098a63bb4163ef1d8aaa11d419f073b14e0ccda3bac4307ad46b730a7b83ae` |
 | Conflict rejected, then rebuilt and accepted | `1f0ff030c55407152db8e18d228c93c0c69cdcd7625186d3ae95d7393b52a57f` |
 
-**On BCH mainnet with real ParyonUSD** (owner-approved, small amounts; explorer `https://blockchair.com/bitcoin-cash/transaction/<txid>`):
+**On BCH mainnet with real ParyonUSD** (owner-approved, small amounts; explorer `https://bchexplorer.cash/tx/<txid>`):
 
 | What | Transaction |
 |---|---|

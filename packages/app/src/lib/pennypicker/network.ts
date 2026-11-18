@@ -38,8 +38,8 @@ export const NETWORKS: Record<NetworkId, NetworkInfo> = {
 		label: 'Mainnet',
 		prefix: 'bitcoincash',
 		walletConnectChain: 'bch:bitcoincash',
-		explorerTx: (txid) => `https://blockchair.com/bitcoin-cash/transaction/${txid}`,
-		explorerAddress: (address) => `https://blockchair.com/bitcoin-cash/address/${address}`,
+		explorerTx: (txid) => `https://bchexplorer.cash/tx/${txid}`,
+		explorerAddress: (address) => `https://bchexplorer.cash/address/${address}`,
 		storagePrefix: 'pennypicker:mainnet:',
 		realFunds: true
 	}
