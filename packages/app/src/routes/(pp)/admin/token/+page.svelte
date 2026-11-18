@@ -30,6 +30,7 @@
 	import { balancesOf, type Balances } from '$lib/pennypicker/ui/wallet';
 	import { pp, explorerTx } from '$lib/pennypicker/ui/session.svelte';
 	import IdentityCard from '$lib/pennypicker/ui/IdentityCard.svelte';
+	import BcmrPublishCard from '$lib/pennypicker/ui/BcmrPublishCard.svelte';
 	import PusdGenesisCard from '$lib/pennypicker/ui/PusdGenesisCard.svelte';
 	import { CHIPNET_DEPLOYMENT } from '$lib/pennypicker/deployment';
 	import { formatBchFromSatoshis, formatPusd } from '$lib/pennypicker/market';
@@ -449,6 +450,7 @@
 	</div>
 
 	<IdentityCard />
+	<BcmrPublishCard />
 
 	<!-- 5. Genesis status -->
 	<section class="pp-card" style="margin-top: 1rem">

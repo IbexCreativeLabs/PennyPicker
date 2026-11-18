@@ -46,7 +46,8 @@
 		'order-cancel': 'Cancel order',
 		'pusd-send': 'Send PUSD',
 		'identity-separation': 'Separate PUSD identity',
-		'pusd-genesis': 'Create PUSD'
+		'pusd-genesis': 'Create PUSD',
+		'bcmr-publication': 'Publish token metadata'
 	};
 
 	const rows = $derived(

@@ -123,7 +123,7 @@ export interface ContractInfo {
 export type WcSourceOutput = Input & Output & { contract?: ContractInfo };
 
 export interface UnsignedExchangeTransaction {
-	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel' | 'pusd-send' | 'identity-separation' | 'pusd-genesis';
+	kind: 'oracle-genesis' | 'oracle-update' | 'order-create' | 'order-fill' | 'order-cancel' | 'pusd-send' | 'identity-separation' | 'pusd-genesis' | 'bcmr-publication';
 	transaction: TransactionCommon;
 	unsignedHex: string;
 	sourceOutputs: WcSourceOutput[];
@@ -1054,6 +1054,55 @@ export function buildIdentitySeparation(
 		`Output 1: all ${formatUnits(utxo.token.amount)} PUSD (category ${tokenCategory.slice(0, 12)}…) to ${own}`,
 		...(tx.outputs.length > 2 ? [`Output 2: BCH change to ${own}`] : []),
 		'Afterwards ordinary PUSD sends and trades no longer touch the identity'
+	]);
+}
+
+/** BCMR publication prefix: OP_RETURN <'BCMR'>. */
+const BCMR_PREFIX = utf8ToBin('BCMR');
+
+/**
+ * Publish token metadata (BCMR) on-chain: spend the token's identity output
+ * (authhead) and create the next one at output 0, with an
+ * OP_RETURN <'BCMR'> <sha256(registry)> <uri...> publication output.
+ * The hash is pushed in OP_SHA256 byte order (as computed, not reversed).
+ * URIs without a scheme mean https://; a bare host means its well-known path.
+ */
+export function buildBcmrPublication(
+	tokenCategory: string,
+	ownerAddress: string,
+	walletUtxos: ChainUtxo[],
+	identity: { txid: string; vout: number },
+	registrySha256Hex: string,
+	uris: string[]
+): UnsignedExchangeTransaction {
+	const walletLocking = addressToLockingBytecode(ownerAddress);
+	if (identity.vout !== 0) throw new Error('An identity output is always output 0 of its transaction.');
+	if (!/^[0-9a-f]{64}$/.test(registrySha256Hex)) throw new Error('Registry hash must be 32-byte hex.');
+	if (uris.length === 0 || uris.some((uri) => !uri || uri.length > 200)) throw new Error('Give at least one registry URI.');
+	const utxo = walletUtxos.find((candidate) => candidate.txid === identity.txid && candidate.vout === identity.vout);
+	if (!utxo) throw new Error('The identity output is not an unspent output of the connected wallet.');
+	if (utxo.token) throw new Error('Separate the token supply from the identity output first.');
+	const input = utxoToInput(utxo, new Uint8Array(), true);
+	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [input], outputs: [] };
+	const sources: WcSourceOutput[] = [source(input, utxoToOutput(utxo, walletLocking))];
+	tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: IDENTITY_OUTPUT_SATOSHIS });
+	tx.outputs.push(opReturn([BCMR_PREFIX, hexToBin(registrySha256Hex), ...uris.map((uri) => utf8ToBin(uri))]));
+	const used = new Set([`${utxo.txid}:${utxo.vout}`]);
+	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
+
+	const out0 = tx.outputs[0]!;
+	if (binToHex(out0.lockingBytecode) !== binToHex(walletLocking) || out0.token) {
+		throw new Error('Internal check failed: output 0 must be the new identity output at your own address.');
+	}
+	if (tx.outputs.some((output, index) => index !== 1 && binToHex(output.lockingBytecode) !== binToHex(walletLocking))) {
+		throw new Error('Internal check failed: every value output must pay your own address.');
+	}
+	const own = lockingBytecodeToChipnetAddress(walletLocking, false);
+	return finish('bcmr-publication', tx, sources, fee, [
+		`Publish token metadata (BCMR) for category ${tokenCategory.slice(0, 12)}…`,
+		`Input 0: identity output ${utxo.txid.slice(0, 12)}…:0; output 0: the next identity output, to ${own}`,
+		`Output 1: OP_RETURN BCMR, registry sha256 ${registrySha256Hex.slice(0, 16)}…, at ${uris.join(', ')}`,
+		'Wallets and indexers following this token read its name, ticker, decimals and icon from that registry'
 	]);
 }
 

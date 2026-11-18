@@ -29,6 +29,7 @@ import {
 	buildPusdTransfer,
 	buildIdentitySeparation,
 	buildPusdGenesis,
+	buildBcmrPublication,
 	describeOrder,
 	findOracleUtxo,
 	lockingBytecodeToAddress,
@@ -396,6 +397,21 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	check('committed oracle category wins over a stale saved one', cfg.source.oracleCategory === 'default' && cfg.oracleCategory !== '88'.repeat(32));
 	check('the stale saved oracle category is removed', !store.has('pennypicker:chipnet:oracle-category'));
 	delete (globalThis as { localStorage?: unknown }).localStorage;
+}
+// 15. BCMR publication: spends the identity output, recreates it at output 0, OP_RETURN BCMR <hash> <uri>.
+{
+	const owner = key('31');
+	const identity = { ...fund(owner, 230, 1_000n), vout: 0 };
+	const hash = 'ab'.repeat(32);
+	const pub = buildBcmrPublication(PUSD, owner.address, [identity, { ...fund(owner, 231, 50_000n), vout: 1 }], identity, hash, ['pennypicker.pages.dev']);
+	const pv = verify('BCMR publication verifies', pub, owner);
+	check('publication spends the identity output at input 0', binToHex(pv.tx.inputs[0]!.outpointTransactionHash) === identity.txid && pv.tx.inputs[0]!.outpointIndex === 0);
+	check('output 0 is the next identity output to the owner, BCH only', binToHex(pv.tx.outputs[0]!.lockingBytecode) === binToHex(owner.locking) && !pv.tx.outputs[0]!.token);
+	const expected = '6a0442434d5220' + hash + '15' + binToHex(new TextEncoder().encode('pennypicker.pages.dev'));
+	check('output 1 is OP_RETURN BCMR <hash> <uri>', binToHex(pv.tx.outputs[1]!.lockingBytecode) === expected);
+	let refused = false;
+	try { buildBcmrPublication(PUSD, owner.address, [{ ...identity, token: { category: PUSD, amount: 5n } }], identity, hash, ['x']); } catch { refused = true; }
+	check('publication refuses an identity output that still holds tokens', refused);
 }
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 
