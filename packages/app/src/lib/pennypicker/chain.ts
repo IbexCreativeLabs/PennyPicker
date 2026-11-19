@@ -235,6 +235,8 @@ export interface DiscoveryResult {
 	announcedCount: number;
 	scannedTransactions: number;
 	historyTruncated: boolean;
+	/** Activity fingerprint of the oracle address history this result was built from (see marketActivityFingerprint). */
+	fingerprint?: string;
 }
 
 /**
@@ -243,6 +245,24 @@ export interface DiscoveryResult {
  * re-derived into contract addresses (a forged announcement cannot point at a
  * different script), then each address is queried for its live UTXO.
  */
+/** Raw transactions never change once known, so discovery downloads each one only once per page load. */
+const rawTransactionCache = new Map<string, string>();
+
+/**
+ * Cheap, read-only change check for the background poll: one Electrum history request for the market's oracle
+ * address. Every order announcement, fill and price update touches that address, so a changed fingerprint means the
+ * book needs a full refresh. (Cancels do not touch it; the poll also does a periodic full refresh for those.)
+ */
+export async function marketActivityFingerprint(market: MarketConfig): Promise<string> {
+	const address = marketOracleAddress(market);
+	const provider = await providerFor(address);
+	return fingerprintOf(await provider.getHistory(address));
+}
+
+function fingerprintOf(history: { tx_hash: string; height: number }[]): string {
+	return `${history.length}|${history.slice(-12).map((entry) => `${entry.tx_hash}:${entry.height}`).join(',')}`;
+}
+
 export async function discoverOrders(market: MarketConfig): Promise<DiscoveryResult> {
 	const address = marketOracleAddress(market);
 	const provider = await providerFor(address);
@@ -250,7 +270,12 @@ export async function discoverOrders(market: MarketConfig): Promise<DiscoveryRes
 	const recent = history.slice(-DISCOVERY_HISTORY_LIMIT);
 	const decodedTxs: { entry: ActivityEvent; tx: TransactionCommon }[] = [];
 	await inBatches(recent, 10, async (entry) => {
-		const raw = await provider.getRawTransaction(entry.tx_hash);
+		const cacheKey = `${market.network ?? "chipnet"}:${entry.tx_hash}`;
+		let raw = rawTransactionCache.get(cacheKey);
+		if (!raw) {
+			raw = await provider.getRawTransaction(entry.tx_hash);
+			rawTransactionCache.set(cacheKey, raw);
+		}
 		const tx = decodeTransaction(hexToBin(raw));
 		if (typeof tx !== 'string') decodedTxs.push({ entry: { txid: entry.tx_hash, height: entry.height }, tx });
 	});
@@ -305,7 +330,8 @@ export async function discoverOrders(market: MarketConfig): Promise<DiscoveryRes
 		oracleUpdates: oracleUpdates.sort((a, b) => b.state.sequence - a.state.sequence),
 		announcedCount: announced.size,
 		scannedTransactions: recent.length,
-		historyTruncated: history.length > recent.length
+		historyTruncated: history.length > recent.length,
+		fingerprint: fingerprintOf(history)
 	};
 }
 

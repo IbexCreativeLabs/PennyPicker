@@ -14,6 +14,7 @@ import {
 import {
 	discoverOracleCategory,
 	discoverOrders,
+	marketActivityFingerprint,
 	getAddressUtxos,
 	getIdentityHead,
 	getOracleState,
@@ -36,6 +37,12 @@ import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identit
 import { balancesOf, errorText, type ConnectedWallet } from './wallet';
 
 export const STALE_AFTER_SECONDS = 15 * 60;
+
+/** Background poll cadence: a one-request change check (see poll()). */
+const POLL_INTERVAL_MS = 5_000;
+/** Full book reload even without activity, to pick up cancels (which do not touch the oracle address). */
+const FULL_REFRESH_MS = 60_000;
+const WALLET_REFRESH_MS = 30_000;
 
 class PennyPickerSession {
 	wallet = $state<ConnectedWallet | undefined>();
@@ -77,8 +84,11 @@ class PennyPickerSession {
 		this.reloadConfig();
 		if (this.wallet && this.wallet.network !== this.network) this.forgetWallet();
 		this.walletStatus = 'checking';
-		await this.restoreSession();
-		await this.refreshAll();
+		await Promise.all([
+			this.refreshMarket().then(() => this.refreshHistory()),
+			this.restoreSession().then(() => this.refreshWallet()),
+			this.refreshFeed()
+		]);
 	}
 	utxos = $state<ChainUtxo[]>([]);
 	utxosLoaded = $state(false);
@@ -94,6 +104,10 @@ class PennyPickerSession {
 	history = $state<TxRecord[]>([]);
 	nowSec = $state(Math.floor(Date.now() / 1000));
 	lastRefreshed = $state<Date | undefined>();
+	/** Number of open transaction dialogs; background refreshes pause while any is open. */
+	txOpen = $state(0);
+	/** Last time the background poll checked the market (read-only). */
+	lastChecked = $state<Date | undefined>();
 
 	market = $derived<MarketConfig | undefined>(isCompleteMarket(this.config) ? this.config : undefined);
 	balances = $derived(balancesOf(this.utxos, this.config.pusdCategory));
@@ -137,8 +151,50 @@ class PennyPickerSession {
 		this.reloadConfig();
 		setInterval(() => (this.nowSec = Math.floor(Date.now() / 1000)), 5_000);
 		void this.refreshFeed();
-		setInterval(() => void this.refreshFeed(), 60_000);
-		void this.restoreSession().then(() => this.refreshAll());
+		setInterval(() => void this.refreshFeed(), 30_000);
+		// Market data must not wait for the wallet: restoring a session asks Cashonize for its address, which can take a
+		// long time when the wallet app is asleep. Load the book and price straight away, and the wallet in parallel.
+		void this.refreshMarket().then(() => this.refreshHistory());
+		void this.restoreSession().then(() => this.refreshWallet());
+		setInterval(() => void this.poll(), POLL_INTERVAL_MS);
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible') void this.poll();
+		});
+	}
+
+	private polling = false;
+	private lastFullMarketRefresh = 0;
+	private lastWalletRefresh = 0;
+
+	/**
+	 * Read-only background refresh. Every few seconds it makes one cheap Electrum request (the oracle address
+	 * history); the book is reloaded only when that changed, or once a minute to catch cancels. It never overlaps
+	 * itself or a manual refresh, skips hidden tabs, and pauses while a transaction dialog is open. It only reads
+	 * chain data: it builds, signs and broadcasts nothing, and it does not touch form input.
+	 */
+	private async poll() {
+		if (this.polling || this.loadingMarket || this.txOpen > 0 || document.visibilityState !== 'visible') return;
+		const market = this.market;
+		if (!market || !this.oracleLoaded) return;
+		this.polling = true;
+		const network = this.network;
+		try {
+			const now = Date.now();
+			const fingerprint = await marketActivityFingerprint(market);
+			if (network !== this.network || this.txOpen > 0) return;
+			const changed = fingerprint !== this.discovery?.fingerprint;
+			if (changed || now - this.lastFullMarketRefresh > FULL_REFRESH_MS) {
+				await this.refreshMarket();
+				if (changed) await this.refreshWallet();
+			} else if (this.wallet && now - this.lastWalletRefresh > WALLET_REFRESH_MS) {
+				await this.refreshWallet();
+			}
+			this.lastChecked = new Date();
+		} catch {
+			/* transient network error: the next tick retries; manual Refresh still reports errors */
+		} finally {
+			this.polling = false;
+		}
 	}
 
 	reloadConfig() {
@@ -243,6 +299,7 @@ class PennyPickerSession {
 			this.pusdIdentity = head;
 			this.utxos = markIdentityOutputs(raw, head ? [head] : [], tracksIdentity && category && !head ? [category] : []);
 			this.utxosLoaded = true;
+			this.lastWalletRefresh = Date.now();
 		} catch (cause) {
 			this.walletError = `Balance query failed: ${errorText(cause)}`;
 		} finally {
@@ -276,6 +333,8 @@ class PennyPickerSession {
 			this.oracleLoaded = true;
 			this.discovery = this.oracle ? await discoverOrders(market) : undefined;
 			this.lastRefreshed = new Date();
+			this.lastFullMarketRefresh = Date.now();
+			this.lastChecked = new Date();
 			this.marketError = '';
 		} catch (cause) {
 			this.marketError = errorText(cause);
