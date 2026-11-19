@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
+	import LiveExample from '$lib/pennypicker/ui/LiveExample.svelte';
 	import { pp, explorerTx, formatAge, STALE_AFTER_SECONDS } from '$lib/pennypicker/ui/session.svelte';
 	import { errorText } from '$lib/pennypicker/ui/wallet';
 	import { formatPrice, GP_BCH_USD_ORACLE, oracleStateFromMessage } from '$lib/pennypicker/contracts';
@@ -71,6 +72,11 @@
 		</div>
 		<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
 	</div>
+
+	<section class="pp-card example" style="margin-bottom: 1rem">
+		<h2 style="margin-top: 0">This oracle in one example</h2>
+		<LiveExample />
+	</section>
 
 	<div class="pp-grid-2">
 		<section class="pp-card">

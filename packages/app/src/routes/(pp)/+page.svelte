@@ -1,6 +1,10 @@
 <script lang="ts">
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
 	import BpsScale from '$lib/pennypicker/ui/BpsScale.svelte';
+	import LiveExample from '$lib/pennypicker/ui/LiveExample.svelte';
+	import { untrack } from 'svelte';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { pp, explorerTx, formatAge } from '$lib/pennypicker/ui/session.svelte';
 	import { errorText, parseBch, parsePusd } from '$lib/pennypicker/ui/wallet';
 	import {
@@ -52,6 +56,24 @@
 
 	const bidSizeSats = (o: OpenOrder) => (price ? bidSatsForUnits(o.availableUnits, price, o.deltaBps) : 0n);
 	const sizeSats = (o: OpenOrder) => (o.side === 'ask' ? o.availableSats : bidSizeSats(o));
+
+	// "Try this example" links (e.g. /?side=bid&bps=-50) pre-fill the limit-order form. Nothing is built or signed.
+	// Reacts to the URL, so it also works when the link is clicked while already on the Exchange.
+	let exampleOpen = $state(false);
+	$effect(() => {
+		const params = page.url.searchParams;
+		const wanted = params.get('side');
+		const bps = params.get('bps');
+		if (wanted !== 'bid' && wanted !== 'ask') return;
+		untrack(() => {
+			mode = 'limit';
+			setSide(wanted);
+			if (bps && /^-?\d{1,4}$/.test(bps)) bpsInput = bps;
+			exampleOpen = false;
+			replaceState('/', {});
+			requestAnimationFrame(() => document.querySelector('.trade')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+		});
+	});
 
 	function setSide(next: OrderSide) {
 		side = next;
@@ -308,12 +330,21 @@
 				Instead of a fixed price, you place orders at <strong>± basis points (BPS)</strong> from the live BCH/USD price
 				(100 BPS = 1%). When the price moves, every order moves with it, so orders never go stale.
 			</p>
-			<a class="small" href="/about/how-it-works">How it works →</a>
+			<div class="hero-links">
+				<button class="pp-btn pp-btn-sm" type="button" aria-expanded={exampleOpen} onclick={() => (exampleOpen = !exampleOpen)}>{exampleOpen ? 'Hide the example' : '▶ See a 30-second example'}</button>
+				<a class="small" href="/about/how-it-works">How it works →</a>
+			</div>
 		</div>
 		<div class="pp-card hero-viz">
 			<BpsScale {price} orders={scaleOrders} {draft} loading={!price} />
 		</div>
 	</section>
+	{#if exampleOpen}
+		<section class="pp-card example-card">
+			<div class="pp-card-head"><h2>How it works, with today's price</h2><button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={() => (exampleOpen = false)}>Close</button></div>
+			<LiveExample />
+		</section>
+	{/if}
 
 	{#if pp.networkInfo.realFunds}
 		<p class="pp-callout bad small" style="margin-bottom: 1rem"><strong>BCH mainnet: real money.</strong> The contracts have had an internal security review only, no independent audit. Only trade amounts you can afford to lose.</p>
@@ -624,6 +655,8 @@
 	.hero h1 { font-size: clamp(1.55rem, 3.4vw, 2.2rem); line-height: 1.15; letter-spacing: -0.015em; margin: 0.3rem 0 0.5rem; }
 	.hero-sub { color: var(--pp-muted); font-size: 1rem; line-height: 1.55; margin: 0 0 0.4rem; max-width: 34rem; }
 	.hero-viz { padding-top: 0.8rem; padding-bottom: 0.4rem; }
+	.hero-links { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin-top: 0.3rem; }
+	.example-card { margin-bottom: 1rem; border-color: color-mix(in srgb, var(--pp-accent) 35%, var(--pp-border)); }
 	.refresh { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
 	.book-note { margin: -0.35rem 0 0.6rem; }
 	.skel { display: inline-block; height: 0.9em; min-width: 2rem; border-radius: 6px; background: linear-gradient(90deg, var(--pp-surface-2), var(--pp-border), var(--pp-surface-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; vertical-align: middle; }

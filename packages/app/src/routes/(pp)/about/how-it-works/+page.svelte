@@ -1,4 +1,5 @@
 <script lang="ts">
+	import LiveExample from '$lib/pennypicker/ui/LiveExample.svelte';
 	import { GP_BCH_USD_ORACLE } from '$lib/pennypicker/contracts';
 </script>
 
@@ -47,10 +48,8 @@
 </section>
 
 <section class="ab-section">
-	<h2>A worked example</h2>
+	<h2>A worked example, with today's price</h2>
 	<div class="pp-card">
-		<p style="margin-top: 0">The oracle says <strong>1 BCH = 400.00 USD</strong>. A bid at <strong>−50 BPS</strong> buys BCH at 0.5% below that:</p>
-		<p class="ab-formula">400.00 × (10,000 − 50) ÷ 10,000 = <strong>398.00 PUSD per BCH</strong></p>
-		<p class="muted small" style="margin-bottom: 0">If the oracle moves to 410.00, the same bid now pays 407.95, with no action from the maker.</p>
+		<LiveExample />
 	</div>
 </section>
