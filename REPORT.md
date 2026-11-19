@@ -1,75 +1,91 @@
 # PennyPicker: status report and plan to finish
 
-**As of 2026-11-18 (evening). Deadline 2026-11-22.**
+**As of 2026-11-19 (evening). Deadline 2026-11-22.** Live build `d8d9e45`.
 
 ## 1. What the site can do today
 
-Live at **https://pennypicker.pages.dev**, with two markets chosen in the header:
+Live at **https://pennypicker.pages.dev** (source public at https://github.com/IbexCreativeLabs/PennyPicker), with
+two markets chosen in the header:
 
 - **PennyPickerUSD on BCH Chipnet:** free test coins, safe for judges to try.
 - **ParyonUSD on BCH mainnet:** real money since 2026-11-18, capped at 25 PUSD per order, with no price keeper.
 
 What it does:
 
-- **Trade BCH against a stablecoin with orders priced in BPS from the live oracle.**
-  - Place buy or sell limit orders at ±BPS from the oracles.cash BCH/USD price. Each limit moves with the price
-    automatically.
-  - "Trade now" fills across the best orders in one transaction.
-  - Cancel your own orders at any time.
-- **Real oracle on-chain.**
-  - The contract verifies the General Protocols (oracles.cash) signature.
-  - Anyone can push a newer price.
-  - Trades carry the newest signed price, so they settle at the live rate.
-- **Wallet: Cashonize over WalletConnect, on Chipnet and mainnet.**
-  - Every transaction is previewed and signed in the wallet, checked against the preview, and broadcast only on an
-    explicit click.
-  - A rejected broadcast is reported honestly, with a one-click **Rebuild** when someone else traded first.
-- **Token: PennyPickerUSD (PUSD).** A fixed-supply test stablecoin of 1,000,000. Its metadata is published on-chain, so
-  Cashonize shows the name, ticker and icon.
-- **Pages:**
-  - Exchange, with a network-aware getting-started guide, depth bars and live price movement.
-  - Wallet.
-  - About, with a section menu: Overview, How it works, Try it, Token, Oracle, Liquidations (simulations), Safety & status.
-  - A Telegram chat button, and the demo notice on each visit.
-- **Safety on mainnet:** a red real-money warning on every mainnet screen, a 25 PUSD cap enforced by the transaction
-  builder and the form, and a build-level write switch.
+- **Explains itself at first sight.** The Exchange opens with "Trade BCH against the live oracle price", one sentence on
+  BPS, and a live diagram that places the real bids, asks and the order you are typing around the oracle price.
+- **Trade BCH against a stablecoin in a floating order book.**
+  - Buy or sell limit orders at ±BPS from the oracles.cash BCH/USD price; each limit moves with the price.
+  - "Trade now" fills across the best orders in one transaction; cancel your own orders at any time.
+  - The book and best bid/ask update on their own every few seconds (read-only), with loading placeholders instead of
+    misleading empty states, and the market loads in about 3 s without waiting for the wallet.
+- **Real oracle on-chain, explained by comparison.** A pull oracle like Pyth: General Protocols signs the price (the
+  same feed AnyHedge and ParyonUSD use), traders bring the newest signed price into their transaction, and the contract
+  verifies it. The Oracle page has a Chainlink / Pyth / PennyPicker table and a 30-second example with today's price
+  whose "Try it" button pre-fills an order.
+- **Two wallet connections.**
+  - Cashonize over WalletConnect (any Cashonize wallet).
+  - **New: WizardConnect** for HD wallets (phase 1: trades from the wallet's first receive address).
+  - Every transaction opens in a review popup, is signed in the wallet, checked against the preview and broadcast only
+    on an explicit click. A rejected broadcast offers **Rebuild** when someone else traded first.
+  - The header shows the connected wallet's real BCH and PUSD balances.
+- **Token: PennyPickerUSD (PUSD).** 1,000,000 fixed-supply test stablecoin with on-chain metadata (Cashonize shows the
+  name and icon).
+- **Pages:** Exchange, Wallet, and About with a section menu (Overview, How it works, Try it, Token, Oracle,
+  Liquidations simulations, Safety & status), a link to the companion project **Staking Arena**, a Telegram chat
+  button, and the demo notice on each visit.
+- **Safety on mainnet:** real-money warnings, a 25 PUSD cap enforced by the builder and the form, and a build-level
+  write switch.
 
-## 2. What was done
+## 2. What was done today (2026-11-19)
 
-| Area | Done |
-|---|---|
-| Contracts | Order covenant (exact settlement, maker-only cancel) and oracle covenant (signature-verified, replay-proof, permissionless updates) |
-| On-chain proof, Chipnet | Two-wallet trades in both directions, cancels, oracle updates, conflict recovery and the token metadata publication. Txids are in `SUBMISSION.md` and `PROJECT_STATUS.md` |
-| On-chain proof, mainnet | Price record created, then an ask, a fill with real ParyonUSD and a cancel (txids in `SUBMISSION.md`). Mainnet trading is open on the public site |
-| Site | Fully public site (no admin area, no passwords), sectioned About, market selector, getting-started guide, visual refresh, BCMR token metadata, Telegram chat |
-| Fixes from live testing | Stale saved IDs emptied the book; a library reported rejected broadcasts as accepted; a deploy-time cache bug broke the page for a few seconds after each deploy |
-| Final polish (today) | The guide and market header now adapt to mainnet; a loading state replaces the "No oracle" flash; balances show "…" until loaded; the wording is accurate ("internal review, no independent audit"); docs updated to mainnet-live |
-| Tests | Contracts, transaction builders, mechanisms and identity tests, run in the BCH 2025 VM: 142 checks pass. 0 type errors. CI on every push |
-| Docs | README (with GIF), `SUBMISSION.md`, `DEMO_SCRIPT.md`, `SECURITY_REVIEW.md`, `DEPLOYMENT.md`, `PROJECT_STATUS.md` |
+| Area | Done | Commits |
+|---|---|---|
+| Open source and privacy | Admin area and its password check removed (site fully public, no secrets). Full history audited before going public: no personal email, keys, tokens or secrets (the only keys are upstream Vox test fixtures). Repo made public by you | `0d90376`, `531fddf` |
+| About | Rebuilt as a sectioned menu with cards instead of text walls; Token and Oracle moved into it; old links redirect | `0d90376` |
+| Explorer | Transaction and address links use bchexplorer.cash (mainnet and `/chipnet`) | `011f653`, `7be073b` |
+| Community feedback | Headline and live BPS diagram; loading placeholders; "Floating order book" explanation; review as a centered popup; header balances; read-only auto-refresh; Staking Arena link | `6185b0b`, `9a548cf`, `e74951f` |
+| Root-cause fix | The "first 15 s look broken" report: market data waited for the wallet to answer. Now loads at once (book in ~2–3 s on a cold visit) | `6185b0b` |
+| Oracle for judges | Pyth/Chainlink comparison, AnyHedge/ParyonUSD feed, live 30-second example with a "Try it" pre-fill | `5c2ab05`, `6e31973` |
+| WizardConnect | Phase 1 shipped and live; LGPL libraries pinned and credited; a stuck "checking" wallet state fixed (buttons return after 20 s); unanswered sign requests time out | `8460b38` |
+| Demo | `DEMO_SCRIPT.md` rewritten for the new features (about 3½ min); Exchange example toggle removed | `d8d9e45` |
+
+**Chipnet transactions today (all accepted):**
+- WizardConnect test wallet funded from PP Trader A: `a172bc15…8154f6`.
+- Ask signed over WizardConnect: `18c706e65205b2a5d44630acf9f731c38c6b2d1868245b68f668b514b8384f6f`.
+- Its cancel, signed over WizardConnect: `8d8204f9a059aeae7dde033fae42d44dbe7eeb348d3c2f590297e0097761dd25`.
+
+**Tested:** all suites pass (contracts 33, transaction builders 92, identity 8, mechanisms 9, WizardConnect 14), 0 type
+errors, production build OK, CI on every push. In the browser: the review popup, auto-refresh pausing during review,
+pre-fill links, phone width (no sideways scroll), cold-load timing on the live site, WizardConnect pairing on the live
+site, and WalletConnect re-checked after the WizardConnect change. Every commit carries the `Committed-by` line and
+passed a personal-data and secrets screen.
+
+**Looked at and deferred:** WizardConnect phase 2 (coins on all of an HD wallet's addresses): a bigger wallet-layer
+change, post-hackathon.
 
 ## 3. Still to do, most important first
 
-1. **Record the demo video** with `DEMO_SCRIPT.md` (about 3 minutes; the last part now shows the live mainnet market).
-   *Owner: you.*
-2. **Make the GitHub repo public** (the history is already cleaned) **and submit** with the links in `SUBMISSION.md`.
-   *Owner: you.*
-3. **Back up both mainnet wallets' seed phrases** in Cashonize, since they hold real funds. *Owner: you.*
-4. **Optional: deepen the Chipnet asks.** The asks hold 0.001 BCH each, because the test wallets have only about
-   0.002 tBCH left. If you send a little more tBCH from the faucet to PP Trader B
-   (`bchtest:qrxy22p45mzt6tg0e3hjqmy8sz6jgqzjmvw89lgp4t`), I can place larger asks. Judges can already sell into the
-   30 PUSD bids and buy back small amounts.
-5. **Post-hackathon:**
+1. **Record the demo video** with `DEMO_SCRIPT.md`. Wallet B must be a Cashonize **HD** wallet for the WizardConnect
+   scene, and pair after choosing the wallet (Cashonize ends sessions when you switch). *Owner: you.*
+2. **Submit** with the links in `SUBMISSION.md`. *Owner: you.*
+3. **Back up both mainnet wallets' seed phrases** in Cashonize; they still show "not backed up". *Owner: you.*
+4. **Switch Cashonize back** from "PP Wizard HD" (Chipnet) before any mainnet use. *Owner: you.*
+5. **Optional:** ask GitHub Support to purge the old pre-rewrite commits; send faucet tBCH to PP Trader B
+   (`bchtest:qrxy22p45mzt6tg0e3hjqmy8sz6jgqzjmvw89lgp4t`) so I can place deeper Chipnet asks (each holds 0.001 BCH
+   today).
+6. **Post-hackathon:**
+   - WizardConnect phase 2 (all HD addresses), and a mainnet WizardConnect test (needs your approval);
    - a price keeper for mainnet (needs a hot-wallet secret in Cloudflare);
-   - an external audit before raising the 25 PUSD cap;
+   - an independent audit before raising the 25 PUSD cap;
    - liquidation and redemption contracts;
-   - sharding the single price record;
-   - a price chart.
+   - sharding the single price record, and a price chart.
 
 ## 4. Plan to the finish
 
 | Day | Work | Who |
 |---|---|---|
-| **Nov 18** | Done: mainnet live, final polish, docs, this report | Claude |
-| **Nov 19** | Record the video. Optionally send tBCH to Trader B for deeper asks | You |
-| **Nov 20** | Make the repo public and submit. I re-check the live site and fix anything found | You; Claude |
-| **Nov 21–22** | Buffer only: no new features | — |
+| **Nov 19** | Done: open-sourcing, About rebuild, community feedback, oracle comparison, WizardConnect, demo script, this report | Claude |
+| **Nov 20** | Record the video. Back up the mainnet seeds. I re-check the live site and fix anything found | You; Claude |
+| **Nov 21** | Submit. Optional: tBCH for deeper asks | You |
+| **Nov 22** | Buffer only: no new features | — |
