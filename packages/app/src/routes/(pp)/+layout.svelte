@@ -125,7 +125,7 @@
 	.net-strip .bar { justify-content: space-between; padding-block: 0.35rem; }
 	.status { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 	.status a { text-decoration: none !important; }
-	.menu { display: none; margin-left: auto; font-size: 1.2rem; }
+	.bar .menu { display: none; margin-left: auto; font-size: 1.2rem; }
 	.market { position: relative; }
 	.market-btn { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--pp-border); background: var(--pp-surface); color: var(--pp-text); border-radius: 999px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
 	.market-btn:hover { border-color: var(--pp-border-strong); }
@@ -141,7 +141,7 @@
 	.linkish { border: 0; background: none; padding: 0; color: var(--pp-accent); font: inherit; cursor: pointer; text-decoration: underline; }
 	.foot .bar { justify-content: space-between; padding-block: 1rem; }
 	@media (max-width: 860px) {
-		.menu { display: inline-flex; }
+		.bar .menu { display: inline-flex; }
 		nav { display: none; flex-basis: 100%; flex-direction: column; order: 5; }
 		nav.open { display: flex; }
 		.status { flex-basis: 100%; }
