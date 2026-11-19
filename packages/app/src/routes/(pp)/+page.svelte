@@ -258,6 +258,16 @@
 	const bookLoading = $derived(!pp.discovery && !(pp.oracleLoaded && !pp.oracle) && !pp.marketError);
 	const scaleOrders = $derived(live.map((o) => ({ deltaBps: o.deltaBps, side: o.side })));
 	const draft = $derived(mode === 'limit' && !('error' in maker) ? { deltaBps: maker.delta, side } : undefined);
+	/** Only a click shows "Refreshing…"; background refreshes leave the button alone so nothing jumps. */
+	let manualRefreshing = $state(false);
+	async function manualRefresh() {
+		manualRefreshing = true;
+		try {
+			await pp.refreshAll();
+		} finally {
+			manualRefreshing = false;
+		}
+	}
 	const checkedAgo = $derived(pp.lastChecked ? Math.max(0, pp.nowSec - Math.floor(pp.lastChecked.getTime() / 1000)) : undefined);
 	const funded = $derived(!!pp.wallet && pp.utxosLoaded && pp.balances.bchSats > 0n);
 	const showGuide = $derived(!guideHidden && !funded);
@@ -385,7 +395,7 @@
 			<div class="pp-stat-value">{#if price}{formatPrice(price)}{:else}<span class="skel" style="width: 5.5rem"></span>{/if}</div>
 			<div class="small muted">PUSD per BCH {#if move}<span class={move.up ? 'bid-c' : 'ask-c'}>{move.label}</span>{/if}</div>
 		</div>
-		<div class="m-stat">
+		<div class="m-stat fresh">
 			<div class="pp-stat-label">Freshness</div>
 			{#if pp.oracle}
 				<span class="pp-badge {pp.oracleStale ? 'warn' : 'ok'}">{pp.oracleStale ? 'Stale' : 'Fresh'}</span>
@@ -411,9 +421,9 @@
 			{/if}
 		</div>
 		<div class="refresh">
-			<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
-			<span class="small faint" title="The book and best bid/ask update automatically (read-only); paused while a transaction is open.">
-				{#if pp.txOpen > 0}Auto-update paused{:else if checkedAgo !== undefined}Auto-updating · {checkedAgo < 5 ? 'just now' : `${checkedAgo}s ago`}{:else}Auto-updating{/if}
+			<button class="pp-btn pp-btn-sm" type="button" onclick={manualRefresh} disabled={manualRefreshing}>{manualRefreshing ? 'Refreshing…' : 'Refresh'}</button>
+			<span class="small faint fresh-label" title="The book and best bid/ask update automatically (read-only); paused while a transaction is open.">
+				{#if pp.txOpen > 0}Auto-update paused{:else if checkedAgo !== undefined && checkedAgo > 10}Updated {formatAge(checkedAgo)}{:else}Auto-updating{/if}
 			</span>
 		</div>
 	</section>
@@ -646,7 +656,9 @@
 	.hero-sub { color: var(--pp-muted); font-size: 1rem; line-height: 1.55; margin: 0 0 0.4rem; max-width: 34rem; }
 	.hero-viz { padding-top: 0.8rem; padding-bottom: 0.4rem; }
 	.hero-links { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin-top: 0.3rem; }
-	.refresh { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+	.refresh { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; min-width: 9.5rem; }
+	.refresh .pp-btn { min-width: 6.5rem; justify-content: center; }
+	.fresh-label { white-space: nowrap; font-variant-numeric: tabular-nums; }
 	.book-note { margin: -0.35rem 0 0.6rem; }
 	.skel { display: inline-block; height: 0.9em; min-width: 2rem; border-radius: 6px; background: linear-gradient(90deg, var(--pp-surface-2), var(--pp-border), var(--pp-surface-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; vertical-align: middle; }
 	.skel-row td { padding: 0.55rem 0.5rem; }
@@ -663,7 +675,8 @@
 	.coin-generic { display: grid; place-items: center; flex: none; background: #2f8f5b; color: #fff; font-weight: 700; font-size: 1.2rem; }
 	.guide { margin-bottom: 1rem; border-color: color-mix(in srgb, var(--pp-accent) 35%, var(--pp-border)); }
 	.guide h2 { font-size: 1.1rem; }
-	.m-stat { min-width: 7rem; }
+	.m-stat { min-width: 7rem; font-variant-numeric: tabular-nums; }
+	.m-stat.fresh { width: 10rem; }
 	.m-stat .pp-stat-value { font-size: 1.4rem; }
 	.main-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 1fr); gap: 1rem; align-items: start; }
 	@media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
