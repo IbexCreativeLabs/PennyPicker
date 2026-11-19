@@ -1,12 +1,51 @@
 # PennyPicker: project status
 
-_Last updated: 2026-11-17 (evening). Hackathon deadline: 2026-11-22._
+_Last updated: 2026-11-19 (night). Hackathon deadline: 2026-11-22._
 
 **Public demo: https://pennypicker.pages.dev** (Cloudflare Pages, auto-deploys from `main`).
 
-PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet**. Orders are priced in basis points (BPS)
-relative to an on-chain reference price. PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals) with no USD
-backing and no peg. `PENNYPICKER_PROGRESS.md` is the earlier research log.
+PennyPicker is an experimental BCH/stablecoin orderbook DEX on Bitcoin Cash. Orders are priced in basis points (BPS)
+relative to the oracles.cash BCH/USD price. Two markets: **PennyPickerUSD (PPUSD)** on Chipnet, a fixed-supply test
+token (1,000,000 PPUSD, 2 decimals) with no backing, and **ParyonUSD (PUSD)** on mainnet (real money, capped).
+The test token was called PUSD until 2026-11-19; older notes below still use that name. `PENNYPICKER_PROGRESS.md` is
+the earlier research log.
+
+## Final changes before handover (2026-11-19, night)
+
+- **Brand:** new steamroller logo for the favicon, app icons, header and the PPUSD token icon. Light and dark themes
+  use its colours (amber `#FDA60D`, yellow `#FDD045`, charcoal `#1E1B1D`). The Exchange hero reads "Don't pick up
+  pennies in front of the steamroller", with the roller paving the headline (no motion under reduced-motion).
+- **Design pass:** white page, borders made transparent, layered shadows, buttons shrink on press, visible focus rings,
+  eased motion, no all-caps labels or eyebrows, `text-wrap: balance` on titles, tabular numbers, the market menu grows
+  from its button, scrollers fade at the edge on phones.
+- **Ticker:** the Chipnet test token is now **PPUSD** (ParyonUSD keeps PUSD). The UI and transaction summaries use
+  each market's own symbol. The registry (`/.well-known/bitcoin-cash-metadata-registry.json`) has a new revision with
+  the ticker and icon.
+- **Live data only while shown:** no Refresh button or "auto-updating" label on the Exchange. The book is checked every
+  5 s only while the Exchange or Oracle page is open in a visible tab; balances every 30 s while the Exchange, Wallet
+  or Token page is open; the oracles.cash price every 20 s while the tab is visible.
+- **About:** Overview, How it works and Try it are one short page (`/about`); the liquidation/redemption simulations
+  are removed (page, component, maths and their test). Old links redirect to `/about`.
+- **WizardConnect, whole HD wallet:** the app scans every shared BIP44 path (receive, change) with a gap limit of 20,
+  shows the total of all used addresses, funds trades from any of them and asks the wallet to sign each input with
+  its own path. Change, proceeds and the maker key of new orders use receive/0, so orders are found again on every
+  device; a cancel is authorised by a coin on receive/0 (the app explains what to do if there is none). The Wallet
+  page lists the number of addresses in use and which address holds each coin; key hash, role and the "trading
+  address" note are gone; the header shows balances only.
+- **Fixes:** a stale WalletConnect session no longer blocks restoring a stored WizardConnect session; an order
+  re-announced at the same terms after a cancel is no longer counted as a fill.
+- **Verified on Chipnet with the "PP Wizard HD" wallet:** moved 0.0006 tBCH to its receive/1 inside Cashonize
+  (`a421c173dc1c…`); the app then found 3 used addresses, placed an ask funded from receive/1 over WizardConnect
+  (`dde2420509276b95a8d7ec5a76406bb8eb9fc3f95fbf83461a98e3cd3a9bc449`) and cancelled it, authorised by the change
+  coin on receive/0 (`586b63d552f7edc77a2ea0362df85f71132808eed4f5ef28d20a0726ebc9db9e`).
+- **Tests:** contracts 33, exchange 100 (incl. an HD order and cancel spending three addresses, VM-verified), identity
+  8, WizardConnect 21; 0 type errors; production build OK.
+- **Token metadata republished** from the PP Operator wallet in Cashonize (Identities → publish), registry sha256
+  `b5989f27bf0f8b6c7a6e4c2082dabf9e5a479aed51dea4aea21879854c4c8616`:
+  `60313792d3c4ba225bc76b9eb8387d9875bf72b7a9c93e9b5c20b207c5077aea`. `bcmr-chipnet.paytaca.com` returned ticker
+  PPUSD and the new icon straight away.
+- **Live check after deploy (`4c9c404`):** all pages 200, old About links 301 to `/about`, new icons and registry
+  served, no console errors on fresh loads.
 
 ## Live re-check (2026-11-19, evening)
 
@@ -282,9 +321,9 @@ Run from `packages/app`, using libauth's BCH 2025 VM:
 
 ```
 pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # 33 covenant checks (incl. a real oracles.cash message and attack cases)
-pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 85 builder checks (signed, chained txs, PUSD genesis + transfer, identity safeguards, error texts, mainnet/ParyonUSD + cap)
-pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts  # 9 routing checks
+pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # 100 builder checks (signed, chained txs, token genesis + transfer, identity safeguards, error texts, mainnet/ParyonUSD + cap, HD multi-address)
 pnpm dlx tsx scripts/pennypicker-identity.test.ts    # 8 authchain/marking checks
+pnpm dlx tsx scripts/pennypicker-wizardconnect.test.ts # 21 HD derivation, gap-limit scan and signing-path checks
 ```
 
 Read-only mainnet check: `pennypicker-mainnet-check.ts`. Read-only Chipnet helpers: `pennypicker-live-check.ts`, `-balances.ts`, `-utxos-full.ts`, `-oracle-history.ts`, `-verify-trades.ts`, `-wait-confirm.ts`.
@@ -327,4 +366,4 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 - **Not done (out of scope for the hackathon build):**
   - Mainnet price record and keeper.
   - External audit.
-  - Vault contracts for liquidations and redemptions (pricing simulations only).
+  - Vault contracts for liquidations and redemptions (the pricing simulations were removed on 2026-11-19).
