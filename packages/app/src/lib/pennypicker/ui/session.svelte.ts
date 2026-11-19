@@ -37,15 +37,6 @@ import { balancesOf, errorText, type ConnectedWallet } from './wallet';
 
 export const STALE_AFTER_SECONDS = 15 * 60;
 
-export type StepState = 'done' | 'pending' | 'blocked';
-export interface SetupStep {
-	id: string;
-	label: string;
-	state: StepState;
-	detail: string;
-	href: string;
-}
-
 class PennyPickerSession {
 	wallet = $state<ConnectedWallet | undefined>();
 	walletStatus = $state<'checking' | 'disconnected' | 'connecting' | 'connected'>('checking');
@@ -129,36 +120,6 @@ class PennyPickerSession {
 	);
 	/** The PUSD identity output, when the connected wallet holds it. */
 	ownIdentityUtxo = $derived(this.pusdIdentity ? this.utxos.find((u) => u.txid === this.pusdIdentity!.txid && u.vout === 0) : undefined);
-
-	setup = $derived.by((): SetupStep[] => {
-		const pusd = this.config.pusdCategory;
-		const pusdSeen =
-			!!pusd &&
-			(this.balances.pusdUnits > 0n || (this.discovery?.orders.some((o) => o.heldUnits > 0n) ?? false));
-		const orders = this.discovery;
-		const sides = new Set([...(orders?.orders ?? []), ...(orders?.canceled ?? [])].map((o) => o.side));
-		const step = (id: string, label: string, done: boolean, detail: string, href: string, blocked = false): SetupStep => ({
-			id,
-			label,
-			state: done ? 'done' : blocked ? 'blocked' : 'pending',
-			detail,
-			href
-		});
-		const oracleExists = !!this.oracle;
-		return [
-			step('wallet', 'Wallet connected', this.walletStatus === 'connected', this.wallet ? `Cashonize on ${this.networkInfo.label}` : 'Connect Cashonize', '/wallet'),
-			step('pusd', 'PUSD genesis', !!pusd, pusd ? `Category ${pusd.slice(0, 8)}…` : 'Create the token', '/admin/token'),
-			step('pusd-verified', 'PUSD category verified', pusdSeen, pusdSeen ? 'Seen on-chain' : 'No PUSD UTXO observed yet', '/admin/token', !pusd),
-			step('vout0', 'Oracle genesis input', oracleExists || !!this.genesisReadyUtxo, oracleExists ? 'Used by oracle genesis' : this.genesisReadyUtxo ? `${this.genesisReadyUtxo.txid.slice(0, 8)}…:0 ready` : 'Needs a BCH-only output 0', '/admin/token'),
-			step('oracle', 'Oracle genesis', oracleExists, oracleExists ? `Category ${this.config.oracleCategory?.slice(0, 8)}…` : 'Create the oracle', '/oracle'),
-			step('price', 'Reference price published', oracleExists, oracleExists ? `Sequence #${this.oracle!.state.sequence}` : 'Published with oracle genesis', '/oracle', !oracleExists),
-			step('orders', 'First buy & sell orders', sides.has('bid') && sides.has('ask'), `${sides.has('bid') ? '✓' : '·'} bid (buy BCH)  ${sides.has('ask') ? '✓' : '·'} ask (sell BCH)`, '/', !oracleExists),
-			step('trade', 'First trade (fill)', (orders?.fills.length ?? 0) > 0, `${orders?.fills.length ?? 0} fill(s) observed`, '/', !oracleExists),
-			step('cancel', 'Cancellation test', (orders?.canceled.length ?? 0) > 0, `${orders?.canceled.length ?? 0} cancel(s) observed`, '/', !oracleExists),
-			step('update', 'Price updated from oracles.cash', (this.discovery?.oracleUpdates.length ?? 0) > 1, oracleExists ? `Message #${this.oracle!.state.sequence}` : '—', '/oracle', !oracleExists)
-		];
-	});
-	nextStep = $derived(this.setup.find((s) => s.state === 'pending'));
 
 	private started = false;
 

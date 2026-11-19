@@ -148,13 +148,13 @@ A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe
 | Route | Purpose |
 | --- | --- |
 | `/` | Exchange: market header, orderbook, limit-order and trade-now panels, my orders, activity. With ParyonUSD selected: the live mainnet market (real money, 25 PUSD cap) |
-| `/token` | Selected stablecoin's details (PennyPickerUSD or ParyonUSD), your balance, market list |
-| `/oracle` | Live oracles.cash price, on-chain reference, permissionless update, history |
 | `/wallet` | Connect Cashonize (QR, copy, Cashonize-web deep link), balances, **Send PUSD**, UTXO list |
-| `/about` | Project description, how it works, liquidation and redemption simulations, disclaimers, Vox fork credit |
-| `/admin` | **Admin (password)**: setup and test checklist, market identifiers |
-| `/admin/token` | **Admin**: PUSD genesis, identity, BCMR draft, vout-0 self-transfer |
-| `/admin/simulator` | **Admin**: the original in-memory simulator |
+| `/about` | About, with a section menu: Overview, How it works, Try it, Token, Oracle, Liquidations (simulations), Safety & status |
+| `/about/token` | Selected stablecoin's details (PennyPickerUSD or ParyonUSD), your balance, market list |
+| `/about/oracle` | Live oracles.cash price, on-chain reference, permissionless update, history |
+
+The admin area was removed on 2026-11-19 (open source, no passwords). Its token and metadata tools did their one-time
+jobs; the builders remain in `exchange.ts` and `pusdGenesis.ts` and are covered by the tests.
 
 Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `2469acc5…2544` on mainnet, live with a 25 PUSD cap). Bottom-right **Chat** button opens the Telegram community panel (link set in `deployment.ts` → `COMMUNITY.telegramUrl`). Old `/penny-picker/...` links redirect via `static/_redirects`.
 
@@ -212,7 +212,7 @@ Checked live after the deploy (build `71ce7ad`):
   - The Reown allowlist is empty (checked by you), so every origin is allowed.
 - **Checked 2026-11-17:** pairing Cashonize from https://pennypicker.pages.dev (origin shown as https, PennyPicker icon), signing and broadcasting there (oracle update `9ee282d6…`). The oracles.cash relay allows cross-origin reads.
 - **Committed defaults:** the market identifiers are in `deployment.ts` (PUSD category and operator PKH). The oracle category is discovered on-chain and accepted only if the operator's own address created it.
-- **What visitors see:** `/` is the Exchange (no redirect). A first-visit demo notice and a Demo badge appear, and a Chat button sits on every page. `/admin` needs `ADMIN_PASSWORD` (see `DEPLOYMENT.md`).
+- **What visitors see:** `/` is the Exchange (no redirect). The demo notice appears once per visit (and from the Demo badge), and a Chat button sits on every page.
 - **CI:** `pennypicker-ci.yml` runs the tests and the build. The inherited Vox deploy workflows were removed.
 
 ## Tests
@@ -239,7 +239,7 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 - **Discovery limits.** It scans the last 300 oracle-history transactions and makes one Electrum call per announced order.
 - **Fees.** Estimated at about 1 sat/byte. Order outputs keep a 1,000-sat reserve, and the minimum trade is 5,000 sats.
 - **Local state.** Transaction history and config live in localStorage per browser unless set via `VITE_PENNYPICKER_*`.
-- **Older helpers.** `orderCommitment.ts` (address helpers) and `market.ts` (admin simulator math) come from earlier designs.
+- **Older helpers.** `orderCommitment.ts` (address helpers) and `market.ts` (shared order math from the original simulator) come from earlier designs.
 - **No security review.** The covenants have not been independently reviewed.
 
 ## External actions required (you)
@@ -253,7 +253,6 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 
 - **Done:**
   - Public site: Exchange, Token, Oracle, Wallet and About.
-  - Admin area behind a password.
   - Seeded Chipnet book.
   - Real two-wallet trades and the README GIF.
   - Recovery from contention, with real broadcast errors shown.

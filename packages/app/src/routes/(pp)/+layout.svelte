@@ -22,20 +22,11 @@
 
 	const nav = [
 		{ href: '/', label: 'Exchange' },
-		{ href: '/token', label: 'Token' },
-		{ href: '/oracle', label: 'Oracle' },
 		{ href: '/wallet', label: 'Wallet' },
 		{ href: '/about', label: 'About' }
 	];
-	const adminNav = [
-		{ href: '/admin', label: 'Overview' },
-		{ href: '/admin/token', label: 'Token tools' },
-		{ href: '/admin/simulator', label: 'Simulator' }
-	];
-	const isAdmin = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 	const active = (href: string) => (href === '/' ? page.url.pathname === '/' : page.url.pathname === href || page.url.pathname.startsWith(href + '/'));
 	let marketOpen = $state(false);
-	const doneCount = $derived(pp.setup.filter((s) => s.state === 'done').length);
 
 	onMount(() => pp.start());
 </script>
@@ -78,7 +69,7 @@
 				{#if pp.marketError}<span class="pp-badge bad plain" title={pp.marketError}>{pp.networkInfo.label} offline</span>{/if}
 				<button class="pp-badge warn plain demo" type="button" onclick={() => notice?.show()} title="About this experimental demo">Demo</button>
 				{#if pp.displayPrice}
-					<a href="/oracle" class="pp-badge {pp.price && pp.oracleStale ? 'warn' : 'ok'}" title="Reference price: oracles.cash BCH/USD">
+					<a href="/about/oracle" class="pp-badge {pp.price && pp.oracleStale ? 'warn' : 'ok'}" title="Reference price: oracles.cash BCH/USD">
 						{formatPrice(pp.displayPrice)}
 					</a>
 				{:else if pp.market && !pp.oracleLoaded}
@@ -105,25 +96,6 @@
 				</div>
 			</div>
 		{/if}
-		{#if isAdmin}
-			<div class="admin-strip">
-				<div class="bar">
-					<span class="pp-badge warn plain">Admin</span>
-					{#each adminNav as item (item.href)}
-						<a href={item.href} class:active={page.url.pathname === item.href}>{item.label}</a>
-					{/each}
-				</div>
-			</div>
-		{/if}
-		{#if isAdmin && doneCount < pp.setup.length && pp.nextStep}
-			<div class="setup-strip">
-				<div class="bar">
-					<span class="muted small">Setup {doneCount}/{pp.setup.length}</span>
-					<span class="progress"><span style="width: {(doneCount / pp.setup.length) * 100}%"></span></span>
-					<span class="small">Next: <a href={pp.nextStep.href}>{pp.nextStep.label}</a> <span class="muted">— {pp.nextStep.detail}</span></span>
-				</div>
-			</div>
-		{/if}
 	</header>
 
 	{@render children()}
@@ -144,7 +116,6 @@
 	.bar { max-width: 76rem; margin: 0 auto; padding: 0.55rem max(16px, 2vw); display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 	.brand { display: flex; align-items: center; gap: 0.55rem; color: var(--pp-text) !important; text-decoration: none !important; }
 	.brand strong { display: block; font-size: 1rem; line-height: 1.1; }
-	.brand small { display: block; color: var(--pp-muted); font-size: 0.72rem; letter-spacing: 0.05em; }
 	.coin { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: radial-gradient(circle at 35% 30%, #e7a36b, var(--pp-accent) 70%); color: #fff; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.15); }
 	nav { display: flex; gap: 0.15rem; flex: 1; }
 	nav a { padding: 0.4rem 0.7rem; border-radius: 8px; color: var(--pp-muted); font-weight: 550; text-decoration: none !important; }
@@ -165,14 +136,6 @@
 	.market-list button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; width: 100%; text-align: left; border: 0; background: none; color: var(--pp-text); font: inherit; padding: 0.5rem 0.6rem; border-radius: 8px; cursor: pointer; }
 	.market-list button:hover, .market-list button.sel { background: var(--pp-surface-2); }
 	.market-list button.sel { box-shadow: inset 3px 0 0 var(--pp-accent); }
-	.admin-strip { border-top: 1px solid var(--pp-border); background: var(--pp-warn-soft); }
-	.admin-strip .bar { padding-block: 0.35rem; gap: 0.75rem; }
-	.admin-strip a { font-weight: 550; text-decoration: none !important; color: var(--pp-muted); }
-	.admin-strip a.active { color: var(--pp-accent); }
-	.setup-strip { border-top: 1px solid var(--pp-border); background: var(--pp-surface-2); }
-	.setup-strip .bar { padding-block: 0.35rem; gap: 0.75rem; }
-	.progress { width: 7rem; height: 6px; border-radius: 3px; background: var(--pp-border); overflow: hidden; }
-	.progress span { display: block; height: 100%; background: var(--pp-accent); }
 	.foot { border-top: 1px solid var(--pp-border); padding-bottom: 3.5rem; }
 	.demo { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 600; }
 	.linkish { border: 0; background: none; padding: 0; color: var(--pp-accent); font: inherit; cursor: pointer; text-decoration: underline; }

@@ -1,113 +1,93 @@
-<script lang="ts">
-	import Mechanisms from '$lib/pennypicker/ui/Mechanisms.svelte';
-	import { COMMUNITY } from '$lib/pennypicker/deployment';
-	import { GP_BCH_USD_ORACLE } from '$lib/pennypicker/contracts';
-</script>
-
 <svelte:head>
 	<title>About · PennyPicker</title>
 	<meta name="description" content="PennyPicker: an oracle-delta basis-points orderbook DEX for stablecoins on Bitcoin Cash." />
 </svelte:head>
 
-<main class="pp-container">
-	<section class="hero">
-		<p class="eyebrow">About</p>
-		<h1>PennyPicker</h1>
-		<p class="tagline">Oracle Delta Basis Points Denominated Orderbook DEX for Stablecoins</p>
-		<p class="lead">
-			Instead of pricing limit orders at a static dollar price that goes stale every time BCH moves, orders are denominated in
-			basis points (±bps) relative to the live oracle price.
-		</p>
-		<p>
-			Because every core mechanism in a stablecoin protocol is ultimately a spread trade against the oracle, an oracle-delta
-			orderbook doesn't just improve stablecoin trading experience and liquidity — it could also replace three separate protocol
-			mechanics with a single P2P market:
-		</p>
-	</section>
+<header class="ab-head">
+	<p class="kicker">Overview</p>
+	<h1>Limit orders that never go stale</h1>
+	<p class="lead">
+		PennyPicker is an orderbook for trading BCH against USD stablecoins on Bitcoin Cash. Orders are priced in
+		<strong>basis points (BPS) relative to the live oracle price</strong>, not at a fixed dollar price.
+	</p>
+</header>
 
-	<ol class="pillars">
-		<li class="pp-card">
-			<h2>No more "0% interest PUSD loans" just to swap BCH to PUSD</h2>
-			<p>
-				Instead of opening a 0% loan hoping to get redeemed against as a zero-slippage exit, users can swap BCH for PUSD directly
-				against resting bids anchored tightly around the oracle price (0 bps).
-			</p>
-		</li>
-		<li class="pp-card">
-			<h2>P2P market liquidations (0–10%) instead of a flat 10% penalty</h2>
-			<p>
-				Replace the Stability Pool with P2P bids ranging from 0 bps to −1000 bps (0–10% discount). Market competition drives
-				liquidation penalties down in normal conditions, saving borrowers from a flat 10% haircut.
-			</p>
-		</li>
-		<li class="pp-card">
-			<h2>Market-based redemptions</h2>
-			<p>
-				Eliminate hardcoded minimum redemption fees and engineered baseRate decay math. Redemption-eligible loans sit directly on
-				the orderbook, making redemption pricing 100% market-driven.
-			</p>
-		</li>
-	</ol>
+<section class="pp-card example">
+	<div class="ex-row">
+		<div>
+			<span class="tag">A normal orderbook</span>
+			<p>"Sell 1 BCH at <strong>$500.00</strong>"</p>
+			<small class="muted">BCH moves to $520 → your order is now $20 too cheap. You must cancel and re-quote.</small>
+		</div>
+		<span class="arrow" aria-hidden="true">→</span>
+		<div>
+			<span class="tag accent">PennyPicker</span>
+			<p>"Sell 1 BCH at <strong>+25 BPS</strong>"</p>
+			<small class="muted">Always 0.25% above the oracle price. BCH moves to $520 → your limit is $521.30, automatically.</small>
+		</div>
+	</div>
+	<p class="ab-formula">limit price = oracle price × (10,000 + BPS) ÷ 10,000</p>
+</section>
 
-	<section class="pp-card try" id="try" style="margin-top: 1.25rem">
-		<h2>Try it in 5 minutes (free test coins)</h2>
-		<ol>
-			<li><strong>Get a wallet.</strong> Open <a href="https://cashonize.com" target="_blank" rel="noopener">Cashonize</a> (web, extension or app), create a wallet, and in <em>Settings</em> switch the network to <strong>Chipnet</strong>.</li>
-			<li><strong>Get test BCH.</strong> Copy your Chipnet address and request coins from the <a href="https://tbch.googol.cash" target="_blank" rel="noopener">Chipnet faucet</a>. They have no value.</li>
-			<li><strong>Connect.</strong> Here, open <a href="/wallet">Wallet</a> and press <em>Connect Cashonize</em>. Scan the QR code, or use <em>Open in Cashonize web</em>, and approve.</li>
-			<li><strong>Trade now.</strong> On the <a href="/">Exchange</a>, choose <em>Trade now → Sell BCH</em>, enter 0.001 and review. You sell into the best bid and receive test PUSD. Cashonize shows the transaction before you sign, and nothing is broadcast until you press <em>Broadcast</em>.</li>
-			<li><strong>Place an order.</strong> In <em>Limit order</em>, pick a side and a deviation in BPS, such as +25. The order's price follows the live BCH/USD price, so it never goes stale. Cancel it any time from <em>My orders</em>.</li>
-		</ol>
-		<p class="small muted">Need test PUSD or a counterparty? Ask in the community chat (bottom-right button). Every transaction links to the Chipnet explorer.</p>
-	</section>
+<section class="ab-section">
+	<h2>One market, three stablecoin mechanics</h2>
+	<p class="muted intro">Every core mechanism of a stablecoin protocol is a spread trade against the oracle. One oracle-delta market could replace three separate mechanics.</p>
+	<div class="ab-grid">
+		<article class="pp-card ab-card">
+			<h3><span class="ab-icon">1</span>Swaps, not loans</h3>
+			<div class="ab-compare">
+				<div class="old"><b>Today</b>Open a "0% interest" loan to get stablecoins, hoping to be redeemed as an exit.</div>
+				<div class="new"><b>PennyPicker</b>Swap BCH directly against resting bids near the oracle price (0 BPS).</div>
+			</div>
+		</article>
+		<article class="pp-card ab-card">
+			<h3><span class="ab-icon">2</span>P2P liquidations</h3>
+			<div class="ab-compare">
+				<div class="old"><b>Today</b>A flat 10% penalty paid into a Stability Pool.</div>
+				<div class="new"><b>PennyPicker</b>Bids from 0 to −1000 BPS compete, so the discount falls toward fair value.</div>
+			</div>
+		</article>
+		<article class="pp-card ab-card">
+			<h3><span class="ab-icon">3</span>Market redemptions</h3>
+			<div class="ab-compare">
+				<div class="old"><b>Today</b>Hard-coded minimum fees and baseRate decay math.</div>
+				<div class="new"><b>PennyPicker</b>Redeemable loans sit on the book, so the market sets the price.</div>
+			</div>
+		</article>
+	</div>
+</section>
 
-	<section class="pp-card" style="margin-top: 1.25rem">
-		<h2>How this prototype works</h2>
-		<dl class="pp-kv">
-			<dt>Orders</dt><dd>Each limit order is its own Bitcoin Cash covenant holding the escrow. Its price is the reference ± its BPS, so it re-prices automatically when BCH moves.</dd>
-			<dt>Reference price</dt><dd>The live BCH/USD price signed by the General Protocols oracle behind <a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a> (key <span class="mono small">{GP_BCH_USD_ORACLE.publicKey.slice(0, 10)}…</span>). The contract verifies the signature; ParyonUSD uses the same oracle.</dd>
-			<dt>Settlement</dt><dd>Every fill is checked by the order covenant with exact integer arithmetic. Amounts are rounded to 0.01 PUSD in the order maker's favour.</dd>
-			<dt>Wallet</dt><dd>Cashonize over WalletConnect. Keys never leave the wallet; every transaction is previewed, signed in Cashonize and broadcast only when you press Broadcast.</dd>
-			<dt>Networks</dt><dd>PennyPickerUSD trades on BCH Chipnet (test network) as a test token priced as 1 USD with no backing. ParyonUSD is the mainnet market: the same contracts with the real stablecoin, live with real money and capped at 25 PUSD per order until the contracts are independently audited.</dd>
-		</dl>
-	</section>
-
-	<Mechanisms />
-
-	<section class="pp-card" style="margin-top: 1.25rem">
-		<h2>Status and disclaimers</h2>
-		<ul class="small notes">
-			<li>Experimental hackathon prototype. The contracts have had an internal security review only, no independent audit.</li>
-			<li>PennyPickerUSD trades on Chipnet with test coins. ParyonUSD on mainnet is real money, capped at 25 PUSD per order. There is no price keeper yet: an order resting in a quiet market can be filled at a price up to the last on-chain update old, so keep mainnet orders small and short-lived.</li>
-			<li>The chain cannot see the clock, so a taker can choose among oracle messages published since the last on-chain price update (minutes while the book is active).</li>
-		</ul>
-	</section>
-
-	<section class="credits small muted">
-		<p>
-			Source code: <a href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">{COMMUNITY.sourceUrl.replace('https://', '')}</a>.
-			This project was forked from <a href={COMMUNITY.forkedFromUrl} target="_blank" rel="noopener">Vox</a>, an open-source collection
-			of Bitcoin Cash apps by 2qx, and builds on CashScript, Libauth and Cashonize.
-		</p>
-	</section>
-</main>
+<section class="ab-section">
+	<h2>What is live today</h2>
+	<div class="ab-grid">
+		<a class="pp-card ab-card link" href="/">
+			<h3><span class="ab-icon">⇄</span>Working exchange</h3>
+			<p>Limit orders, instant trades and cancels, each a real Bitcoin Cash contract.</p>
+		</a>
+		<a class="pp-card ab-card link" href="/about/oracle">
+			<h3><span class="ab-icon">◷</span>Real signed price</h3>
+			<p>The oracles.cash BCH/USD price, verified on-chain by the contract.</p>
+		</a>
+		<a class="pp-card ab-card link" href="/about/token">
+			<h3><span class="ab-icon">◎</span>Two markets</h3>
+			<p>Test PUSD on Chipnet (free), and the real ParyonUSD on mainnet (capped).</p>
+		</a>
+	</div>
+</section>
 
 <style>
-	.hero { max-width: 48rem; margin: 0.5rem 0 1rem; }
-	.eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--pp-accent); font-weight: 700; margin: 0; }
-	.hero h1 { font-size: 2.2rem; margin: 0.2rem 0 0.1rem; }
-	.tagline { font-size: 1.05rem; font-weight: 600; color: var(--pp-muted); margin: 0 0 0.9rem; }
-	.lead { font-size: 1.08rem; }
-	.pillars { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); counter-reset: pillar; }
-	.pillars li { counter-increment: pillar; position: relative; padding-top: 2.6rem; }
-	.pillars li::before { content: counter(pillar); position: absolute; top: 0.9rem; left: 1rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--pp-accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 0.85rem; }
-	.pillars h2 { font-size: 1rem; margin: 0 0 0.4rem; }
-	.pillars p { margin: 0; font-size: 0.93rem; }
-	.try { scroll-margin-top: 5rem; }
-	.try ol { margin: 0.4rem 0 0.6rem; padding-left: 1.2rem; }
-	.try li { margin: 0.35rem 0; }
-	.notes { margin: 0; padding-left: 1.1rem; }
-	.notes li { margin: 0.25rem 0; }
-	.credits { margin: 1.5rem 0 0.5rem; border-top: 1px solid var(--pp-border); padding-top: 1rem; }
-	:global(#mechanisms) { margin-top: 1.25rem; }
+	.example { display: flex; flex-direction: column; gap: 0.4rem; }
+	.ex-row { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; }
+	.ex-row p { margin: 0.2rem 0; font-size: 1.05rem; }
+	.ex-row small { display: block; line-height: 1.45; }
+	.arrow { font-size: 1.4rem; color: var(--pp-accent); }
+	.tag { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--pp-muted); }
+	.tag.accent { color: var(--pp-accent); }
+	.intro { margin: -0.3rem 0 0.9rem; max-width: 46rem; }
+	.link { text-decoration: none !important; color: var(--pp-text); transition: border-color 0.15s, transform 0.15s; }
+	.link:hover { border-color: var(--pp-accent); transform: translateY(-1px); }
+	@media (max-width: 640px) {
+		.ex-row { grid-template-columns: 1fr; }
+		.arrow { transform: rotate(90deg); justify-self: center; }
+	}
 </style>

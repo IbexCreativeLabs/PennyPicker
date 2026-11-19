@@ -63,7 +63,7 @@
 
 <svelte:head><title>Oracle · PennyPicker</title></svelte:head>
 
-<main class="pp-container">
+<div class="about-page">
 	<div class="pp-page-head">
 		<div>
 			<h1>Reference oracle</h1>
@@ -126,17 +126,13 @@
 
 		<section class="pp-card">
 			<h2>How the price gets on-chain</h2>
-			<ul class="facts">
-				<li><strong>Real oracle data.</strong> oracles.cash publishes a BCH/USD price every minute, signed by General Protocols' oracle key.</li>
-				<li><strong>Checked by the contract.</strong> The PennyPicker oracle contract only accepts a message carrying that key's valid signature (<span class="mono">OP_CHECKDATASIG</span>), and writes exactly the signed price.</li>
-				<li><strong>No operator.</strong> Anyone may submit a newer signed message. No wallet can type in a price.</li>
-				<li><strong>Why an on-chain record at all.</strong> Orders rest in the book for hours or days. If a taker could attach <em>any</em> signed message, they would pick an old one that suits them. Here each update must be newer than the last and spends the previous record, so a superseded price can never be used again.</li>
-				<li><strong>Freshness.</strong> Orders and fills bring the record up to date in the same transaction. The chain cannot see the clock, so a taker can still choose among messages published since the last update (a window of minutes while the book is active).</li>
-				{#if pp.network === 'chipnet'}
-					<li><strong>PUSD = USD for pricing.</strong> PennyPickerUSD is an experimental test token with no real backing; it stands in for the stablecoin the design targets.</li>
-				{:else}
-					<li><strong>PUSD = USD for pricing.</strong> {pp.selectedMarket.name} is a USD stablecoin, so the BCH/USD price is used directly as PUSD per BCH.</li>
-				{/if}
+			<ul class="ab-list">
+				<li data-i="✍"><span><strong>Signed at the source.</strong> oracles.cash publishes a BCH/USD price every minute, signed by General Protocols.</span></li>
+				<li data-i="✓"><span><strong>Checked by the contract.</strong> Only a valid signature from that key is accepted (<span class="mono">OP_CHECKDATASIG</span>).</span></li>
+				<li data-i="⊘"><span><strong>No operator.</strong> Anyone can submit a newer signed price; nobody can type one in.</span></li>
+				<li data-i="↑"><span><strong>Newer only.</strong> Each update must be newer than the last, so an old price can never be replayed against resting orders.</span></li>
+				<li data-i="⏱"><span><strong>Kept fresh by trading.</strong> Orders and fills update the price in the same transaction.</span></li>
+				<li data-i="$"><span><strong>PUSD = USD.</strong> {#if pp.network === 'chipnet'}PennyPickerUSD is a test token standing in for a USD stablecoin.{:else}{pp.selectedMarket.name} is a USD stablecoin, so BCH/USD is used directly.{/if}</span></li>
 			</ul>
 		</section>
 	</div>
@@ -210,12 +206,10 @@
 			<p class="small muted">{exists ? 'History appears after the next refresh.' : 'No prices published yet.'}</p>
 		{/each}
 	</section>
-</main>
+</div>
 
 <style>
 	.big { font-size: 2rem; }
-	.facts { margin: 0; padding-left: 1.1rem; font-size: 0.92rem; }
-	.facts li { margin: 0.35rem 0; }
 	.action { margin-top: 0.75rem; align-items: start; }
 	.check { padding: 0.5rem 0.65rem; border-radius: var(--pp-radius-sm); }
 	.check.ok { background: var(--pp-bid-soft); }

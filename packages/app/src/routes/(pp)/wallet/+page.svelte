@@ -166,7 +166,7 @@
 			{#if pending}
 				<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={(txid, u) => { pp.recordBroadcast(txid, u); recipientsText = ''; }} onDismiss={() => (pending = undefined)} />
 			{:else if pp.ownIdentityUtxo?.token}
-				<p class="pp-callout warn small">Your PUSD sits on the PUSD identity coin, so sending it would move the token identity. Separate them first: <a href="/token">Token → PUSD identity</a>.</p>
+				<p class="pp-callout warn small">Your PUSD sits on the PUSD identity coin, so sending it would move the token identity. Ask in the community chat for help separating them.</p>
 			{:else if pp.balances.pusdUnits === 0n}
 				<p class="muted small">This wallet holds no PUSD. Ask a teammate holding PUSD to send some to your token address above, or sell BCH into a bid on the Exchange.</p>
 			{:else}

@@ -289,7 +289,7 @@
 		</p>
 		<div class="pp-row">
 			<button class="pp-btn pp-btn-primary" type="button" onclick={() => pp.selectMarket('pennypickerusd')}>Trade the Chipnet market (PennyPickerUSD)</button>
-			<a class="pp-btn" href="/token">Token details</a>
+			<a class="pp-btn" href="/about/token">Token details</a>
 			{#each pp.selectedMarket.links as link (link.href)}<a class="pp-btn" href={link.href} target="_blank" rel="noopener">{link.label} ↗</a>{/each}
 		</div>
 	</section>
@@ -367,9 +367,9 @@
 	</section>
 
 	{#if !pp.market}
-		<p class="pp-callout warn">The market is not configured yet. Create PUSD on <a href="/token">Token</a> and the oracle on <a href="/oracle">Oracle</a>, or set <code>VITE_PENNYPICKER_*</code>.</p>
+		<p class="pp-callout warn">The market is not configured yet. Create PUSD on <a href="/about/token">Token</a> and the oracle on <a href="/about/oracle">Oracle</a>, or set <code>VITE_PENNYPICKER_*</code>.</p>
 	{:else if pp.oracleLoaded && !pp.oracle}
-		<p class="pp-callout warn">No oracle state found on-chain. Trading opens once the oracle is created on <a href="/oracle">Oracle</a>.</p>
+		<p class="pp-callout warn">No oracle state found on-chain. Trading opens once the oracle is created on <a href="/about/oracle">Oracle</a>.</p>
 	{:else if pp.oracleStale}
 		<p class="pp-callout warn small">{pp.feed ? 'The oracles.cash price' : 'The on-chain reference'} is {formatAge(pp.oracleAge)} old{pp.feedError ? ` (${pp.feedError})` : ''}. Fills settle at the newest signed price available.</p>
 	{/if}

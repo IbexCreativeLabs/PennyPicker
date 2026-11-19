@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	const KEY = 'pennypicker:demo-notice-v1';
+	/** Shown once per visit (browser session), and any time from the Demo badge. */
+	const KEY = 'pennypicker:demo-notice-seen';
 	let open = $state(false);
 
 	onMount(() => {
 		try {
-			open = localStorage.getItem(KEY) !== 'accepted';
+			open = sessionStorage.getItem(KEY) !== '1';
 		} catch {
 			open = true;
 		}
@@ -18,9 +19,9 @@
 
 	function accept() {
 		try {
-			localStorage.setItem(KEY, 'accepted');
+			sessionStorage.setItem(KEY, '1');
 		} catch {
-			/* storage unavailable: show again next visit */
+			/* storage unavailable: it shows again on the next page load */
 		}
 		open = false;
 	}

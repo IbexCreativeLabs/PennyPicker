@@ -1,5 +1,9 @@
+/token                   /about/token  301
+/oracle                  /about/oracle 301
+/admin                   /about        302
+/admin/*                 /about        302
 /penny-picker            /          301
 /penny-picker/exchange   /          301
-/penny-picker/mechanisms /about     301
-/penny-picker/simulator  /admin/simulator 301
+/penny-picker/mechanisms /about/mechanisms 301
+/penny-picker/simulator  /about/mechanisms 301
 /penny-picker/*          /:splat    301

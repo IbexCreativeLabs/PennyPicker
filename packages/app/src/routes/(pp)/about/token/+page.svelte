@@ -11,7 +11,7 @@
 
 <svelte:head><title>Token · PennyPicker</title></svelte:head>
 
-<main class="pp-container">
+<div class="about-page">
 	<div class="pp-page-head">
 		<div class="title">
 			{#if market.id === 'pennypickerusd'}<img src="/pennypickerusd-256.png" alt="" width="56" height="56" />{/if}
@@ -79,7 +79,7 @@
 		</div>
 		<p class="small muted" style="margin-top: 0.6rem">Both markets price orders against the same oracles.cash BCH/USD oracle. Mainnet orders are capped until the contracts are independently audited.</p>
 	</section>
-</main>
+</div>
 
 <style>
 	.title { display: flex; gap: 1rem; align-items: center; }

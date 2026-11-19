@@ -1,18 +1,17 @@
 # Deploying the PennyPicker demo (Cloudflare Pages)
 
-**Status (2026-11-17): live at https://pennypicker.pages.dev.** Project `pennypicker`, production branch `main`, with the settings below. The Reown allowlist is empty; set `ADMIN_PASSWORD` for the admin area (section 3).
+**Status (2026-11-17): live at https://pennypicker.pages.dev.** Project `pennypicker`, production branch `main`, with the settings below. The Reown allowlist is empty. The site has no admin area and needs no secrets.
 
 PennyPicker is a **static site**:
 - SvelteKit `adapter-static`, with `ssr = false` and `prerender = true`.
 - The browser talks directly to the BCH **Chipnet** Electrum servers over WSS (`chipnet.imaginary.cash`) and to the WalletConnect relay.
 - No app server, database or persistent process is needed.
 
-The only server-side code is the admin password check (`functions/_middleware.js`), a Cloudflare Pages Function.
+There is no server-side code and no secret: everything is public, static files.
 
 **Why Cloudflare Pages:**
 - It deploys private repositories owned by GitHub organizations on the free plan.
 - It rebuilds automatically on every push to `main` and gives each branch a preview URL.
-- It runs the admin middleware next to the static files.
 - It needs no hosting configuration changes in the app.
 
 ## 1. Create the Pages project (one-time, needs your Cloudflare account)
@@ -28,7 +27,7 @@ The only server-side code is the admin password check (`functions/_middleware.js
    | Framework preset | None |
    | Build command | `pnpm app:build` |
    | Build output directory | `docs` |
-   | Root directory | *(leave empty: repository root, so `functions/` is found)* |
+   | Root directory | *(leave empty: repository root)* |
 
 4. Under **Environment variables** (set for both Production and Preview), add:
 
@@ -58,27 +57,14 @@ At dashboard.reown.com, open the project whose ID you use, then its allowed-doma
 
 The app sends `window.location.origin` as its WalletConnect metadata URL, so Cashonize shows the real site address in its approval prompts.
 
-## 3. Admin password (required for /admin)
-
-The admin area (`/admin`, `/admin/token`, `/admin/simulator`: setup progress, genesis tools, simulator) is protected
-by HTTP Basic auth in `functions/_middleware.js`. Until a password is set, `/admin` answers 503 (locked).
-
-1. In the Cloudflare Pages project, go to **Settings → Variables and Secrets** (Production) and add
-   `ADMIN_PASSWORD` with type **Secret** (optionally `ADMIN_USER`, default `admin`).
-2. Redeploy (Deployments → Retry deployment), or push any commit.
-
-`static/_routes.json` limits the Function to `/admin*`, so public pages are served as plain static files.
-This hides admin tools from visitors; it is not a security boundary for on-chain actions, which always need the
-user's own wallet.
-
-## 4. Verify the deployment
+## 3. Verify the deployment
 
 1. Open the production URL. The Exchange loads directly at `/` and shows the experimental-demo notice.
-2. The header shows the stablecoin selector and the **Demo** badge. `/admin` asks for the admin password.
+2. The header shows the stablecoin selector and the **Demo** badge.
 3. **Wallet → Connect Cashonize**: pair Cashonize (set to Chipnet for PennyPickerUSD, or mainnet for ParyonUSD) and confirm the address appears.
-4. Old `/penny-picker/...` links redirect (`static/_redirects`).
+4. Old links redirect (`static/_redirects`): `/token` and `/oracle` go to `/about/token` and `/about/oracle`, `/admin` goes to `/about`, and `/penny-picker/...` to the current pages.
 
-## 5. Going live on mainnet (ParyonUSD)
+## 4. Going live on mainnet (ParyonUSD)
 
 The mainnet market uses the same contracts as Chipnet, with the real ParyonUSD token
 (`2469acc5…2544`). **Status 2026-11-18: done.** The price record is deployed and `MAINNET_WRITES_COMMITTED = true`; the

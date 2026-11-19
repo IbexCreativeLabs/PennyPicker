@@ -28,10 +28,9 @@ What it does:
   Cashonize shows the name, ticker and icon.
 - **Pages:**
   - Exchange, with a network-aware getting-started guide, depth bars and live price movement.
-  - Token, Oracle and Wallet.
-  - About, with the pitch, a "try it in 5 minutes" guide, and liquidation and redemption pricing simulations.
-  - A Telegram chat button.
-  - A password-protected admin area.
+  - Wallet.
+  - About, with a section menu: Overview, How it works, Try it, Token, Oracle, Liquidations (simulations), Safety & status.
+  - A Telegram chat button, and the demo notice on each visit.
 - **Safety on mainnet:** a red real-money warning on every mainnet screen, a 25 PUSD cap enforced by the transaction
   builder and the form, and a build-level write switch.
 
@@ -42,7 +41,7 @@ What it does:
 | Contracts | Order covenant (exact settlement, maker-only cancel) and oracle covenant (signature-verified, replay-proof, permissionless updates) |
 | On-chain proof, Chipnet | Two-wallet trades in both directions, cancels, oracle updates, conflict recovery and the token metadata publication. Txids are in `SUBMISSION.md` and `PROJECT_STATUS.md` |
 | On-chain proof, mainnet | Price record created, then an ask, a fill with real ParyonUSD and a cancel (txids in `SUBMISSION.md`). Mainnet trading is open on the public site |
-| Site | Public and admin split, market selector, getting-started guide, visual refresh, BCMR token metadata, Telegram chat |
+| Site | Fully public site (no admin area, no passwords), sectioned About, market selector, getting-started guide, visual refresh, BCMR token metadata, Telegram chat |
 | Fixes from live testing | Stale saved IDs emptied the book; a library reported rejected broadcasts as accepted; a deploy-time cache bug broke the page for a few seconds after each deploy |
 | Final polish (today) | The guide and market header now adapt to mainnet; a loading state replaces the "No oracle" flash; balances show "…" until loaded; the wording is accurate ("internal review, no independent audit"); docs updated to mainnet-live |
 | Tests | Contracts, transaction builders, mechanisms and identity tests, run in the BCH 2025 VM: 142 checks pass. 0 type errors. CI on every push |

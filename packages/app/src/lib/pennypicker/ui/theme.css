@@ -271,3 +271,32 @@
 .pp details.pp-details > summary { cursor: pointer; color: var(--pp-muted); font-size: 0.88rem; font-weight: 550; }
 .pp details.pp-details[open] > summary { margin-bottom: 0.5rem; }
 .pp pre.pp-pre { white-space: pre-wrap; word-break: break-all; font-family: var(--pp-mono); font-size: 0.72rem; max-height: 12rem; overflow: auto; margin: 0; }
+
+/* ---- About section pages ---- */
+.pp .ab-head { margin: 0.2rem 0 1.25rem; max-width: 46rem; }
+.pp .ab-head .kicker { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: var(--pp-accent); font-weight: 700; margin: 0; }
+.pp .ab-head h1 { font-size: clamp(1.6rem, 3.2vw, 2.1rem); margin: 0.2rem 0 0.4rem; letter-spacing: -0.01em; }
+.pp .ab-head .lead { font-size: 1.05rem; color: var(--pp-muted); margin: 0; line-height: 1.55; }
+.pp .ab-grid { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.pp .ab-card { display: flex; flex-direction: column; gap: 0.35rem; }
+.pp .ab-card h3 { font-size: 1rem; margin: 0; display: flex; align-items: center; gap: 0.55rem; }
+.pp .ab-card p { margin: 0; font-size: 0.93rem; line-height: 1.55; color: var(--pp-text); }
+.pp .ab-card .tag { font-size: 0.72rem; font-weight: 600; color: var(--pp-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.pp .ab-icon { width: 2.1rem; height: 2.1rem; flex: none; border-radius: 10px; display: grid; place-items: center; background: var(--pp-accent-soft); color: var(--pp-accent); font-weight: 700; font-size: 1rem; }
+.pp .ab-section { margin-top: 1.75rem; }
+.pp .ab-section > h2 { font-size: 1.15rem; margin: 0 0 0.75rem; }
+.pp .ab-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; counter-reset: abstep; }
+.pp .ab-steps > li { counter-increment: abstep; display: grid; grid-template-columns: 2.2rem 1fr; gap: 0.2rem 0.8rem; align-items: start; }
+.pp .ab-steps > li::before { content: counter(abstep); grid-row: span 2; width: 2.2rem; height: 2.2rem; border-radius: 50%; display: grid; place-items: center; background: var(--pp-accent); color: #fff; font-weight: 700; }
+.pp .ab-steps strong { font-size: 1rem; padding-top: 0.3rem; }
+.pp .ab-steps p { margin: 0; color: var(--pp-muted); font-size: 0.93rem; line-height: 1.55; }
+.pp .ab-formula { font-family: var(--pp-mono, ui-monospace, monospace); background: var(--pp-surface-2); border: 1px solid var(--pp-border); border-radius: 10px; padding: 0.7rem 0.9rem; font-size: 0.95rem; text-align: center; margin: 0.6rem 0; }
+.pp .ab-compare { display: grid; grid-template-columns: 1fr; gap: 0.5rem; margin-top: 0.4rem; }
+.pp .ab-compare > div { border-radius: 10px; padding: 0.6rem 0.75rem; font-size: 0.88rem; line-height: 1.45; }
+.pp .ab-compare .old { background: var(--pp-ask-soft); }
+.pp .ab-compare .new { background: var(--pp-bid-soft); }
+.pp .ab-compare b { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.15rem; }
+.pp .ab-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.55rem; }
+.pp .ab-list li { display: grid; grid-template-columns: 1.4rem 1fr; gap: 0.5rem; font-size: 0.93rem; line-height: 1.5; }
+.pp .ab-list li::before { content: attr(data-i); text-align: center; }
+@media (max-width: 560px) { .pp .ab-compare { grid-template-columns: 1fr; } }
