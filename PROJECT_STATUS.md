@@ -8,6 +8,24 @@ PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet**. Orders
 relative to an on-chain reference price. PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals) with no USD
 backing and no peg. `PENNYPICKER_PROGRESS.md` is the earlier research log.
 
+## Live re-check (2026-11-19, evening)
+
+- **HTTP:** all 9 pages, the token registry, icons and manifest return 200; old links redirect (`/token`, `/oracle`,
+  `/admin`, `/penny-picker/…`); missing files return 404; security headers present.
+- **Browser, both markets:** every page renders with no console errors after a fresh load; only the intended real-money
+  warnings on mainnet; the real mainnet fill shows under Market fills.
+- **Fixed:** the market header shifted by a pixel every few seconds (the refresh label and the freshness age changed
+  width, and the button flipped to "Refreshing…" on background updates). The label now reads "Auto-updating", or
+  "Updated Xs ago" once data is over 10 s old; widths are fixed. Measured: one layout over 35 s.
+- **Fixed:** the liquidation simulation showed "the book can't absorb the full debt" by default. Its default vault (0.25 BCH
+  for 110 PUSD) assumed BCH at $500, so it was insolvent at today's price, and it used the thin live test book. It now
+  sizes the vault from the live price (100 PUSD at a 130% ratio) and uses the illustrative book by default, with a
+  checkbox for the live book.
+- **External:** the WizardConnect relay `relay.riften.net` is currently unreachable (IPv4 and IPv6); the second relay,
+  `relay.cauldron.quest`, works, so pairing still succeeds. The failed relay only logs console errors while a
+  WizardConnect session is open.
+- **External:** bchexplorer.cash answers scripted requests with 403 but opens normally in a browser.
+
 ## Community feedback pass (2026-11-19)
 
 Feedback from first-time visitors of the public site, evaluated against the code. Commits `6185b0b` and `9a548cf`.

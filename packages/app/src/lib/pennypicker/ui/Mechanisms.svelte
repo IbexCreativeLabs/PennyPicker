@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { pp } from '$lib/pennypicker/ui/session.svelte';
 	import { quoteLiquidation, quoteRedemption, type BookOffer } from '$lib/pennypicker/mechanisms';
 	import { formatPrice, parsePrice } from '$lib/pennypicker/contracts';
@@ -14,7 +15,8 @@
 		{ id: 'demo ask +120', side: 'ask', deltaBps: 120, availableSats: 50_000_000n }
 	];
 
-	let useDemo = $state(false);
+	/** The illustrative book is the default: the thin live test book would leave most quotes unfilled. */
+	let useLive = $state(false);
 	let priceOverride = $state('');
 
 	const liveBook = $derived<BookOffer[]>(
@@ -22,8 +24,8 @@
 			.filter((o) => !o.exhausted)
 			.map((o) => ({ id: `${o.side} ${o.deltaBps > 0 ? '+' : ''}${o.deltaBps} · ${o.address.slice(9, 17)}`, side: o.side, deltaBps: o.deltaBps, availableSats: o.availableSats, availableUnits: o.availableUnits }))
 	);
-	const book = $derived(useDemo || liveBook.length === 0 ? demoBook : liveBook);
-	const usingLive = $derived(!useDemo && liveBook.length > 0);
+	const usingLive = $derived(useLive && liveBook.length > 0);
+	const book = $derived(usingLive ? liveBook : demoBook);
 	const price = $derived.by(() => {
 		try {
 			return priceOverride.trim() ? parsePrice(priceOverride) : (pp.price ?? 500n * 100_000_000n);
@@ -32,8 +34,17 @@
 		}
 	});
 
-	let collateralInput = $state('0.25');
-	let debtInput = $state('110.00');
+	// Default vault: 100 PUSD of debt at a 130% collateral ratio (below the 150% minimum, so it can be liquidated, but
+	// solvent), sized from the live price until the user edits the collateral field.
+	let collateralInput = $state('0.65');
+	let debtInput = $state('100.00');
+	let collateralEdited = $state(false);
+	$effect(() => {
+		const reference = price;
+		if (untrack(() => collateralEdited)) return;
+		const sats = (10_000n * 130n * 1_000_000_000_000n) / reference; // 100.00 PUSD × 1.30 in BCH
+		collateralInput = formatSats(sats);
+	});
 	let minRatioInput = $state('150');
 	let fixedPenaltyInput = $state('10');
 	let redeemInput = $state('100.00');
@@ -77,7 +88,7 @@
 	<section class="pp-card controls">
 		<div class="pp-row">
 			<span class="pp-badge {usingLive ? 'ok' : 'plain'}">{usingLive ? `Live Chipnet book · ${liveBook.length} order${liveBook.length === 1 ? '' : 's'}` : 'Illustrative demo book'}</span>
-			{#if liveBook.length > 0}<label class="small"><input type="checkbox" bind:checked={useDemo} /> use demo book</label>{/if}
+			{#if liveBook.length > 0}<label class="small"><input type="checkbox" bind:checked={useLive} /> use the live {pp.networkInfo.label} book</label>{/if}
 		</div>
 		<label class="pp-field price">
 			<span>Reference price {pp.price && !priceOverride ? '(live oracle)' : ''}</span>
@@ -90,7 +101,7 @@
 			<h2>Competitive liquidation</h2>
 			<p class="small muted">An under-collateralised vault must buy back its PUSD debt with BCH collateral. It sells into the <strong>bids</strong>. Every bid is a standing liquidation offer, and the smallest discount wins. The penalty is whatever liquidators compete it down to.</p>
 			<div class="pp-grid-2 form">
-				<label class="pp-field"><span>Collateral (BCH)</span><input class="pp-input" bind:value={collateralInput} /></label>
+				<label class="pp-field"><span>Collateral (BCH)</span><input class="pp-input" bind:value={collateralInput} oninput={() => (collateralEdited = true)} /></label>
 				<label class="pp-field"><span>Debt (PUSD)</span><input class="pp-input" bind:value={debtInput} /></label>
 				<label class="pp-field"><span>Min. ratio %</span><input class="pp-input" bind:value={minRatioInput} /></label>
 				<label class="pp-field"><span>Fixed penalty % (compare)</span><input class="pp-input" bind:value={fixedPenaltyInput} /></label>
