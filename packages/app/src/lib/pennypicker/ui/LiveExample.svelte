@@ -30,7 +30,7 @@
 	<ol class="story">
 		<li>
 			<span class="who oracle" aria-hidden="true">◷</span>
-			<div><strong>The oracle signs the price</strong><span>oracles.cash: 1 BCH = <b class="num">{formatPrice(price)}</b> USD{live ? ' (live now)' : ' (example)'}</span></div>
+			<div><strong>The oracle signs the price</strong><span>oracles.cash: 1 BCH = <b class="num">{formatPrice(price)}</b> USD{live ? ' (live now)' : ' (example)'}. A pull oracle, like <a href="https://docs.pyth.network/price-feeds/pull-updates" target="_blank" rel="noopener">Pyth</a>; the same feed <a href="https://paryonusd.com" target="_blank" rel="noopener">ParyonUSD</a> and <a href="https://anyhedge.com" target="_blank" rel="noopener">AnyHedge</a> use.</span></div>
 		</li>
 		<li>
 			<span class="who alice" aria-hidden="true">A</span>

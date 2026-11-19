@@ -73,6 +73,27 @@
 		<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
 	</div>
 
+	<section class="pp-card familiar">
+		<h2 style="margin-top: 0">If you know Pyth, you know this oracle</h2>
+		<p class="lead-line">
+			PennyPicker uses a <strong>pull oracle</strong>, like <a href="https://docs.pyth.network/price-feeds/pull-updates" target="_blank" rel="noopener">Pyth</a>:
+			the price is signed off-chain, and whoever trades brings the newest signed update into their own transaction, where the
+			contract checks the signature. The signed feed itself is the same oracles.cash BCH/USD price that
+			<a href="https://anyhedge.com" target="_blank" rel="noopener">AnyHedge</a> and <a href="https://paryonusd.com" target="_blank" rel="noopener">ParyonUSD</a> already use on Bitcoin Cash.
+		</p>
+		<div class="pp-table-wrap">
+			<table class="pp-table compare">
+				<thead><tr><th></th><th><a href="https://docs.chain.link/data-feeds" target="_blank" rel="noopener">Chainlink</a> (push)</th><th><a href="https://docs.pyth.network/price-feeds" target="_blank" rel="noopener">Pyth</a> (pull)</th><th class="us">PennyPicker</th></tr></thead>
+				<tbody>
+					<tr><td>Who signs the price</td><td>A node network</td><td>Pyth publishers</td><td class="us">General Protocols (<a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a>), every minute</td></tr>
+					<tr><td>How it gets on-chain</td><td>Nodes push on a schedule</td><td>The user submits the update with their transaction</td><td class="us">The trader's order or fill carries the newest message</td></tr>
+					<tr><td>Checked by</td><td>The feed contract</td><td>The Pyth contract</td><td class="us">The oracle covenant, with <span class="mono">OP_CHECKDATASIG</span></td></tr>
+					<tr><td>Old prices</td><td>Overwritten</td><td>Must be newer than the stored one</td><td class="us">Must be newer than the stored one</td></tr>
+				</tbody>
+			</table>
+		</div>
+	</section>
+
 	<section class="pp-card example" style="margin-bottom: 1rem">
 		<h2 style="margin-top: 0">This oracle in one example</h2>
 		<LiveExample />
@@ -215,6 +236,11 @@
 </div>
 
 <style>
+	.familiar { margin-bottom: 1rem; }
+	.lead-line { margin: 0 0 0.75rem; line-height: 1.55; max-width: 52rem; }
+	.compare td:first-child { color: var(--pp-muted); font-weight: 600; white-space: nowrap; }
+	.compare .us { background: var(--pp-accent-soft); }
+	.compare th.us { color: var(--pp-accent); }
 	.big { font-size: 2rem; }
 	.action { margin-top: 0.75rem; align-items: start; }
 	.check { padding: 0.5rem 0.65rem; border-radius: var(--pp-radius-sm); }
