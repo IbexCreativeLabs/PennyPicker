@@ -4,7 +4,20 @@
 	"description": "Oracle-delta BPS orderbook for stablecoins on Bitcoin Cash (Chipnet demo).",
 	"start_url": "/",
 	"display": "standalone",
-	"theme_color": "#b4652b",
-	"background_color": "#f6f4f1",
-	"icons": [{ "purpose": "any", "sizes": "any", "src": "pennypicker.svg", "type": "image/svg+xml" }]
+	"theme_color": "#fda60d",
+	"background_color": "#ffffff",
+	"icons": [
+		{
+			"src": "pennypicker-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "pennypicker-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		}
+	]
 }

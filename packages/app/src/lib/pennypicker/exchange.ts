@@ -88,6 +88,13 @@ export interface MarketConfig {
 	network?: NetworkId;
 	/** Largest order the app will build, in stablecoin base units (cents); mainnet safety cap. */
 	maxOrderUnits?: bigint;
+	/** Ticker shown in summaries and errors (default: PPUSD on Chipnet, PUSD for ParyonUSD on mainnet). */
+	symbol?: string;
+}
+
+/** Ticker of a market's stablecoin: PPUSD (PennyPickerUSD, Chipnet test token) or PUSD (ParyonUSD, mainnet). */
+export function stableSymbol(market?: Pick<MarketConfig, 'network' | 'symbol'>): string {
+	return market?.symbol ?? (market?.network === 'mainnet' ? 'PUSD' : 'PPUSD');
 }
 
 /** A spendable output with its outpoint, as returned by Electrum listunspent. */
@@ -106,6 +113,11 @@ export interface ChainUtxo {
 	 * a token identity output. Ordinary builders never spend it.
 	 */
 	identityOf?: string;
+	/**
+	 * P2PKH locking bytecode (hex) of the wallet address holding this output, when the wallet spans several
+	 * addresses (WizardConnect HD wallets). Unset means the connected address itself.
+	 */
+	ownerLocking?: string;
 }
 
 export interface ContractInfo {
@@ -162,7 +174,8 @@ export function contractAddress(instance: ContractInstance, tokenSupport = true,
 
 function utxoToOutput(utxo: ChainUtxo, lockingBytecode: Uint8Array): Output {
 	return {
-		lockingBytecode,
+		// A wallet coin held by another address of the same HD wallet keeps its own locking bytecode.
+		lockingBytecode: utxo.ownerLocking ? hexToBin(utxo.ownerLocking) : lockingBytecode,
 		valueSatoshis: utxo.satoshis,
 		...(utxo.token
 			? {
@@ -312,8 +325,16 @@ function addAuthorisationInput(
 	used: Set<string>,
 	role: string
 ): void {
-	const utxo = bchOnly(walletUtxos).find((candidate) => !used.has(`${candidate.txid}:${candidate.vout}`));
-	if (!utxo) throw new Error(`The ${role} needs a BCH-only UTXO in the connected wallet to authorise this transaction.`);
+	// The contract checks the input's locking bytecode, so it must be a coin on exactly this address.
+	const lockingHex = binToHex(walletLocking);
+	const utxo = bchOnly(walletUtxos).find(
+		(candidate) => !used.has(`${candidate.txid}:${candidate.vout}`) && (candidate.ownerLocking ?? lockingHex) === lockingHex
+	);
+	if (!utxo) {
+		throw new Error(
+			`The ${role}'s address needs a coin of plain BCH to authorise this transaction. Send a little BCH (for example 0.0001) to your receive address shown on the Wallet page, then try again.`
+		);
+	}
 	used.add(`${utxo.txid}:${utxo.vout}`);
 	const input = utxoToInput(utxo, new Uint8Array());
 	tx.inputs.push(input);
@@ -451,7 +472,7 @@ export function buildOracleGenesis(
 		feeSatoshis: fee,
 		createdCategory: category,
 		summary: [
-			`Create the oracle with a reference price of ${formatPrice(initial.price)} PUSD per BCH (sequence ${initial.sequence})`,
+			`Create the oracle with a reference price of ${formatPrice(initial.price)} USD per BCH (sequence ${initial.sequence})`,
 			`Spends ${genesisInput.txid.slice(0, 12)}…:0 · new oracle category = that txid`,
 			`One mutable NFT (the price record) goes to the oracle contract; no minting baton`,
 			`Network fee ≈ ${fee.toString()} sats`
@@ -470,6 +491,7 @@ export function buildOracleRefresh(
 	walletUtxos: ChainUtxo[],
 	message: OracleMessage
 ): UnsignedExchangeTransaction {
+	const sym = stableSymbol(market);
 	if (message.messageSequence <= oracle.state.sequence) throw new Error('The on-chain price is already at this oracle message or newer.');
 	const walletLocking = addressToLockingBytecode(payerAddress);
 	const o = oracleInput(oracle, market, message);
@@ -477,7 +499,7 @@ export function buildOracleRefresh(
 	const sources: WcSourceOutput[] = [o.source];
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, new Set());
 	return finish('oracle-update', tx, sources, fee, [
-		`Update the on-chain reference ${formatPrice(oracle.state.price)} → ${formatPrice(o.state.price)} PUSD per BCH from oracles.cash BCH/USD`,
+		`Update the on-chain reference ${formatPrice(oracle.state.price)} → ${formatPrice(o.state.price)} ${sym} per BCH from oracles.cash BCH/USD`,
 		`Oracle message #${message.messageSequence} (${new Date(message.timestamp * 1000).toLocaleString()}), signature checked by the contract`
 	]);
 }
@@ -590,11 +612,12 @@ export function orderValueUnits(side: OrderSide, amount: bigint, limitPrice: big
 
 /** Enforce the market's per-order safety cap (mainnet), if any. */
 export function assertWithinOrderCap(market: MarketConfig, request: CreateOrderRequest, limitPrice: bigint): void {
+	const sym = stableSymbol(market);
 	if (market.maxOrderUnits === undefined) return;
 	const value = orderValueUnits(request.side, request.amount, limitPrice);
 	if (value > market.maxOrderUnits) {
 		throw new Error(
-			`Orders are limited to ${formatUnits(market.maxOrderUnits)} PUSD each on this market until the contracts are independently audited (this one is worth ${formatUnits(value)} PUSD).`
+			`Orders are limited to ${formatUnits(market.maxOrderUnits)} ${sym} each on this market until the contracts are independently audited (this one is worth ${formatUnits(value)} ${sym}).`
 		);
 	}
 }
@@ -613,6 +636,7 @@ export function buildCreateOrder(
 	request: CreateOrderRequest,
 	refresh?: OracleMessage
 ): UnsignedExchangeTransaction {
+	const sym = stableSymbol(market);
 	const walletLocking = addressToLockingBytecode(makerAddress);
 	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(makerPkh))) {
 		throw new Error('Maker hash does not match the connected P2PKH address.');
@@ -630,7 +654,7 @@ export function buildCreateOrder(
 	assertWithinOrderCap(market, request, limit);
 
 	if (request.side === 'bid') {
-		if (request.amount <= 0n || request.amount > MAX_TOKEN_UNITS) throw new Error('Enter a positive PUSD amount.');
+		if (request.amount <= 0n || request.amount > MAX_TOKEN_UNITS) throw new Error(`Enter a positive ${sym} amount.`);
 		let gathered = 0n;
 		for (const utxo of pusdUtxos(walletUtxos, market.pusdCategory)) {
 			if (gathered >= request.amount) break;
@@ -640,7 +664,7 @@ export function buildCreateOrder(
 			used.add(`${utxo.txid}:${utxo.vout}`);
 			gathered += utxo.token!.amount;
 		}
-		if (gathered < request.amount) throw new Error('Insufficient PUSD in the connected wallet for this bid. Get PUSD by selling BCH into a bid, or ask a teammate to send some (Wallet → Send PUSD).');
+		if (gathered < request.amount) throw new Error(`Insufficient ${sym} in the connected wallet for this bid. Get ${sym} by selling BCH into a bid, or ask a teammate to send some (Wallet → Send ${sym}).`);
 		tx.outputs.push({
 			lockingBytecode: orderLocking,
 			valueSatoshis: ORDER_RESERVE_SATOSHIS,
@@ -655,8 +679,8 @@ export function buildCreateOrder(
 			});
 		}
 		summary.push(
-			`Bid: buy BCH with ${formatUnits(request.amount)} PUSD at ${request.deltaBps} BPS (limit now ${formatPrice(limit)} PUSD/BCH)`,
-			`Escrows ${formatUnits(request.amount)} PUSD in order contract ${order.address.slice(0, 24)}…`
+			`Bid: buy BCH with ${formatUnits(request.amount)} ${sym} at ${request.deltaBps} BPS (limit now ${formatPrice(limit)} ${sym}/BCH)`,
+			`Escrows ${formatUnits(request.amount)} ${sym} in order contract ${order.address.slice(0, 24)}…`
 		);
 	} else {
 		if (request.amount < MIN_TRADE_SATOSHIS) {
@@ -665,7 +689,7 @@ export function buildCreateOrder(
 		tx.outputs.push({ lockingBytecode: orderLocking, valueSatoshis: request.amount + ORDER_RESERVE_SATOSHIS });
 		tx.outputs.push(announcement(terms));
 		summary.push(
-			`Ask: sell ${formatSats(request.amount)} BCH at +${request.deltaBps} BPS (limit now ${formatPrice(limit)} PUSD/BCH)`,
+			`Ask: sell ${formatSats(request.amount)} BCH at +${request.deltaBps} BPS (limit now ${formatPrice(limit)} ${sym}/BCH)`,
 			`Escrows ${formatSats(request.amount + ORDER_RESERVE_SATOSHIS)} BCH (incl. ${ORDER_RESERVE_SATOSHIS} sats reserve) in ${order.address.slice(0, 24)}…`
 		);
 	}
@@ -724,8 +748,8 @@ export function quoteLeg(leg: FillLeg, price: bigint): LegQuote {
 		return quote;
 	}
 	const units = bidFillUnitsOut(sats, price, order.deltaBps);
-	if (units <= 0n) throw new Error('Fill too small: it would receive 0 PUSD.');
-	if (units > order.availableUnits) throw new Error('That bid does not hold enough PUSD for this amount of BCH.');
+	if (units <= 0n) throw new Error('Fill too small: it would pay out nothing.');
+	if (units > order.availableUnits) throw new Error('That bid does not hold enough tokens for this amount of BCH.');
 	if (!settlementSatisfied(sats, -units, price, order.deltaBps)) throw new Error('Internal settlement check failed.');
 	return { units, nextValue: order.utxo.satoshis + sats, nextUnits: order.heldUnits - units };
 }
@@ -742,6 +766,7 @@ export function buildFillOrders(
 	legs: FillLeg[],
 	refresh?: OracleMessage
 ): UnsignedExchangeTransaction {
+	const sym = stableSymbol(market);
 	if (legs.length === 0) throw new Error('Select at least one order to fill.');
 	const side = legs[0]!.order.side;
 	if (legs.some((leg) => leg.order.side !== side)) throw new Error('All filled orders must be on the same side.');
@@ -775,7 +800,7 @@ export function buildFillOrders(
 		totalUnits += quote.units;
 		totalSats += leg.sats;
 		summary.push(
-			`${side === 'ask' ? 'Buy' : 'Sell'} ${formatSats(leg.sats)} BCH ${side === 'ask' ? 'from ask' : 'to bid'} at ${leg.order.deltaBps > 0 ? '+' : ''}${leg.order.deltaBps} BPS for ${formatUnits(quote.units)} PUSD`
+			`${side === 'ask' ? 'Buy' : 'Sell'} ${formatSats(leg.sats)} BCH ${side === 'ask' ? 'from ask' : 'to bid'} at ${leg.order.deltaBps > 0 ? '+' : ''}${leg.order.deltaBps} BPS for ${formatUnits(quote.units)} ${sym}`
 		);
 	}
 	const used = new Set<string>();
@@ -790,20 +815,20 @@ export function buildFillOrders(
 			used.add(`${utxo.txid}:${utxo.vout}`);
 			gathered += utxo.token!.amount;
 		}
-		if (gathered < totalUnits) throw new Error(`Insufficient PUSD: this purchase costs ${formatUnits(totalUnits)} PUSD. Get PUSD by selling BCH into a bid, or ask a teammate to send some (Wallet → Send PUSD).`);
+		if (gathered < totalUnits) throw new Error(`Insufficient ${sym}: this purchase costs ${formatUnits(totalUnits)} ${sym}. Get ${sym} by selling BCH into a bid, or ask a teammate to send some (Wallet → Send ${sym}).`);
 		if (gathered > totalUnits) {
 			tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: pusd, amount: gathered - totalUnits } });
 		}
-		summary.push(`Total: you pay ${formatUnits(totalUnits)} PUSD and receive ${formatSats(totalSats)} BCH (in your BCH change)`);
+		summary.push(`Total: you pay ${formatUnits(totalUnits)} ${sym} and receive ${formatSats(totalSats)} BCH (in your BCH change)`);
 	} else {
 		// Taker pays BCH from the wallet; receives PUSD from the bids.
 		tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category: pusd, amount: totalUnits } });
-		summary.push(`Total: you sell ${formatSats(totalSats)} BCH and receive ${formatUnits(totalUnits)} PUSD`);
+		summary.push(`Total: you sell ${formatSats(totalSats)} BCH and receive ${formatUnits(totalUnits)} ${sym}`);
 	}
 	summary.push(
 		oracleRead.refreshed
-			? `Priced at ${formatPrice(price)} PUSD/BCH: this transaction also updates the on-chain reference from oracles.cash (message #${oracleRead.state.sequence})`
-			: `Priced against the on-chain reference ${formatPrice(price)} PUSD/BCH (message #${oracle.state.sequence})`
+			? `Priced at ${formatPrice(price)} ${sym}/BCH: this transaction also updates the on-chain reference from oracles.cash (message #${oracleRead.state.sequence})`
+			: `Priced against the on-chain reference ${formatPrice(price)} ${sym}/BCH (message #${oracle.state.sequence})`
 	);
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('order-fill', tx, sources, fee, summary);
@@ -816,6 +841,7 @@ export function buildCancelOrder(
 	makerAddress: string,
 	walletUtxos: ChainUtxo[]
 ): UnsignedExchangeTransaction {
+	const sym = stableSymbol(market);
 	const walletLocking = addressToLockingBytecode(makerAddress);
 	if (binToHex(walletLocking) !== binToHex(p2pkhLockingBytecode(order.makerPkh))) {
 		throw new Error('Only the maker’s address can cancel this order.');
@@ -838,8 +864,8 @@ export function buildCancelOrder(
 	const fee = fundWithWalletBch(tx, sources, walletUtxos, walletLocking, used);
 	return finish('order-cancel', tx, sources, fee, [
 		`Cancel ${order.side} at ${order.deltaBps > 0 ? '+' : ''}${order.deltaBps} BPS and withdraw everything it holds`,
-		`Returns ${formatSats(order.utxo.satoshis)} BCH${order.heldUnits > 0n ? ` and ${formatUnits(order.heldUnits)} PUSD` : ''} to your address`,
-		'Authorised by your own address (input 1), signed in Cashonize'
+		`Returns ${formatSats(order.utxo.satoshis)} BCH${order.heldUnits > 0n ? ` and ${formatUnits(order.heldUnits)} ${sym}` : ''} to your address`,
+		'Authorised by your own address (input 1), signed in your wallet'
 	]);
 }
 
@@ -884,16 +910,16 @@ export function buildPusdTransfer(
 	let total = 0n;
 	let plainAddresses = 0;
 	for (const recipient of recipients) {
-		if (recipient.units <= 0n) throw new Error('Every recipient needs a positive PUSD amount.');
+		if (recipient.units <= 0n) throw new Error('Every recipient needs a positive PPUSD amount.');
 		const { lockingBytecode, tokenAware } = chipnetRecipientLocking(recipient.address);
 		if (binToHex(lockingBytecode) === binToHex(walletLocking)) throw new Error('A recipient is your own address.');
 		if (!tokenAware) plainAddresses += 1;
 		total += recipient.units;
 		tx.outputs.push({ lockingBytecode, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category, amount: recipient.units } });
-		summary.push(`Send ${formatUnits(recipient.units)} PUSD to ${lockingBytecodeToChipnetAddress(lockingBytecode, true)}`);
+		summary.push(`Send ${formatUnits(recipient.units)} PPUSD to ${lockingBytecodeToChipnetAddress(lockingBytecode, true)}`);
 	}
 	if (total > MAX_TOKEN_UNITS) throw new Error('Amount too large.');
-	summary.unshift(`Send ${formatUnits(total)} PUSD to ${recipients.length} address${recipients.length === 1 ? '' : 'es'}`);
+	summary.unshift(`Send ${formatUnits(total)} PPUSD to ${recipients.length} address${recipients.length === 1 ? '' : 'es'}`);
 	let gathered = 0n;
 	for (const utxo of pusdUtxos(walletUtxos, pusdCategory)) {
 		if (gathered >= total) break;
@@ -907,16 +933,16 @@ export function buildPusdTransfer(
 	if (gathered < total) {
 		const locked = walletUtxos.some((utxo) => utxo.identityOf && utxo.token?.category === pusdCategory);
 		throw new Error(
-			`Insufficient PUSD: the wallet holds ${formatUnits(gathered)} spendable, ${formatUnits(total)} needed.` +
-				(locked ? ' Some PUSD sits on the token identity output; separate the identity first (Token page).' : '')
+			`Insufficient PPUSD: the wallet holds ${formatUnits(gathered)} spendable, ${formatUnits(total)} needed.` +
+				(locked ? ' Some PPUSD sits on the token identity output; separate the identity first (Token page).' : '')
 		);
 	}
 	if (gathered > total) {
 		tx.outputs.push({ lockingBytecode: walletLocking, valueSatoshis: TOKEN_OUTPUT_SATOSHIS, token: { category, amount: gathered - total } });
-		summary.push(`${formatUnits(gathered - total)} PUSD change returns to your address`);
+		summary.push(`${formatUnits(gathered - total)} PPUSD change returns to your address`);
 	}
 	if (plainAddresses > 0) {
-		summary.push(`${plainAddresses} recipient address(es) are not token-aware (z…); the PUSD still arrives at the same key`);
+		summary.push(`${plainAddresses} recipient address(es) are not token-aware (z…); the PPUSD still arrives at the same key`);
 	}
 	if (reserved.length > 0) summary.push('Leaves your genesis-ready vout-0 UTXO untouched');
 	try {
@@ -924,7 +950,7 @@ export function buildPusdTransfer(
 		return finish('pusd-send', tx, sources, fee, summary);
 	} catch (cause) {
 		if (reserved.length > 0 && cause instanceof Error && cause.message.startsWith('Insufficient BCH')) {
-			throw new Error(`${cause.message} Your only spare BCH is the vout-0 UTXO reserved for oracle genesis. Create the oracle first, then send PUSD from the change.`);
+			throw new Error(`${cause.message} Your only spare BCH is the vout-0 UTXO reserved for oracle genesis. Create the oracle first, then send PPUSD from the change.`);
 		}
 		throw cause;
 	}
@@ -949,13 +975,13 @@ function genesisInputOf(walletUtxos: ChainUtxo[]): ChainUtxo | undefined {
  * No minting baton and no NFTs are created, so the supply can never grow.
  */
 export function buildPusdGenesis(creatorAddress: string, walletUtxos: ChainUtxo[], supplyUnits: bigint): UnsignedExchangeTransaction {
-	if (!creatorAddress.startsWith('bchtest:')) throw new Error('PUSD genesis is restricted to a Chipnet (bchtest:) address.');
+	if (!creatorAddress.startsWith('bchtest:')) throw new Error('PPUSD genesis is restricted to a Chipnet (bchtest:) address.');
 	if (supplyUnits <= 0n || supplyUnits > MAX_TOKEN_UNITS) throw new Error('Supply must be a positive CashToken amount.');
 	const walletLocking = addressToLockingBytecode(creatorAddress);
 	if (walletLocking.length !== 25) throw new Error('Genesis must be created from a P2PKH wallet address.');
 	const genesisInput = genesisInputOf(walletUtxos);
 	if (!genesisInput) {
-		throw new Error('PUSD genesis needs a BCH-only UTXO at output index 0 in the connected wallet. Receive a payment (it lands at output 0) and try again.');
+		throw new Error('PPUSD genesis needs a BCH-only UTXO at output index 0 in the connected wallet. Receive a payment (it lands at output 0) and try again.');
 	}
 	const category = genesisInput.txid;
 	const tx: TransactionCommon = { version: 2, locktime: 0, inputs: [], outputs: [] };
@@ -984,8 +1010,8 @@ export function buildPusdGenesis(creatorAddress: string, walletUtxos: ChainUtxo[
 		feeSatoshis: fee,
 		createdCategory: category,
 		summary: [
-			`Create ${formatUnits(supplyUnits)} PUSD (fixed supply, 2 decimals, no minting baton, no NFTs)`,
-			`Spends ${genesisInput.txid.slice(0, 12)}…:0 · new PUSD category = that txid`,
+			`Create ${formatUnits(supplyUnits)} PPUSD (fixed supply, 2 decimals, no minting baton, no NFTs)`,
+			`Spends ${genesisInput.txid.slice(0, 12)}…:0 · new PPUSD category = that txid`,
 			`Output 0: token identity, BCH only, to ${ownPlain}`,
 			`Output 1: the whole supply to ${own}`,
 			`Network fee ≈ ${fee.toString()} sats`
@@ -1048,12 +1074,12 @@ export function buildIdentitySeparation(
 	}
 	const own = lockingBytecodeToChipnetAddress(walletLocking, true);
 	return finish('identity-separation', tx, sources, fee, [
-		`Separate the token identity from the ${formatUnits(utxo.token.amount)} PUSD supply. Everything stays at your address`,
-		`Input 0: identity output ${utxo.txid}:${utxo.vout} (${formatUnits(utxo.token.amount)} PUSD, ${formatSats(utxo.satoshis)} BCH)`,
+		`Separate the token identity from the ${formatUnits(utxo.token.amount)} PPUSD supply. Everything stays at your address`,
+		`Input 0: identity output ${utxo.txid}:${utxo.vout} (${formatUnits(utxo.token.amount)} PPUSD, ${formatSats(utxo.satoshis)} BCH)`,
 		`Output 0: the identity, as ${formatSats(IDENTITY_OUTPUT_SATOSHIS)} BCH with no tokens, to ${own}`,
-		`Output 1: all ${formatUnits(utxo.token.amount)} PUSD (category ${tokenCategory.slice(0, 12)}…) to ${own}`,
+		`Output 1: all ${formatUnits(utxo.token.amount)} PPUSD (category ${tokenCategory.slice(0, 12)}…) to ${own}`,
 		...(tx.outputs.length > 2 ? [`Output 2: BCH change to ${own}`] : []),
-		'Afterwards ordinary PUSD sends and trades no longer touch the identity'
+		'Afterwards ordinary PPUSD sends and trades no longer touch the identity'
 	]);
 }
 

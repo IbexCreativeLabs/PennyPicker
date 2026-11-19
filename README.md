@@ -1,6 +1,8 @@
-<img width="72" src="./packages/app/static/pennypicker.svg" alt="PennyPicker">
+<img width="96" src="./packages/app/static/pennypicker-192.png" alt="PennyPicker steamroller logo">
 
 # PennyPicker
+
+*Don't pick up pennies in front of the steamroller.*
 
 **Oracle Delta Basis Points Denominated Orderbook DEX for Stablecoins**, on Bitcoin Cash.
 
@@ -31,13 +33,13 @@ three separate protocol mechanics with a single P2P market:
 
 1. **Wallet:** open [Cashonize](https://cashonize.com), create a wallet, and switch it to **Chipnet** in Settings.
 2. **Test BCH:** request free Chipnet coins for your address from the [faucet](https://tbch.googol.cash).
-3. **Connect:** on https://pennypicker.pages.dev open **Wallet → Connect Cashonize**, then scan the QR code or use
-   *Open in Cashonize web*.
-4. **Trade:** on the Exchange, choose **Trade now → Sell BCH 0.001** to sell into a resting bid and receive test PUSD.
+3. **Connect:** on https://pennypicker.pages.dev open **Wallet → Connect Cashonize** (WalletConnect), or
+   **Connect with WizardConnect** for an HD wallet, then scan the QR code or paste the code into the wallet.
+4. **Trade:** on the Exchange, choose **Trade now → Sell BCH 0.001** to sell into a resting bid and receive test PPUSD.
    Or place a **Limit order** at ±BPS from the oracle price.
 
-The Chipnet book is seeded with small asks at +20/+25/+50 BPS and 30 PUSD bids at −10/−25/−50 BPS. Every transaction is previewed,
-signed in Cashonize and broadcast only when you press Broadcast.
+The Chipnet book is seeded with small asks at +20/+25/+50 BPS and 30 PPUSD bids at −10/−25/−50 BPS. Every transaction is previewed,
+signed in the wallet and broadcast only when you press Broadcast.
 
 ## How it works
 
@@ -52,8 +54,14 @@ signed in Cashonize and broadcast only when you press Broadcast.
   never be replayed against resting orders. Orders and fills carry the newest message and update the price in the
   same transaction.
 - **Wallet.** [Cashonize](https://cashonize.com) over WalletConnect, or any HD wallet over
-  [WizardConnect](https://wizardconnect-456f57.gitlab.io) (trading from the wallet's first receive address). Every
-  transaction is previewed, signed in the wallet, checked against the preview and only then broadcast.
+  [WizardConnect](https://wizardconnect-456f57.gitlab.io). For HD wallets the app scans every shared path (receive,
+  change) with the BIP44 gap limit, shows the balance of all used addresses, funds trades from any of them and asks
+  the wallet to sign each input with its own path; change, proceeds and the maker key of new orders use the wallet's
+  first receive address. Every transaction is previewed, signed in the wallet, checked against the preview and only
+  then broadcast.
+- **Live data, only when it is shown.** While the Exchange (or the Oracle page) is open in a visible tab, the app
+  checks the market every 5 s with one cheap Electrum request and reloads the book when something changed; the
+  oracles.cash price refreshes every 20 s. Hidden tabs and other pages do not poll the book.
 
 Contracts: [`packages/app/src/lib/pennypicker/contracts`](packages/app/src/lib/pennypicker/contracts) ·
 Transaction builders: [`exchange.ts`](packages/app/src/lib/pennypicker/exchange.ts) ·
@@ -65,8 +73,8 @@ Hackathon submission: [`SUBMISSION.md`](SUBMISSION.md) · Demo script: [`DEMO_SC
 
 Experimental hackathon prototype. Two markets:
 
-- **PennyPickerUSD on Chipnet, tradable.** A fixed-supply test token priced as 1 USD, with no backing.
-- **ParyonUSD on BCH mainnet, live (real money, 25 PUSD cap per order).** The app supports mainnet end to end:
+- **PennyPickerUSD (PPUSD) on Chipnet, tradable.** A fixed-supply test token priced as 1 USD, with no backing.
+- **ParyonUSD (PUSD) on BCH mainnet, live (real money, 25 PUSD cap per order).** The app supports mainnet end to end:
   addresses, Cashonize chain and Electrum. The mainnet price record and a real order, fill and cancel are listed in
   `SUBMISSION.md`. There is no price keeper yet, so keep mainnet orders small and short-lived.
 
@@ -88,8 +96,8 @@ Tests (BCH 2025 VM via Libauth), from `packages/app`:
 ```bash
 pnpm dlx tsx scripts/pennypicker-contracts.test.ts   # covenant checks, incl. a real oracles.cash message
 pnpm dlx tsx scripts/pennypicker-exchange.test.ts    # transaction builders, signed and VM-verified
-pnpm dlx tsx scripts/pennypicker-mechanisms.test.ts
 pnpm dlx tsx scripts/pennypicker-identity.test.ts
+pnpm dlx tsx scripts/pennypicker-wizardconnect.test.ts # HD address scan, per-input signing paths
 pnpm dlx tsx scripts/pennypicker-mainnet-check.ts      # read-only: reaches mainnet, finds ParyonUSD
 ```
 

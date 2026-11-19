@@ -3,7 +3,9 @@
 
 <head>
 	<meta charset="utf-8" />
-	<link rel="icon" href="%sveltekit.assets%/pennypicker.svg" type="image/svg+xml" />
+	<link rel="icon" href="%sveltekit.assets%/favicon.ico" sizes="48x48" />
+	<link rel="icon" href="%sveltekit.assets%/favicon-32.png" type="image/png" sizes="32x32" />
+	<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
 	<title>PennyPicker · Oracle-delta BPS orderbook for stablecoins</title>
 	<meta name="description"
 		content="PennyPicker: a BCH/stablecoin orderbook where limit orders are priced in basis points relative to the live oracle price. Experimental, running on BCH Chipnet." />
@@ -13,7 +15,9 @@
 	<meta property="og:description"
 		content="Limit orders priced in ±BPS against the live BCH/USD oracle, settled by Bitcoin Cash covenants. Experimental, on Chipnet." />
 	<meta property="og:type" content="website" />
-	<meta name="theme-color" content="#b4652b" />
+	<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+	<meta name="theme-color" content="#131113" media="(prefers-color-scheme: dark)" />
+	<meta property="og:image" content="https://pennypicker.pages.dev/pennypicker-512.png" />
 	<link rel="manifest" href="/manifest.json" />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,8 +25,8 @@
 	<script async src="/qr-code.js"></script>
 	<style>
 		/* Painted before any script runs, so the first frame already matches the app. */
-		html, body { margin: 0; background: #f6f4f1; }
-		@media (prefers-color-scheme: dark) { html, body { background: #141210; } }
+		html, body { margin: 0; background: #ffffff; }
+		@media (prefers-color-scheme: dark) { html, body { background: #131113; } }
 		*, *::before, *::after { box-sizing: border-box; }
 	</style>
 	%sveltekit.head%

@@ -1,12 +1,15 @@
 /**
- * WizardConnect (hdwalletv1) connector for PennyPicker: phase 1, "one trading address".
+ * WizardConnect (hdwalletv1) connector for PennyPicker: the whole HD wallet.
  *
- * WizardConnect pairs a dapp with an HD wallet over an end-to-end encrypted Nostr relay. The wallet shares xpubs;
- * the dapp derives addresses itself and sends sign requests that name the HD path of every input the wallet must
- * sign. PennyPicker's builders are single-address, so this connector uses ONE address of the wallet, receive/0, for
- * everything: funding inputs, change, received tokens and the maker key of orders. Every wallet input PennyPicker
- * creates spends from that address, so every such input is signed with path ["receive", 0]; contract inputs carry
- * their own unlocking bytecode and are not signed by the wallet.
+ * WizardConnect pairs a dapp with an HD wallet over an end-to-end encrypted Nostr relay. The wallet shares one xpub
+ * per path (receive, change, …); the dapp derives addresses itself and sends sign requests that name the HD path of
+ * every input the wallet must sign.
+ *
+ * Like other WizardConnect dapps, PennyPicker scans every shared path for used addresses (BIP44 gap limit), shows
+ * the balance of all of them and funds transactions from any of them; each wallet input is signed with its own path.
+ * Change, proceeds and the maker key of new orders use the wallet's first receive address (receive/0), so orders
+ * made over WizardConnect are found again on every device. Contract inputs carry their own unlocking bytecode and
+ * are not signed by the wallet.
  *
  * This module is loaded on demand (dynamic import) only when the user chooses WizardConnect or has a stored
  * WizardConnect session, so the WalletConnect flow and the main bundle are unaffected.
@@ -15,22 +18,40 @@
  * https://gitlab.com/riftenlabs/lib/wizardconnect
  */
 import { binToHex, hash160, hexToBin } from '@bitauth/libauth';
-import { initiateDappRelay, type DappRelayResult, type PathXpub } from '@wizardconnect/core';
+import { childIndexOfPathName, initiateDappRelay, type DappRelayResult, type PathXpub } from '@wizardconnect/core';
 import { DappConnectionManager } from '@wizardconnect/dapp';
 import { lockingBytecodeToAddress, p2pkhLockingBytecode, type WcSourceOutput } from '../pennypicker/exchange';
 import type { NetworkId } from '../pennypicker/network';
 
-/** The single HD path PennyPicker trades from: BIP44 receive chain, index 0. */
-export const TRADING_PATH = { name: 'receive', childIndex: 0, index: 0 } as const;
+/** Home address: BIP44 receive chain, index 0. Change, proceeds and the maker key of new orders go here. */
+export const HOME_PATH = { name: 'receive', childIndex: 0, index: 0 } as const;
+/** Consecutive unused addresses that end a path scan (BIP44 default). */
+export const GAP_LIMIT = 20;
+
+/** One derived wallet address and the HD path that signs for it. */
+export interface HdAddress {
+	path: [name: string, index: number];
+	address: string;
+	pkh: string;
+	/** P2PKH locking bytecode (hex). */
+	lockingHex: string;
+}
 
 const sessionKey = (network: NetworkId) => `pennypicker:wizardconnect:${network}`;
 const APP_NAME = 'PennyPicker';
-const APP_ICON = 'https://pennypicker.pages.dev/pennypicker.svg';
+const APP_ICON = 'https://pennypicker.pages.dev/pennypicker-192.png';
 
 export interface WizardSigner {
+	/** Home address (receive/0). */
 	address: string;
 	pkh: string;
 	walletName: string;
+	/** Path names the wallet shared that map to a BIP44 chain (receive, change, defi). */
+	pathNames: () => string[];
+	/** Derive the address at a path and index. */
+	addressAt: (name: string, index: number) => HdAddress;
+	/** Addresses the signer may sign for (set after each scan; the home address is always included). */
+	setKnown: (addresses: HdAddress[]) => void;
 	/** Sign (never broadcast) an unsigned transaction; resolves with the signed hex. */
 	sign: (unsignedHex: string, sourceOutputs: WcSourceOutput[], userPrompt: string) => Promise<string>;
 	disconnect: () => Promise<void>;
@@ -51,12 +72,51 @@ interface Handle {
 /** A sign request the wallet never answers is cancelled after this long. */
 const SIGN_TIMEOUT_MS = 180_000;
 
-/** Derive the trading address from the wallet's receive xpub. */
-export function tradingAddress(manager: DappConnectionManager, network: NetworkId) {
-	const pubkey = manager.getPubkey(TRADING_PATH.childIndex, BigInt(TRADING_PATH.index));
-	if (!pubkey) throw new Error('The wallet did not share a receive path (xpub).');
+/** Derive the address at `name`/`index` from the xpubs the wallet shared. */
+export function deriveAddress(manager: DappConnectionManager, network: NetworkId, name: string, index: number): HdAddress {
+	const childIndex = childIndexOfPathName(name);
+	const pubkey = childIndex === undefined ? undefined : manager.getPubkey(childIndex, BigInt(index));
+	if (!pubkey) throw new Error(`The wallet did not share the "${name}" path (xpub).`);
 	const pkh = binToHex(hash160(pubkey));
-	return { pkh, address: lockingBytecodeToAddress(p2pkhLockingBytecode(pkh), network, false) };
+	const locking = p2pkhLockingBytecode(pkh);
+	return { path: [name, index], pkh, lockingHex: binToHex(locking), address: lockingBytecodeToAddress(locking, network, false) };
+}
+
+/** Home address (receive/0) derived from the wallet's receive xpub. */
+export function tradingAddress(manager: DappConnectionManager, network: NetworkId) {
+	return deriveAddress(manager, network, HOME_PATH.name, HOME_PATH.index);
+}
+
+/** Shared path names that map to a BIP44 chain, in a stable order (receive first). */
+export function scanPathNames(paths: PathXpub[]): string[] {
+	const names = paths.map((p) => p.name).filter((name) => childIndexOfPathName(name) !== undefined);
+	return [...new Set(names)].sort((a, b) => childIndexOfPathName(a)! - childIndexOfPathName(b)!);
+}
+
+/**
+ * Find the wallet's used addresses: walk each path until `gap` consecutive addresses have no history (checked
+ * `gap` at a time, in parallel). The home address is always returned first, used or not.
+ */
+export async function discoverAddresses(
+	derive: (name: string, index: number) => HdAddress,
+	pathNames: string[],
+	hasHistory: (address: string) => Promise<boolean>,
+	gap = GAP_LIMIT
+): Promise<HdAddress[]> {
+	const found: HdAddress[] = [derive(HOME_PATH.name, HOME_PATH.index)];
+	for (const name of pathNames) {
+		let lastUsed = -1;
+		for (let start = 0; start <= lastUsed + gap; start += gap) {
+			const batch = Array.from({ length: gap }, (_, i) => derive(name, start + i));
+			const used = await Promise.all(batch.map((entry) => hasHistory(entry.address)));
+			batch.forEach((entry, i) => {
+				if (!used[i]) return;
+				lastUsed = Math.max(lastUsed, start + i);
+				if (entry.lockingHex !== found[0]!.lockingHex) found.push(entry);
+			});
+		}
+	}
+	return found;
 }
 
 /** Same relay-safe JSON as @wizardconnect/core's sourceOutputToRelay: hex strings and `<bigint: Xn>`. */
@@ -85,21 +145,27 @@ export function sourceOutputToRelay(so: WcSourceOutput) {
 }
 
 /**
- * Inputs the wallet must sign: exactly those spending the trading address (P2PKH). Exported for tests.
- * Throws if an input spends a different wallet-looking P2PKH script, which this phase cannot sign.
+ * Inputs the wallet must sign: every input spending one of the wallet's known addresses, with that address's path.
+ * Contract inputs (non-empty unlocking bytecode) are skipped; any other unknown input is refused. Exported for tests.
  */
-export function inputPathsFor(sourceOutputs: Pick<WcSourceOutput, 'lockingBytecode' | 'unlockingBytecode'>[], tradingPkh: string) {
-	const mine = binToHex(p2pkhLockingBytecode(tradingPkh));
+export function inputPathsFor(
+	sourceOutputs: Pick<WcSourceOutput, 'lockingBytecode' | 'unlockingBytecode'>[],
+	known: ReadonlyMap<string, [string, number]>
+) {
 	const paths: [number, string, number][] = [];
 	sourceOutputs.forEach((so, index) => {
-		if (binToHex(so.lockingBytecode) === mine) paths.push([index, TRADING_PATH.name, TRADING_PATH.index]);
+		const path = known.get(binToHex(so.lockingBytecode));
+		if (path) paths.push([index, path[0], path[1]]);
+		else if (so.unlockingBytecode.length === 0) throw new Error(`Input ${index} spends an address this WizardConnect session does not know.`);
 	});
-	if (paths.length === 0) throw new Error('This transaction has no input from your WizardConnect trading address.');
+	if (paths.length === 0) throw new Error('This transaction has no input from your WizardConnect wallet.');
 	return paths;
 }
 
 function makeSigner(handle: Handle, network: NetworkId, onEnded?: (reason: string) => void): WizardSigner {
 	const { address, pkh } = tradingAddress(handle.manager, network);
+	const derive = (name: string, index: number) => deriveAddress(handle.manager, network, name, index);
+	const known = new Map<string, [string, number]>([[binToHex(p2pkhLockingBytecode(pkh)), [HOME_PATH.name, HOME_PATH.index]]]);
 	const end = (reason: string) => {
 		if (handle.ended) return;
 		handle.ended = reason;
@@ -112,6 +178,11 @@ function makeSigner(handle: Handle, network: NetworkId, onEnded?: (reason: strin
 		address,
 		pkh,
 		walletName: handle.manager.walletName ?? 'WizardConnect wallet',
+		pathNames: () => scanPathNames(handle.manager.getSessionPaths()),
+		addressAt: derive,
+		setKnown(addresses) {
+			for (const entry of addresses) known.set(entry.lockingHex, entry.path);
+		},
 		isLive: () => handle.connected,
 		async sign(unsignedHex, sourceOutputs, userPrompt) {
 			if (handle.ended) throw new Error(handle.ended);
@@ -126,7 +197,7 @@ function makeSigner(handle: Handle, network: NetworkId, onEnded?: (reason: strin
 					broadcast: false,
 					userPrompt
 				},
-				inputPaths: inputPathsFor(sourceOutputs, pkh)
+				inputPaths: inputPathsFor(sourceOutputs, known)
 			}, { signal: controller.signal }).catch((cause: unknown) => {
 				if (controller.signal.aborted) throw new Error('The wallet did not answer the signing request. Open your wallet, or reconnect on the Wallet page.');
 				throw cause;

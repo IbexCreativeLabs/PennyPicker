@@ -15,7 +15,7 @@
 		<h2>Join the PennyPicker chat</h2>
 		<p class="small muted">Questions, bug reports and trading partners for Chipnet tests: the community talks on Telegram.</p>
 		<ul class="small tips">
-			<li>Need test PUSD or a counterparty for a trade? Ask in the group.</li>
+			<li>Need test PPUSD or a counterparty for a trade? Ask in the group.</li>
 			<li>Reporting a problem? Include the transaction ID shown in the app.</li>
 			<li>Never share seed phrases or private keys. Admins will never ask for them.</li>
 		</ul>

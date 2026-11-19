@@ -32,7 +32,7 @@ async function initializeCashonizeClient(): Promise<CashonizeClient> {
 			name: 'PennyPicker',
 			description: 'PennyPicker: oracle-relative BCH/stablecoin orderbook',
 			url: window.location.origin,
-			icons: [new URL('/pennypicker.svg', window.location.origin).toString()]
+			icons: [new URL('/pennypicker-192.png', window.location.origin).toString()]
 		}
 	});
 }

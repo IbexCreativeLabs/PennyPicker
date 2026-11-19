@@ -76,12 +76,14 @@ function signedPrice(ts: number, seq: number, cents: bigint) {
 const maker = key('0b');
 const taker = key('0c');
 
-/** Simulate Cashonize: sign empty P2PKH inputs and replace contract placeholders. */
-function sign(unsigned: UnsignedExchangeTransaction, signer: ReturnType<typeof key>): TransactionCommon {
+type Key = ReturnType<typeof key>;
+/** Simulate the wallet: sign empty P2PKH inputs (an HD wallet passes one key per address it holds). */
+function sign(unsigned: UnsignedExchangeTransaction, signers: Key | Key[]): TransactionCommon {
+	const keys = Array.isArray(signers) ? signers : [signers];
 	const tx: TransactionCommon = structuredClone(unsigned.transaction);
 	const sources = unsigned.sourceOutputs.map(({ outpointIndex: _a, outpointTransactionHash: _b, sequenceNumber: _c, unlockingBytecode: _d, contract: _e, ...output }) => output);
 	const flags = SigningSerializationFlag.allOutputs | SigningSerializationFlag.utxos | SigningSerializationFlag.forkId;
-	const sigFor = (index: number, covered: Uint8Array) => {
+	const sigFor = (index: number, covered: Uint8Array, signer: Key) => {
 		const preimage = generateSigningSerializationBch(
 			{ inputIndex: index, sourceOutputs: sources, transaction: tx },
 			{ coveredBytecode: covered, signingSerializationType: Uint8Array.of(flags) }
@@ -91,14 +93,15 @@ function sign(unsigned: UnsignedExchangeTransaction, signer: ReturnType<typeof k
 	unsigned.sourceOutputs.forEach((entry, index) => {
 		const input = tx.inputs[index]!;
 		if (!entry.contract) {
-			if (binToHex(entry.lockingBytecode) !== binToHex(signer.locking)) throw new Error(`input ${index} not owned by signer`);
-			input.unlockingBytecode = Uint8Array.from([...encodeDataPush(sigFor(index, entry.lockingBytecode)), ...encodeDataPush(signer.pub)]);
+			const signer = keys.find((k) => binToHex(entry.lockingBytecode) === binToHex(k.locking));
+			if (!signer) throw new Error(`input ${index} not owned by signer`);
+			input.unlockingBytecode = Uint8Array.from([...encodeDataPush(sigFor(index, entry.lockingBytecode, signer)), ...encodeDataPush(signer.pub)]);
 		}
 	});
 	return tx;
 }
 
-function verify(name: string, unsigned: UnsignedExchangeTransaction, signer: ReturnType<typeof key>) {
+function verify(name: string, unsigned: UnsignedExchangeTransaction, signer: Key | Key[]) {
 	const tx = sign(unsigned, signer);
 	const sources = unsigned.sourceOutputs.map(({ outpointIndex: _a, outpointTransactionHash: _b, sequenceNumber: _c, unlockingBytecode: _d, contract: _e, ...output }) => output);
 	const result = vm.verify({ transaction: tx, sourceOutputs: sources });
@@ -254,8 +257,8 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 
 	// Attempted identity spends are refused (no reliance on the wallet).
 	check('send refuses to spend the identity output', throwsWith(() => buildPusdTransfer(PUSD, owner.address, wallet, [{ address: taker.address, units: 10_000n }]), 'separate the identity first'));
-	check('bid refuses to spend the identity output', throwsWith(() => buildCreateOrder(market, oracle, owner.address, owner.pkh, wallet, { side: 'bid', deltaBps: -10, amount: 10_000n }), 'Insufficient PUSD'));
-	check('ask fill refuses to spend the identity output', throwsWith(() => buildFillOrders(market, oracle, owner.address, wallet, [{ order: askOrder, sats: 1_000_000n }]), 'Insufficient PUSD'));
+	check('bid refuses to spend the identity output', throwsWith(() => buildCreateOrder(market, oracle, owner.address, owner.pkh, wallet, { side: 'bid', deltaBps: -10, amount: 10_000n }), 'Insufficient PPUSD'));
+	check('ask fill refuses to spend the identity output', throwsWith(() => buildFillOrders(market, oracle, owner.address, wallet, [{ order: askOrder, sats: 1_000_000n }]), 'Insufficient PPUSD'));
 	const bchIdentity: ChainUtxo = { ...fund(owner, 52, 900_000n), identityOf: PUSD };
 	check('a BCH-only identity output is never used as funding', throwsWith(() => buildCreateOrder(market, oracle, owner.address, owner.pkh, [bchIdentity], { side: 'ask', deltaBps: 10, amount: 100_000n }), 'Insufficient BCH'));
 	check('oracle genesis will not consume an identity output', throwsWith(() => buildOracleGenesis(owner.address, owner.pkh, [bchIdentity], { price: RATE, timestamp: 1, sequence: 1 }), 'output index 0'));
@@ -412,6 +415,27 @@ verify('maker cancels ask and withdraws BCH + PUSD proceeds', cancel, maker);
 	let refused = false;
 	try { buildBcmrPublication(PUSD, owner.address, [{ ...identity, token: { category: PUSD, amount: 5n } }], identity, hash, ['x']); } catch { refused = true; }
 	check('publication refuses an identity output that still holds tokens', refused);
+}
+// 16. HD wallet (WizardConnect): coins on several addresses fund one transaction; change returns to the home address.
+{
+	const home = key('41');
+	const second = key('42');
+	const third = key('43');
+	const tag = (utxo: ChainUtxo, owner: Key): ChainUtxo => ({ ...utxo, ownerLocking: binToHex(owner.locking) });
+	const throwsWith = (f: () => unknown, text: string) => { try { f(); return false; } catch (e) { return String(e).includes(text); } };
+	const hdUtxos = [tag(fund(second, 240, 3_000_000n), second), tag(fund(third, 241, 1_000n, 2_000n), third)];
+	const hdBid = buildCreateOrder(market, oracle, home.address, home.pkh, hdUtxos, { side: 'bid', deltaBps: -20, amount: 1_500n });
+	const hb = verify('HD bid funded from two other addresses verifies', hdBid, [home, second, third]);
+	check('HD inputs keep their own locking bytecode', hdBid.sourceOutputs.some((o) => binToHex(o.lockingBytecode) === binToHex(second.locking)) && hdBid.sourceOutputs.some((o) => binToHex(o.lockingBytecode) === binToHex(third.locking)));
+	check('HD change and token change go to the home address', hb.tx.outputs.filter((o) => o.lockingBytecode.length === 25).every((o) => binToHex(o.lockingBytecode) === binToHex(home.locking)));
+	check('the HD order is owned by the home key', hdBid.order!.makerPkh === home.pkh);
+	const hdOrder = toOpenOrder(hdBid.order!, outputsTo(hb.txid, hb.tx, hexToBin(hdBid.order!.lockingBytecodeHex))[0]!, market)!;
+	const homeCoins = outputsTo(hb.txid, hb.tx, home.locking).map((u) => tag(u, home));
+	const hc = buildCancelOrder(market, hdOrder, home.address, [tag(fund(second, 242, 900_000n), second), ...homeCoins]);
+	const hcv = verify('HD cancel verifies (authorised by the home address)', hc, [home, second]);
+	check('HD cancel authorises with a home-address coin at input 1', binToHex(hc.sourceOutputs[1]!.lockingBytecode) === binToHex(home.locking));
+	check('HD cancel returns the escrow to the home address', hcv.tx.outputs.some((o) => o.token?.amount === 1_500n && binToHex(o.lockingBytecode) === binToHex(home.locking)));
+	check('HD cancel without a home-address coin explains what to do', throwsWith(() => buildCancelOrder(market, hdOrder, home.address, [tag(fund(second, 243, 900_000n), second)]), 'needs a coin of plain BCH'));
 }
 void orderContract; void orderParams; void encodeOracleCommitment; void price;
 

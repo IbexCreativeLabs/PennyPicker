@@ -56,9 +56,9 @@
 		'order-create': 'Place order',
 		'order-fill': 'Fill orders',
 		'order-cancel': 'Cancel order',
-		'pusd-send': 'Send PUSD',
-		'identity-separation': 'Separate PUSD identity',
-		'pusd-genesis': 'Create PUSD',
+		'pusd-send': 'Send tokens',
+		'identity-separation': 'Separate token identity',
+		'pusd-genesis': 'Create token',
 		'bcmr-publication': 'Publish token metadata'
 	};
 

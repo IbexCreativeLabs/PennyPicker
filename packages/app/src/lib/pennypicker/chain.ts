@@ -289,9 +289,11 @@ export async function discoverOrders(market: MarketConfig): Promise<DiscoveryRes
 			if (parsed) {
 				const order = describeOrder(market, parsed);
 				const created = tx.outputs.some((candidate) => binToHex(candidate.lockingBytecode) === order.lockingBytecodeHex);
-				if (created && !announced.has(order.lockingBytecodeHex)) {
-					announced.set(order.lockingBytecodeHex, { ...order, createdTxid: entry.txid });
+				if (created) {
+					// The same terms (side, BPS, maker) always give the same contract, so an order can be announced
+					// again after a cancel. Every announcing transaction is an order, never a fill.
 					announcingTxids.add(entry.txid);
+					if (!announced.has(order.lockingBytecodeHex)) announced.set(order.lockingBytecodeHex, { ...order, createdTxid: entry.txid });
 				}
 			}
 			const token = output.token;

@@ -1,7 +1,7 @@
 # Demo video script (about 3½ minutes)
 
 **Setup before recording:**
-- Two Cashonize wallets on **Chipnet** with test BCH and test PUSD: wallet A (any type) and wallet B. For the
+- Two Cashonize wallets on **Chipnet** with test BCH and test PPUSD: wallet A (any type) and wallet B. For the
   WizardConnect moment, make wallet B an **HD wallet** (Cashonize → Add wallet → HD).
 - Browser A on https://pennypicker.pages.dev paired with wallet A (Wallet → *Connect Cashonize*).
 - Browser B (or a phone) ready to pair wallet B.
@@ -10,18 +10,18 @@
 - Tip: Cashonize ends its dapp sessions when you switch wallets inside it, so pair after choosing the wallet.
 
 ## 0:00 — The idea in five seconds (25 s)
-*Exchange, top of the page: headline and the diagram.*
-"Stablecoin limit orders at a fixed dollar price go stale every time BCH moves. PennyPicker prices orders in basis
-points from the live oracle price instead. In this diagram the live price is in the middle, bids sit on the green side,
-asks on the red side, each placed by its BPS."
-*Type +25 into the order form: the 'Your order' marker moves on the diagram and shows its price.*
+*Exchange, top of the page: the steamroller rolls in and paves the headline.*
+"Don't pick up pennies in front of the steamroller. A stablecoin limit order at a fixed dollar price gets flattened every
+time BCH moves. PennyPicker prices orders in basis points from the live oracle price instead."
+*Scroll to the market card: the diagram puts the live price in the middle, bids on the green side, asks on the red
+side, each placed by its BPS. Type +25 into the order form: the 'Your order' marker moves and shows its price.*
 
 ## 0:25 — The floating order book (30 s)
-*Point at the book, the reference row and the "Auto-updating · just now" label.*
+*Point at the book, the reference row and the Freshness badge.*
 "This is a floating order book. Each row is its own Bitcoin Cash contract. +25 means 0.25% above the oracles.cash
 BCH/USD price, so when the oracle moves, every price here moves with it and nobody has to re-quote. The book and the
-best bid and ask refresh on their own every few seconds."
-*Point at the header pill:* "My wallet's real BCH and PUSD balances are always top right."
+best bid and ask refresh on their own every few seconds while the page is open."
+*Point at the header pill:* "My wallet's real BCH and PPUSD balances are always top right; with an HD wallet that is the total of all its addresses."
 
 ## 0:55 — The oracle, compared with one you know (30 s)
 *About → Oracle. Show the "If you know Pyth" card and the table, then the example below it.*
@@ -32,9 +32,10 @@ signature and only accepts newer prices. Here is the whole idea in one example w
 *Click "Try it: pre-fill a −50 BPS bid": the Exchange opens with the bid filled in.*
 
 ## 1:25 — Place a limit order over WizardConnect (wallet B, 40 s)
-*Browser B: Wallet → **Connect with WizardConnect** → scan or "Open in Cashonize web" → Connect.*
-"Besides WalletConnect, PennyPicker supports WizardConnect, the newer protocol for HD wallets."
-*Exchange → Limit order → Buy BCH → −25 BPS, 10 PUSD → Review.*
+*Browser B: Wallet → **Connect with WizardConnect** → scan, or paste the code into Cashonize → Connect.*
+"Besides WalletConnect, PennyPicker supports WizardConnect, the newer protocol for HD wallets. It finds every address
+the wallet has used and trades from all of them." *Point at "Addresses: N in use" and the Coins table's Address column.*
+*Exchange → Limit order → Buy BCH → −25 BPS, 10 PPUSD → Review.*
 "The review opens front and centre. It lists every input and output. The wallet only signs; the app checks the signed
 transaction matches the preview, and nothing is broadcast until I press Broadcast."
 *Sign in Cashonize → Broadcast.* The order appears in the book within seconds, without a refresh, and under My orders.
@@ -45,7 +46,7 @@ transaction matches the preview, and nothing is broadcast until I press Broadcas
 The bid shrinks, and the fill appears under Market fills with an explorer link.
 
 ## 2:40 — Why it matters (25 s)
-*About → Overview: the before/after cards.*
+*About → How it works: the fixed price vs. BPS comparison, then "Why it matters for stablecoins".*
 "Swaps at 0 BPS replace 0% loans, peer-to-peer liquidation bids from 0 to −1000 BPS replace a flat 10% penalty, and
 redemptions become market-priced. And PennyPicker is one half of a larger stablecoin design; the other half is
 Staking Arena." *Point at the companion-project card.*

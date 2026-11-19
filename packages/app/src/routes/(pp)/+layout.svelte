@@ -10,11 +10,6 @@
 	import { MARKETS, COMMUNITY } from '$lib/pennypicker/deployment';
 	import { NETWORKS } from '$lib/pennypicker/network';
 
-	const shortAddress = (address: string) => {
-		const body = address.split(':')[1] ?? address;
-		return `${body.slice(0, 6)}…${body.slice(-4)}`;
-	};
-
 	/** Compact BCH amount for the header (exact value in the tooltip). */
 	const shortBch = (sats: bigint) => {
 		const whole = Number(sats) / 1e8;
@@ -38,18 +33,16 @@
 	onMount(() => pp.start());
 </script>
 
-<svelte:head><link rel="icon" href="/pennypicker.svg" type="image/svg+xml" /></svelte:head>
-
 <div class="pp">
 	<header class="topbar">
 		<div class="bar">
 			<a class="brand" href="/">
-				<span class="coin" aria-hidden="true">¢</span>
+				<img class="logo" src="/pennypicker-128.png" alt="" width="36" height="36" />
 				<strong>PennyPicker</strong>
 			</a>
 			<div class="market">
 				<button class="market-btn" type="button" aria-haspopup="listbox" aria-expanded={marketOpen} onclick={() => (marketOpen = !marketOpen)}>
-					<span class="pair">BCH / {pp.selectedMarket.name}</span>
+					<span class="pair">BCH / <span class="long">{pp.selectedMarket.name}</span><span class="short">{pp.selectedMarket.symbol}</span></span>
 					<span class="net {pp.selectedMarket.network}">{pp.networkInfo.label}</span>
 					<span aria-hidden="true">▾</span>
 				</button>
@@ -87,14 +80,13 @@
 					<span class="pp-badge warn">Market not set</span>
 				{/if}
 				{#if pp.walletStatus === 'connected' && pp.wallet}
-					<a href="/wallet" class="wallet-pill" title="{pp.wallet.address} · {pp.networkInfo.label}">
+					<a href="/wallet" class="wallet-pill" title="{pp.wallet.kind === 'wizardconnect' ? `${pp.wallet.signer.walletName} (all addresses)` : pp.wallet.address} · {pp.networkInfo.label}">
 						<span class="w-dot" aria-hidden="true"></span>
 						{#if pp.utxosLoaded}
-							<span class="w-bal num"><strong>{shortBch(pp.balances.bchSats)}</strong> BCH <span class="faint">·</span> <strong>{formatUnits(pp.balances.pusdUnits)}</strong> PUSD</span>
+							<span class="w-bal num"><strong>{shortBch(pp.balances.bchSats)}</strong> BCH <span class="faint">·</span> <strong>{formatUnits(pp.balances.pusdUnits)}</strong> {pp.selectedMarket.symbol}</span>
 						{:else}
 							<span class="w-bal muted">Loading balance…</span>
 						{/if}
-						<span class="w-addr mono">{shortAddress(pp.wallet.address)}</span>
 					</a>
 				{:else if pp.walletStatus === 'checking'}
 					<span class="pp-badge">Wallet…</span>
@@ -120,43 +112,47 @@
 
 	<footer class="foot">
 		<div class="bar small muted">
-			<span>{#if pp.networkInfo.realFunds}Experimental prototype. {pp.selectedMarket.name} on BCH mainnet is real money; the contracts are not independently audited and orders are capped.{:else}Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing.{/if} Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
+			<span>{#if pp.networkInfo.realFunds}Experimental prototype. {pp.selectedMarket.name} on BCH mainnet is real money; the contracts are not independently audited and orders are capped.{:else}Experimental prototype on BCH Chipnet. {pp.selectedMarket.symbol} is a test token priced as 1 USD, with no real backing.{/if} Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
 			<span><a href="/about">About</a> · <a href={COMMUNITY.stakingArenaUrl} target="_blank" rel="noopener">Staking Arena ↗</a> · <a href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Source code</a></span>
 		</div>
 	</footer>
 </div>
 
 <style>
-	.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--pp-surface) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--pp-border); }
+	.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--pp-bg) 88%, transparent); backdrop-filter: blur(12px) saturate(1.4); box-shadow: 0 1px 0 var(--pp-border); }
 	.bar { max-width: 76rem; margin: 0 auto; padding: 0.55rem max(16px, 2vw); display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 	.brand { display: flex; align-items: center; gap: 0.55rem; color: var(--pp-text) !important; text-decoration: none !important; }
-	.brand strong { display: block; font-size: 1rem; line-height: 1.1; }
-	.coin { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: radial-gradient(circle at 35% 30%, #e7a36b, var(--pp-accent) 70%); color: #fff; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.15); }
+	.brand strong { display: block; font-size: 1.05rem; line-height: 1.1; font-weight: 700; }
+	.logo { width: 36px; height: 36px; flex: none; transition: transform 0.35s var(--pp-ease); }
+	.brand:hover .logo { transform: rotate(-6deg) scale(1.06); }
 	nav { display: flex; gap: 0.15rem; flex: 1; }
-	nav a { padding: 0.4rem 0.7rem; border-radius: 8px; color: var(--pp-muted); font-weight: 550; text-decoration: none !important; }
+	nav a { padding: 0.4rem 0.75rem; border-radius: 8px; color: var(--pp-muted); font-weight: 550; text-decoration: none !important; transition: background 0.18s var(--pp-ease), color 0.18s var(--pp-ease); }
 	nav a:hover { background: var(--pp-surface-2); color: var(--pp-text); }
-	nav a.active { background: var(--pp-accent-soft); color: var(--pp-accent); }
+	nav a.active { background: var(--pp-accent-soft); color: var(--pp-text); }
 	.net-strip { background: var(--pp-danger); color: #fff; }
 	.net-strip .bar { justify-content: space-between; padding-block: 0.35rem; }
 	.status { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 	.status a { text-decoration: none !important; }
-	.wallet-pill { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--pp-border); background: var(--pp-surface); color: var(--pp-text) !important; border-radius: 999px; padding: 0.22rem 0.65rem; font-size: 0.8rem; }
-	.wallet-pill:hover { border-color: var(--pp-accent); }
+	.wallet-pill { display: inline-flex; align-items: center; gap: 0.45rem; background: var(--pp-surface-2); color: var(--pp-text) !important; border-radius: 999px; padding: 0.25rem 0.7rem; font-size: 0.8rem; transition: background 0.18s var(--pp-ease); }
+	.wallet-pill:hover { background: var(--pp-accent-soft); }
 	.w-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pp-bid); box-shadow: 0 0 0 3px var(--pp-bid-soft); flex: none; }
 	.w-bal strong { font-weight: 650; }
-	.w-addr { color: var(--pp-muted); font-size: 0.74rem; padding-left: 0.45rem; border-left: 1px solid var(--pp-border); }
 	.bar .menu { display: none; margin-left: auto; font-size: 1.2rem; }
 	.market { position: relative; }
-	.market-btn { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--pp-border); background: var(--pp-surface); color: var(--pp-text); border-radius: 999px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
-	.market-btn:hover { border-color: var(--pp-border-strong); }
+	.market-btn .short { display: none; }
+	.market-btn { display: inline-flex; align-items: center; gap: 0.45rem; border: 0; background: var(--pp-surface-2); color: var(--pp-text); border-radius: 999px; padding: 0.32rem 0.75rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.18s var(--pp-ease), transform 0.12s var(--pp-ease); }
+	.market-btn:hover { background: var(--pp-accent-soft); }
+	.market-btn:active { transform: scale(0.97); }
 	.net { font-size: 0.7rem; padding: 0.05rem 0.4rem; border-radius: 999px; }
 	.net.chipnet { background: var(--pp-accent-soft); color: var(--pp-accent); }
-	.net.mainnet { background: var(--pp-info-soft); color: #2f5b9a; }
-	.market-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; list-style: none; margin: 0; padding: 0.3rem; min-width: 16rem; }
+	.net.mainnet { background: var(--pp-ask-soft); color: var(--pp-ask); }
+	.market-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; list-style: none; margin: 0; padding: 0.3rem; min-width: 16rem; box-shadow: var(--pp-shadow-lg); transform-origin: top left; animation: grow 0.2s var(--pp-ease); }
+	@keyframes grow { from { opacity: 0; transform: scale(0.92) translateY(-4px); } }
+	@media (prefers-reduced-motion: reduce) { .market-list { animation: none; } }
 	.market-list button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; width: 100%; text-align: left; border: 0; background: none; color: var(--pp-text); font: inherit; padding: 0.5rem 0.6rem; border-radius: 8px; cursor: pointer; }
 	.market-list button:hover, .market-list button.sel { background: var(--pp-surface-2); }
-	.market-list button.sel { box-shadow: inset 3px 0 0 var(--pp-accent); }
-	.foot { border-top: 1px solid var(--pp-border); padding-bottom: 3.5rem; }
+	.market-list button.sel { box-shadow: inset 3px 0 0 var(--pp-brand); }
+	.foot { box-shadow: 0 -1px 0 var(--pp-border); padding-bottom: 3.5rem; margin-top: 2rem; }
 	.demo { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 600; }
 	.linkish { border: 0; background: none; padding: 0; color: var(--pp-accent); font: inherit; cursor: pointer; text-decoration: underline; }
 	.foot .bar { justify-content: space-between; padding-block: 1rem; }
@@ -170,6 +166,9 @@
 		/* Keep the coin, market selector and menu on one row on phones. */
 		.bar { gap: 0.5rem; }
 		.brand strong { display: none; }
-		.w-addr { display: none; }
+		.logo { width: 32px; height: 32px; }
+		.market-btn { padding: 0.3rem 0.6rem; gap: 0.35rem; }
+		.market-btn .long { display: none; }
+		.market-btn .short { display: inline; }
 	}
 </style>

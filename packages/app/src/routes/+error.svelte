@@ -31,7 +31,7 @@
 
 <div class="pp">
 <main class="pp-container err">
-	<img src="/pennypicker.svg" alt="" width="56" height="56" />
+	<img src="/pennypicker-128.png" alt="" width="64" height="64" />
 	<h1>{page.status === 404 ? 'Page not found' : repairing ? 'Updating PennyPicker…' : 'Something went wrong'}</h1>
 	<p class="muted">
 		{#if page.status === 404}There is no page at this address.

@@ -42,7 +42,7 @@
 		</li>
 		<li>
 			<span class="who bob" aria-hidden="true">B</span>
-			<div><strong>Bob sells 0.01 BCH into it</strong><span>He receives <b class="num">{pusd(paidCents)} PUSD</b>. The same transaction puts the newest signed price on-chain, and the contract checks the maths.</span></div>
+			<div><strong>Bob sells 0.01 BCH into it</strong><span>He receives <b class="num">{pusd(paidCents)} {pp.selectedMarket.symbol}</b>. The same transaction puts the newest signed price on-chain, and the contract checks the maths.</span></div>
 		</li>
 	</ol>
 	{#if cta}
@@ -56,11 +56,11 @@
 <style>
 	.story { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; position: relative; }
 	.story li { display: grid; grid-template-columns: 2rem 1fr; gap: 0.7rem; align-items: start; position: relative; }
-	.story li:not(:last-child)::after { content: ''; position: absolute; left: calc(1rem - 1px); top: 2.1rem; bottom: -0.55rem; width: 2px; background: var(--pp-border); }
+	.story li:not(:last-child)::after { content: ''; position: absolute; left: calc(1rem - 1px); top: 2.1rem; bottom: -0.55rem; width: 2px; background: var(--pp-border-strong); }
 	.story div { display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.92rem; line-height: 1.45; padding-top: 0.2rem; }
 	.story span { color: var(--pp-muted); }
 	.who { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 0.9rem; z-index: 1; }
-	.oracle { background: var(--pp-info-soft); color: #2f5b9a; }
+	.oracle { background: var(--pp-info-soft); color: var(--pp-muted); }
 	.alice { background: var(--pp-bid-soft); color: var(--pp-bid); }
 	.move { background: var(--pp-accent-soft); color: var(--pp-accent); }
 	.bob { background: var(--pp-ask-soft); color: var(--pp-ask); }

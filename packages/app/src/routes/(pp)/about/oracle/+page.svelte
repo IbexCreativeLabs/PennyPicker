@@ -7,6 +7,11 @@
 	import { buildOracleGenesis, buildOracleRefresh, formatSats, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 	import { getOracleState, oracleAddress, ORACLE_CATEGORY_STORAGE_KEY, ORACLE_OPERATOR_STORAGE_KEY, storageKey, writeStorage } from '$lib/pennypicker/chain';
 	import { MAINNET_WRITES_ENABLED } from '$lib/pennypicker/deployment';
+	import { onMount } from 'svelte';
+
+	// This page shows the live on-chain price record: keep it updating while open.
+	onMount(() => pp.watchMarket());
+	const sym = $derived(pp.selectedMarket.symbol);
 
 	/** Mainnet records are created only once the build enables mainnet transactions. */
 	const canWrite = $derived(pp.network === 'chipnet' || MAINNET_WRITES_ENABLED);
@@ -27,7 +32,7 @@
 	async function prepareGenesis() {
 		error = '';
 		try {
-			if (!pp.wallet) throw new Error('Connect Cashonize first.');
+			if (!pp.wallet) throw new Error('Connect a wallet first.');
 			await Promise.all([pp.refreshWallet(), pp.refreshFeed()]);
 			if (!pp.feed) throw new Error(pp.feedError || 'The oracles.cash price feed is unavailable.');
 			pending = buildOracleGenesis(pp.wallet.address, pp.wallet.pkh, pp.utxos, oracleStateFromMessage(pp.feed));
@@ -39,7 +44,7 @@
 	async function prepareRefresh() {
 		error = '';
 		try {
-			if (!pp.wallet || !pp.market) throw new Error('Connect a Cashonize wallet first (any wallet can do this).');
+			if (!pp.wallet || !pp.market) throw new Error('Connect a wallet first (any wallet can do this).');
 			await Promise.all([pp.refreshWallet(), pp.refreshFeed()]);
 			const latest = await getOracleState(pp.market);
 			if (!latest) throw new Error('Oracle state not found.');
@@ -68,9 +73,8 @@
 	<div class="pp-page-head">
 		<div>
 			<h1>Reference oracle</h1>
-			<p>Every order is priced against the live BCH/USD price signed by <a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a> (General Protocols). {pp.network === 'chipnet' ? 'PUSD stands in for a USD stablecoin, so 1 PUSD is treated as 1 USD.' : `${pp.selectedMarket.name} is a USD stablecoin, so 1 PUSD is treated as 1 USD.`}</p>
+			<p>Every order is priced against the live BCH/USD price signed by <a href="https://oracles.cash" target="_blank" rel="noopener">oracles.cash</a> (General Protocols). 1 {sym} is treated as 1 USD.</p>
 		</div>
-		<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
 	</div>
 
 	<section class="pp-card familiar">
@@ -127,7 +131,7 @@
 				{/if}
 			</div>
 			{#if oracle}
-				<div class="pp-stat-value">{formatPrice(oracle.state.price)} <small>PUSD per BCH</small></div>
+				<div class="pp-stat-value">{formatPrice(oracle.state.price)} <small>{sym} per BCH</small></div>
 				<dl class="pp-kv" style="margin-top: 0.5rem">
 					<dt>From message</dt><dd>#{oracle.state.sequence} · {new Date(oracle.state.timestamp * 1000).toLocaleString()} <span class="muted">({formatAge(recordAge)})</span></dd>
 					<dt>Status on chain</dt><dd>{(oracle.height ?? 0) > 0 ? `Confirmed (block ${oracle.height})` : 'In mempool (unconfirmed)'}</dd>
@@ -159,7 +163,7 @@
 				<li data-i="⊘"><span><strong>No operator.</strong> Anyone can submit a newer signed price; nobody can type one in.</span></li>
 				<li data-i="↑"><span><strong>Newer only.</strong> Each update must be newer than the last, so an old price can never be replayed against resting orders.</span></li>
 				<li data-i="⏱"><span><strong>Kept fresh by trading.</strong> Orders and fills update the price in the same transaction.</span></li>
-				<li data-i="$"><span><strong>PUSD = USD.</strong> {#if pp.network === 'chipnet'}PennyPickerUSD is a test token standing in for a USD stablecoin.{:else}{pp.selectedMarket.name} is a USD stablecoin, so BCH/USD is used directly.{/if}</span></li>
+				<li data-i="$"><span><strong>{sym} = USD.</strong> {#if pp.network === 'chipnet'}PennyPickerUSD is a test token standing in for a USD stablecoin.{:else}{pp.selectedMarket.name} is a USD stablecoin, so BCH/USD is used directly.{/if}</span></li>
 			</ul>
 		</section>
 	</div>

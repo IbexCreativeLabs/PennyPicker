@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { pp, explorerTx } from '$lib/pennypicker/ui/session.svelte';
 	import {
 		buildPusdTransfer,
@@ -11,15 +12,24 @@
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
 	import { errorText, parsePusd } from '$lib/pennypicker/ui/wallet';
 
+	// Keep balances live while this page is open.
+	onMount(() => pp.watchWallet());
+	const sym = $derived(pp.selectedMarket.symbol);
+	const hd = $derived(pp.wallet?.kind === 'wizardconnect' ? pp.wallet : undefined);
+	/** HD path label of the address holding a coin (WizardConnect wallets). */
+	const pathOf = (lockingHex: string | undefined) => {
+		const entry = hd?.addresses.find((a) => a.lockingHex === lockingHex);
+		return entry ? `${entry.path[0]}/${entry.path[1]}` : '';
+	};
 	const tokenAddress = $derived(pp.wallet ? lockingBytecodeToAddress(p2pkhLockingBytecode(pp.wallet.pkh), pp.wallet.network, true) : '');
-	let copied = $state(false);
-	async function copyAddress() {
+	let copied = $state('');
+	async function copy(text: string, which: string) {
 		try {
-			await navigator.clipboard.writeText(tokenAddress);
-			copied = true;
-			setTimeout(() => (copied = false), 1500);
+			await navigator.clipboard.writeText(text);
+			copied = which;
+			setTimeout(() => (copied = ''), 1500);
 		} catch {
-			copied = false;
+			copied = '';
 		}
 	}
 
@@ -50,8 +60,8 @@
 	async function prepareSend() {
 		sendError = '';
 		try {
-			if (!pp.wallet) throw new Error('Connect Cashonize first.');
-			if (!pp.config.pusdCategory) throw new Error('PUSD category is not configured.');
+			if (!pp.wallet) throw new Error('Connect a wallet first.');
+			if (!pp.config.pusdCategory) throw new Error('The token category is not configured.');
 			if (parsedRecipients.error) throw new Error(parsedRecipients.error);
 			await pp.refreshWallet();
 			pending = buildPusdTransfer(pp.config.pusdCategory, pp.wallet.address, pp.utxos, parsedRecipients.list, reserved);
@@ -64,7 +74,7 @@
 		[...pp.utxos].sort((a, b) => Number(!!a.token) - Number(!!b.token) || (a.satoshis > b.satoshis ? -1 : 1))
 	);
 	const label = (category: string) =>
-		category === pp.config.pusdCategory ? 'PUSD' : category === pp.config.oracleCategory ? 'Oracle' : `${category.slice(0, 8)}…`;
+		category === pp.config.pusdCategory ? sym : category === pp.config.oracleCategory ? 'Oracle' : `${category.slice(0, 8)}…`;
 
 	let wizCopied = $state(false);
 	async function copyWizardUri() {
@@ -95,7 +105,7 @@
 	<div class="pp-page-head">
 		<div>
 			<h1>Wallet</h1>
-			<p>PennyPicker connects to Cashonize through WalletConnect, or to an HD wallet through WizardConnect. Your keys stay in your wallet: the app only reads public data and asks the wallet to sign transactions you review.</p>
+			<p>Your keys stay in your wallet. PennyPicker only reads public chain data and asks the wallet to sign transactions you have reviewed.</p>
 		</div>
 	</div>
 
@@ -107,21 +117,24 @@
 			</div>
 			<dl class="pp-kv">
 				<dt>Wallet</dt><dd>{#if pp.wallet?.kind === 'wizardconnect'}{pp.wallet.signer.walletName} (WizardConnect){:else}Cashonize (WalletConnect v2){/if}</dd>
-				<dt>Network</dt><dd>BCH {pp.networkInfo.label} <span class="faint mono">{pp.networkInfo.walletConnectChain}</span>{#if pp.networkInfo.realFunds} <span class="pp-badge bad plain">real money</span>{/if}<br /><span class="small muted">Follows the market selected at the top. Switch to {pp.network === 'chipnet' ? 'ParyonUSD for mainnet' : 'PennyPickerUSD for Chipnet'}.</span></dd>
+				<dt>Network</dt><dd>BCH {pp.networkInfo.label} <span class="faint mono">{pp.networkInfo.walletConnectChain}</span>{#if pp.networkInfo.realFunds} <span class="pp-badge bad plain">real money</span>{/if}<br /><span class="small muted">Follows the market picked at the top.</span></dd>
 				{#if pp.wallet}
-					<dt>Address</dt><dd class="mono">{pp.wallet.address}</dd>
-					<dt>Token address</dt>
-					<dd><span class="mono">{tokenAddress}</span> <button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={copyAddress}>{copied ? 'Copied' : 'Copy'}</button><br /><span class="small muted">Share this to receive PUSD from a teammate.</span></dd>
-					<dt>Key hash</dt><dd class="mono">{pp.wallet.pkh}</dd>
-					<dt>Role</dt><dd>{pp.isOperator ? 'Market creator · trader' : 'Trader'}</dd>
-					{#if pp.wallet.kind === 'wizardconnect'}
-						<dt>Trading address</dt><dd class="small">PennyPicker trades from one address of your HD wallet (<span class="mono">receive/0</span>), shown above. Coins on your wallet's other addresses are not used: send what you want to trade to this address.</dd>
+					{#if hd}
+						<dt>Addresses</dt>
+						<dd>
+							{#if pp.scanningAddresses}Scanning your wallet…{:else}{hd.addresses.length} in use{/if}
+							<span class="small muted">· balances and trades use all of them</span>
+						</dd>
 					{/if}
+					<dt>Receive</dt>
+					<dd><span class="mono">{pp.wallet.address}</span> <button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={() => copy(pp.wallet!.address, 'bch')}>{copied === 'bch' ? 'Copied' : 'Copy'}</button>{#if hd}<br /><span class="small muted">Your wallet's first address. Change and proceeds arrive here.</span>{/if}</dd>
+					<dt>Tokens</dt>
+					<dd><span class="mono">{tokenAddress}</span> <button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={() => copy(tokenAddress, 'token')}>{copied === 'token' ? 'Copied' : 'Copy'}</button><br /><span class="small muted">Share this to receive {sym}.</span></dd>
 				{/if}
 			</dl>
 			<div class="pp-row" style="margin-top: 0.85rem">
 				{#if pp.wallet}
-					<button class="pp-btn" type="button" onclick={() => pp.refreshWallet()} disabled={pp.loadingWallet}>{pp.loadingWallet ? 'Refreshing…' : 'Refresh balances'}</button>
+					<button class="pp-btn" type="button" onclick={() => pp.refreshWallet({ rescan: true })} disabled={pp.loadingWallet}>{pp.loadingWallet ? 'Refreshing…' : 'Refresh balances'}</button>
 					<button class="pp-btn pp-btn-ghost" type="button" onclick={() => pp.disconnect()}>Disconnect</button>
 				{:else}
 					<button class="pp-btn pp-btn-primary" type="button" onclick={() => pp.connect()} disabled={pp.walletStatus === 'connecting' || pp.walletStatus === 'checking'}>
@@ -133,7 +146,7 @@
 				{/if}
 			</div>
 			{#if !pp.wallet && !pp.pairingUri && !pp.wizardUri}
-				<p class="small muted" style="margin-top: 0.5rem"><strong>Which one?</strong> <em>Connect Cashonize</em> works with any Cashonize wallet. <em>WizardConnect</em> is for HD wallets (in Cashonize: an HD wallet, then Connect → paste or scan the code).</p>
+				<p class="small muted" style="margin-top: 0.6rem">Connect Cashonize works with any Cashonize wallet. WizardConnect is for HD wallets: in the wallet, open Connect and scan or paste the code. If Cashonize is already open in another tab, paste the code there.</p>
 			{/if}
 			{#if pp.wizardUri}
 				<div class="pairing">
@@ -172,14 +185,14 @@
 						<div class="small muted">{formatSats(pp.balances.bchSats - pp.balances.bchConfirmedSats)} pending · {pp.balances.bchUtxoCount} UTXO(s)</div>
 					</div>
 					<div>
-						<div class="pp-stat-label">PUSD</div>
+						<div class="pp-stat-label">{sym}</div>
 						<div class="pp-stat-value">{formatUnits(pp.balances.pusdUnits)}</div>
 						<div class="small muted">{formatUnits(pp.balances.pusdUnits - pp.balances.pusdConfirmedUnits)} pending</div>
 					</div>
 				</div>
-				<p class="small muted" style="margin-top: 0.6rem">
-					{pp.balances.tokenUtxoCount} token UTXO(s) also carry {formatSats(pp.balances.tokenUtxoSats)} BCH. That BCH is not counted above because it travels with the tokens.
-				</p>
+				{#if pp.balances.tokenUtxoCount}
+					<p class="small muted" style="margin-top: 0.6rem">Plus {formatSats(pp.balances.tokenUtxoSats)} BCH that travels with your tokens.</p>
+				{/if}
 			{:else if pp.wallet}
 				<p class="muted">Loading…</p>
 			{:else}
@@ -190,25 +203,25 @@
 
 	{#if pp.wallet && pp.utxosLoaded}
 		{#if pp.network === 'chipnet'}
-		<section class="pp-card" style="margin-top: 1rem">
+		<section class="pp-plain section">
 			<div class="pp-card-head">
-				<h2>Send PUSD <span class="pp-badge ok plain">On-chain</span></h2>
-				<span class="small muted">Seed teammates' test wallets</span>
+				<h2>Send {sym}</h2>
+				<span class="small muted">Share test tokens with a teammate</span>
 			</div>
 			{#if pending}
 				<TxFlow unsigned={pending} wallet={pp.wallet} onBroadcast={(txid, u) => { pp.recordBroadcast(txid, u); recipientsText = ''; }} onDismiss={() => (pending = undefined)} />
 			{:else if pp.ownIdentityUtxo?.token}
-				<p class="pp-callout warn small">Your PUSD sits on the PUSD identity coin, so sending it would move the token identity. Ask in the community chat for help separating them.</p>
+				<p class="pp-callout warn small">Your {sym} sits on the token's identity coin, so sending it would move the token identity. Ask in the community chat for help separating them.</p>
 			{:else if pp.balances.pusdUnits === 0n}
-				<p class="muted small">This wallet holds no PUSD. Ask a teammate holding PUSD to send some to your token address above, or sell BCH into a bid on the Exchange.</p>
+				<p class="muted small">This wallet holds no {sym}. Sell some BCH into a bid on the Exchange, or ask a teammate to send some to your token address.</p>
 			{:else}
-				<p class="small muted">One recipient per line: <span class="mono">address amount</span>, e.g. <span class="mono">bchtest:z… 250.00</span>. Chipnet addresses only. Each recipient also receives 1,000 sats that travel with the tokens. PUSD is a test token with no value.</p>
+				<p class="small muted">One recipient per line: <span class="mono">address amount</span>, e.g. <span class="mono">bchtest:z… 250.00</span>. Chipnet addresses only. Each recipient also receives 1,000 sats that travel with the tokens.</p>
 				<textarea class="pp-input mono" rows="4" placeholder="bchtest:z… 250.00" bind:value={recipientsText}></textarea>
 				<div class="pp-row" style="margin-top: 0.6rem">
 					<button class="pp-btn pp-btn-primary" type="button" onclick={prepareSend} disabled={parsedRecipients.list.length === 0}>Review transfer</button>
 					<span class="small muted">
 						{#if parsedRecipients.error}<span class="pp-error-inline">{parsedRecipients.error}</span>
-						{:else if parsedRecipients.list.length}{parsedRecipients.list.length} recipient(s) · {formatUnits(sendTotal)} of {formatUnits(pp.balances.pusdUnits)} PUSD{/if}
+						{:else if parsedRecipients.list.length}{parsedRecipients.list.length} recipient(s) · {formatUnits(sendTotal)} of {formatUnits(pp.balances.pusdUnits)} {sym}{/if}
 					</span>
 				</div>
 				{#if reserved.length}<p class="pp-callout warn small" style="margin-top: 0.6rem">The oracle does not exist yet, so your confirmed vout-0 UTXO is kept for oracle genesis and won't be spent here.</p>{/if}
@@ -217,15 +230,16 @@
 		</section>
 		{/if}
 
-		<section class="pp-card" style="margin-top: 1rem">
-			<h2>Unspent outputs</h2>
+		<section class="pp-plain section">
+			<h2>Coins</h2>
 			<div class="pp-table-wrap">
 				<table class="pp-table">
-					<thead><tr><th>Outpoint</th><th class="r">BCH</th><th>Token</th><th>Status</th></tr></thead>
+					<thead><tr><th>Outpoint</th>{#if hd}<th>Address</th>{/if}<th class="r">BCH</th><th>Token</th><th>Status</th></tr></thead>
 					<tbody>
 						{#each sorted as utxo (utxo.txid + utxo.vout)}
 							<tr>
 								<td class="mono small"><a href={explorerTx(utxo.txid)} target="_blank" rel="noopener">{utxo.txid.slice(0, 12)}…:{utxo.vout}</a></td>
+								{#if hd}<td class="small muted">{pathOf(utxo.ownerLocking)}</td>{/if}
 								<td class="r">{formatSats(utxo.satoshis)}</td>
 								<td>
 									{#if utxo.token}
@@ -238,12 +252,11 @@
 								</td>
 								<td>
 									<span class="pp-badge {(utxo.height ?? 0) > 0 ? 'ok' : 'warn'}">{(utxo.height ?? 0) > 0 ? 'confirmed' : 'pending'}</span>
-									{#if utxo.identityOf}<span class="pp-badge warn plain" title="Token identity output. PennyPicker never spends it in ordinary transactions.">{utxo.identityOf === pp.config.pusdCategory && pp.pusdIdentity ? 'PUSD identity' : 'held back'}</span>{/if}
-									{#if utxo.vout === 0 && !utxo.token && !utxo.identityOf && (utxo.height ?? 0) > 0}<span class="pp-badge plain accent" title="Can be spent as a CashToken genesis input">genesis-ready</span>{/if}
+									{#if utxo.identityOf}<span class="pp-badge warn plain" title="Token identity output. PennyPicker never spends it in ordinary transactions.">{utxo.identityOf === pp.config.pusdCategory && pp.pusdIdentity ? `${sym} identity` : 'held back'}</span>{/if}
 								</td>
 							</tr>
 						{:else}
-							<tr><td colspan="4" class="muted small">No UTXOs.{pp.network === 'chipnet' ? ' Fund this address from a Chipnet faucet.' : ''}</td></tr>
+							<tr><td colspan={hd ? 5 : 4} class="muted small">No coins yet.{pp.network === 'chipnet' ? ' Fund this address from a Chipnet faucet.' : ''}</td></tr>
 						{/each}
 					</tbody>
 				</table>
@@ -259,5 +272,6 @@
 	textarea { font-family: var(--pp-mono); font-size: 0.75rem; }
 	.bal { gap: 0.5rem; }
 	.pp-error-inline { color: var(--pp-danger); }
+	.section { margin-top: 2rem; }
 	textarea.mono { width: 100%; }
 </style>

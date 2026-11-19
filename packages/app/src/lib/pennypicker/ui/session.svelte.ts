@@ -15,6 +15,7 @@ import {
 	discoverOracleCategory,
 	discoverOrders,
 	marketActivityFingerprint,
+	getAddressHistoryCount,
 	getAddressUtxos,
 	getIdentityHead,
 	getOracleState,
@@ -34,7 +35,8 @@ import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction }
 import { makerPkhFromAddress } from '$lib/pennypicker/orderCommitment';
 import { NETWORKS, type NetworkId } from '$lib/pennypicker/network';
 import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identity';
-import { balancesOf, errorText, type ConnectedWallet, type WalletConnectWallet } from './wallet';
+import { balancesOf, errorText, type ConnectedWallet, type WalletConnectWallet, type WizardConnectWallet } from './wallet';
+import type { WizardSigner } from '$lib/wizardconnect/wizardconnect';
 
 export const STALE_AFTER_SECONDS = 15 * 60;
 
@@ -43,6 +45,10 @@ const POLL_INTERVAL_MS = 5_000;
 /** Full book reload even without activity, to pick up cancels (which do not touch the oracle address). */
 const FULL_REFRESH_MS = 60_000;
 const WALLET_REFRESH_MS = 30_000;
+/** oracles.cash price feed refresh while a PennyPicker tab is visible (the header shows the price on every page). */
+const FEED_REFRESH_MS = 20_000;
+/** HD wallets (WizardConnect): look for newly used addresses this often while a page that shows balances is open. */
+const HD_RESCAN_MS = 120_000;
 /** How long a WalletConnect session restore may wait for Cashonize before the connect buttons are re-enabled. */
 const RESTORE_TIMEOUT_MS = 20_000;
 
@@ -153,15 +159,42 @@ class PennyPickerSession {
 		this.reloadConfig();
 		setInterval(() => (this.nowSec = Math.floor(Date.now() / 1000)), 5_000);
 		void this.refreshFeed();
-		setInterval(() => void this.refreshFeed(), 30_000);
+		setInterval(() => {
+			if (document.visibilityState === 'visible') void this.refreshFeed();
+		}, FEED_REFRESH_MS);
 		// Market data must not wait for the wallet: restoring a session asks Cashonize for its address, which can take a
 		// long time when the wallet app is asleep. Load the book and price straight away, and the wallet in parallel.
 		void this.refreshMarket().then(() => this.refreshHistory());
 		void this.restoreSession().then(() => this.refreshWallet());
 		setInterval(() => void this.poll(), POLL_INTERVAL_MS);
 		document.addEventListener('visibilitychange', () => {
-			if (document.visibilityState === 'visible') void this.poll();
+			if (document.visibilityState !== 'visible') return;
+			this.nowSec = Math.floor(Date.now() / 1000);
+			void this.refreshFeed();
+			void this.poll();
 		});
+	}
+
+	/** Pages that show the book (Exchange) or balances (Exchange, Wallet) register while open; polling serves only them. */
+	private marketWatchers = 0;
+	private walletWatchers = 0;
+
+	/** Keep the order book live while the calling page is open. Returns the unsubscribe function. */
+	watchMarket(): () => void {
+		this.marketWatchers++;
+		this.walletWatchers++;
+		void this.poll();
+		return () => {
+			this.marketWatchers--;
+			this.walletWatchers--;
+		};
+	}
+
+	/** Keep wallet balances live while the calling page is open. Returns the unsubscribe function. */
+	watchWallet(): () => void {
+		this.walletWatchers++;
+		void this.poll();
+		return () => this.walletWatchers--;
 	}
 
 	private polling = false;
@@ -169,27 +202,34 @@ class PennyPickerSession {
 	private lastWalletRefresh = 0;
 
 	/**
-	 * Read-only background refresh. Every few seconds it makes one cheap Electrum request (the oracle address
-	 * history); the book is reloaded only when that changed, or once a minute to catch cancels. It never overlaps
-	 * itself or a manual refresh, skips hidden tabs, and pauses while a transaction dialog is open. It only reads
-	 * chain data: it builds, signs and broadcasts nothing, and it does not touch form input.
+	 * Read-only background refresh, only while the tab is visible and a page that shows the data is open. Every few
+	 * seconds it makes one cheap Electrum request (the oracle address history); the book is reloaded only when that
+	 * changed, or once a minute to catch cancels. It never overlaps itself, and pauses while a transaction dialog is
+	 * open. It only reads chain data: it builds, signs and broadcasts nothing, and it does not touch form input.
 	 */
 	private async poll() {
 		if (this.polling || this.loadingMarket || this.txOpen > 0 || document.visibilityState !== 'visible') return;
-		const market = this.market;
-		if (!market || !this.oracleLoaded) return;
+		if (this.marketWatchers === 0 && this.walletWatchers === 0) return;
 		this.polling = true;
 		const network = this.network;
 		try {
 			const now = Date.now();
-			const fingerprint = await marketActivityFingerprint(market);
-			if (network !== this.network || this.txOpen > 0) return;
-			const changed = fingerprint !== this.discovery?.fingerprint;
-			if (changed || now - this.lastFullMarketRefresh > FULL_REFRESH_MS) {
-				await this.refreshMarket();
-				if (changed) await this.refreshWallet();
-			} else if (this.wallet && now - this.lastWalletRefresh > WALLET_REFRESH_MS) {
-				await this.refreshWallet();
+			const market = this.market;
+			let walletDone = false;
+			if (this.marketWatchers > 0 && market && this.oracleLoaded) {
+				const fingerprint = await marketActivityFingerprint(market);
+				if (network !== this.network || this.txOpen > 0) return;
+				const changed = fingerprint !== this.discovery?.fingerprint;
+				if (changed || now - this.lastFullMarketRefresh > FULL_REFRESH_MS) {
+					await this.refreshMarket();
+					if (changed) {
+						await this.refreshWallet();
+						walletDone = true;
+					}
+				}
+			}
+			if (!walletDone && this.wallet && now - this.lastWalletRefresh > WALLET_REFRESH_MS) {
+				await this.refreshWallet({ rescan: now - this.lastHdScan > HD_RESCAN_MS });
 			}
 			this.lastChecked = new Date();
 		} catch {
@@ -206,6 +246,9 @@ class PennyPickerSession {
 	/** Reuse an existing approved Cashonize session without prompting. */
 	async restoreSession() {
 		try {
+			// A stored WizardConnect session is the newer choice (connecting with WalletConnect removes it), and
+			// restoring it needs no wallet round trip: try it first.
+			if (await this.restoreWizard()) return;
 			if (!import.meta.env.VITE_WALLETCONNECT_PROJECT_ID) {
 				this.walletStatus = 'disconnected';
 				return;
@@ -213,8 +256,7 @@ class PennyPickerSession {
 			const client = await createCashonizeClient();
 			const session = getApprovedSession(client, this.networkInfo.walletConnectChain);
 			if (!session) {
-				// No WalletConnect session: restore a stored WizardConnect session, if any (loaded on demand).
-				if (!(await this.restoreWizard())) this.walletStatus = 'disconnected';
+				this.walletStatus = 'disconnected';
 				return;
 			}
 			// Restoring asks Cashonize for its address. If the wallet does not answer (app asleep, tab closed), do not
@@ -274,6 +316,7 @@ class PennyPickerSession {
 				this.pairingUri = '';
 				await this.adopt(client, session);
 			}
+			await this.forgetStoredWizard();
 			await this.refreshWallet();
 		} catch (cause) {
 			this.pairingUri = '';
@@ -286,6 +329,14 @@ class PennyPickerSession {
 	wizardUri = $state('');
 	private wizardCancel: (() => void) | undefined;
 
+	/** The user chose WalletConnect: end any stored WizardConnect session for this network so it is not restored later. */
+	private async forgetStoredWizard() {
+		const wizard = await import('$lib/wizardconnect/wizardconnect');
+		if (!wizard.hasStoredWizardSession(this.network)) return;
+		const stale = wizard.restoreWizardConnect(this.network);
+		await stale?.disconnect().catch(() => undefined);
+	}
+
 	/** Restore a stored WizardConnect session for this network. Returns true if one was adopted. */
 	private async restoreWizard(): Promise<boolean> {
 		const network = this.network;
@@ -293,9 +344,37 @@ class PennyPickerSession {
 		if (!wizard.hasStoredWizardSession(network)) return false;
 		const signer = wizard.restoreWizardConnect(network, (reason) => this.wizardEnded(reason));
 		if (!signer || network !== this.network) return false;
-		this.wallet = { kind: 'wizardconnect', signer, address: signer.address, pkh: signer.pkh, network };
+		this.wallet = this.wizardWallet(signer, network);
 		this.walletStatus = 'connected';
+		this.lastHdScan = 0;
 		return true;
+	}
+
+	private wizardWallet(signer: WizardSigner, network: NetworkId): WizardConnectWallet {
+		return { kind: 'wizardconnect', signer, address: signer.address, pkh: signer.pkh, network, addresses: [signer.addressAt('receive', 0)] };
+	}
+
+	/** Time of the last HD address scan (WizardConnect). */
+	private lastHdScan = 0;
+	/** True while an HD wallet's addresses are being scanned. */
+	scanningAddresses = $state(false);
+
+	/** Find every used address of the connected HD wallet (gap-limit scan of each shared path). */
+	private async scanHdAddresses(wallet: WizardConnectWallet) {
+		const wizard = await import('$lib/wizardconnect/wizardconnect');
+		this.scanningAddresses = true;
+		try {
+			const found = await wizard.discoverAddresses(
+				wallet.signer.addressAt,
+				wallet.signer.pathNames(),
+				async (address) => (await getAddressHistoryCount(address)) > 0
+			);
+			wallet.signer.setKnown(found);
+			if (this.wallet === wallet) this.wallet = { ...wallet, addresses: found };
+			this.lastHdScan = Date.now();
+		} finally {
+			this.scanningAddresses = false;
+		}
 	}
 
 	/** Pair an HD wallet over WizardConnect (the wallet scans the wiz:// QR code). */
@@ -316,9 +395,10 @@ class PennyPickerSession {
 				signer.suspend();
 				throw new Error('The market changed while pairing; pair again on this network.');
 			}
-			this.wallet = { kind: 'wizardconnect', signer, address: signer.address, pkh: signer.pkh, network };
+			this.wallet = this.wizardWallet(signer, network);
 			this.walletStatus = 'connected';
-			await this.refreshWallet();
+			this.lastHdScan = 0;
+			await this.refreshWallet({ rescan: true });
 		} catch (cause) {
 			this.wizardUri = '';
 			this.walletStatus = this.wallet ? 'connected' : 'disconnected';
@@ -361,11 +441,32 @@ class PennyPickerSession {
 		this.forgetWallet();
 	}
 
-	async refreshWallet() {
+	/**
+	 * Reload the wallet's coins. An HD wallet (WizardConnect) is read across all its used addresses, each coin tagged
+	 * with the address that holds it; `rescan` (or a first load) looks for newly used addresses first.
+	 */
+	async refreshWallet(options: { rescan?: boolean } = {}) {
 		if (!this.wallet) return;
 		this.loadingWallet = true;
 		try {
-			const raw = await getAddressUtxos(this.wallet.address);
+			let wallet = this.wallet;
+			let raw: ChainUtxo[];
+			if (wallet.kind === 'wizardconnect') {
+				if (options.rescan || this.lastHdScan === 0) {
+					await this.scanHdAddresses(wallet);
+					if (!this.wallet || this.wallet.kind !== 'wizardconnect') return;
+					wallet = this.wallet;
+				}
+				const lists = await Promise.all(
+					(wallet as WizardConnectWallet).addresses.map(async (entry) =>
+						(await getAddressUtxos(entry.address)).map((utxo) => ({ ...utxo, ownerLocking: entry.lockingHex }))
+					)
+				);
+				raw = lists.flat();
+			} else {
+				raw = await getAddressUtxos(wallet.address);
+			}
+			if (this.wallet !== wallet && this.wallet?.address !== wallet.address) return;
 			const category = this.config.pusdCategory;
 			let head: IdentityHead | undefined;
 			// Identity outputs only matter where this app mints or manages the token (Chipnet PUSD).
@@ -375,7 +476,7 @@ class PennyPickerSession {
 					head = await getIdentityHead(category, this.wallet.address);
 					this.identityError = '';
 				} catch (cause) {
-					this.identityError = `Could not resolve the PUSD identity output (${errorText(cause)}). All output-0 coins are held back until it resolves.`;
+					this.identityError = `Could not resolve the token identity output (${errorText(cause)}). All output-0 coins are held back until it resolves.`;
 				}
 			}
 			this.pusdIdentity = head;

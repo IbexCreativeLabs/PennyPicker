@@ -2,7 +2,7 @@ import type { CashonizeClient, CashonizeSession } from '$lib/cashonize/walletcon
 import { getAddressUtxos } from '$lib/pennypicker/chain';
 import type { ChainUtxo } from '$lib/pennypicker/exchange';
 import type { NetworkId } from '$lib/pennypicker/network';
-import type { WizardSigner } from '$lib/wizardconnect/wizardconnect';
+import type { HdAddress, WizardSigner } from '$lib/wizardconnect/wizardconnect';
 
 interface WalletBase {
 	address: string;
@@ -15,10 +15,12 @@ export interface WalletConnectWallet extends WalletBase {
 	client: CashonizeClient;
 	session: CashonizeSession;
 }
-/** An HD wallet over WizardConnect, trading from one address (receive/0). */
+/** An HD wallet over WizardConnect. `address`/`pkh` are the home address (receive/0); coins on every used address count. */
 export interface WizardConnectWallet extends WalletBase {
 	kind: 'wizardconnect';
 	signer: WizardSigner;
+	/** Used addresses found by the last scan (home address first). */
+	addresses: HdAddress[];
 }
 export type ConnectedWallet = WalletConnectWallet | WizardConnectWallet;
 
@@ -57,7 +59,7 @@ export { formatPrice, parsePrice } from '$lib/pennypicker/contracts';
 
 export function parsePusd(value: string): bigint {
 	const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
-	if (!match) throw new Error('Enter a PUSD amount with at most 2 decimals.');
+	if (!match) throw new Error('Enter an amount with at most 2 decimals.');
 	return BigInt(match[1]!) * 100n + BigInt((match[2] ?? '').padEnd(2, '0') || '0');
 }
 

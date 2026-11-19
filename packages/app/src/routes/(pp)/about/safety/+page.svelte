@@ -5,7 +5,6 @@
 <svelte:head><title>Safety &amp; status · PennyPicker</title></svelte:head>
 
 <header class="ab-head">
-	<p class="kicker">Safety &amp; status</p>
 	<h1>An experimental prototype</h1>
 	<p class="lead">Built for a hackathon. Read this before using real money.</p>
 </header>
@@ -13,12 +12,12 @@
 <div class="ab-grid">
 	<article class="pp-card ab-card">
 		<span class="tag">Test network</span>
-		<h3><span class="ab-icon">◎</span>PennyPickerUSD on Chipnet</h3>
+		<h3><span class="ab-icon">◎</span>PennyPickerUSD (PPUSD) on Chipnet</h3>
 		<p>A test token treated as 1 USD, with no backing and no value. Safe to experiment with.</p>
 	</article>
 	<article class="pp-card ab-card danger">
 		<span class="tag">Real money</span>
-		<h3><span class="ab-icon">$</span>ParyonUSD on mainnet</h3>
+		<h3><span class="ab-icon">$</span>ParyonUSD (PUSD) on mainnet</h3>
 		<p>The real stablecoin. Orders are capped at <strong>25 PUSD</strong> each until the contracts are independently audited.</p>
 	</article>
 </div>
@@ -31,7 +30,6 @@
 			<li data-i="⏱"><span><strong>No price keeper yet.</strong> The on-chain price only updates when someone trades or pushes it. An order left open in a quiet market can be filled at the last stored price, so keep mainnet orders small and short-lived.</span></li>
 			<li data-i="⇆"><span><strong>Choice of recent prices.</strong> The chain cannot see the clock, so a taker can pick any oracle message published since the last on-chain update (usually minutes).</span></li>
 			<li data-i="↻"><span><strong>One shared price record.</strong> Two trades at the same moment conflict; the second one is rebuilt and signed again.</span></li>
-			<li data-i="∿"><span><strong>Simulations are labelled.</strong> Liquidations and redemptions are pricing designs, not deployed contracts.</span></li>
 		</ul>
 	</div>
 </section>
@@ -39,7 +37,7 @@
 <section class="ab-section">
 	<h2>What protects you</h2>
 	<div class="ab-grid">
-		<div class="pp-card ab-card"><h3><span class="ab-icon">✎</span>Your keys stay in your wallet</h3><p>PennyPicker never sees them. Every transaction is signed in Cashonize.</p></div>
+		<div class="pp-card ab-card"><h3><span class="ab-icon">✎</span>Your keys stay in your wallet</h3><p>PennyPicker never sees them. Every transaction is signed in your own wallet.</p></div>
 		<div class="pp-card ab-card"><h3><span class="ab-icon">⊘</span>Only you can cancel</h3><p>An order's remaining coins can only be withdrawn with the maker's key.</p></div>
 		<div class="pp-card ab-card"><h3><span class="ab-icon">✓</span>Genuine prices only</h3><p>The contract rejects any price not signed by oracles.cash, and any older than the one stored.</p></div>
 	</div>

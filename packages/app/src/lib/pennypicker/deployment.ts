@@ -101,7 +101,7 @@ export const MARKETS: StablecoinMarket[] = [
 	{
 		id: 'pennypickerusd',
 		name: 'PennyPickerUSD',
-		symbol: 'PUSD',
+		symbol: 'PPUSD',
 		network: 'chipnet',
 		status: 'live',
 		category: CHIPNET_DEPLOYMENT.pusdCategory,

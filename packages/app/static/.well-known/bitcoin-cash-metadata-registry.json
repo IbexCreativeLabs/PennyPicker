@@ -2,13 +2,27 @@
   "$schema": "https://cashtokens.org/bcmr-v2.schema.json",
   "version": {
     "major": 1,
-    "minor": 0,
+    "minor": 1,
     "patch": 0
   },
-  "latestRevision": "2026-11-18T12:00:00.000Z",
+  "latestRevision": "2026-11-19T20:00:00.000Z",
   "registryIdentity": "74167994a2d8e1e57188bae9a42035678e3526a1d8650ced756b2ffa4c078ab3",
   "identities": {
     "74167994a2d8e1e57188bae9a42035678e3526a1d8650ced756b2ffa4c078ab3": {
+      "2026-11-19T20:00:00.000Z": {
+        "name": "PennyPickerUSD",
+        "description": "Experimental test stablecoin for the PennyPicker oracle-delta BPS orderbook on BCH Chipnet. Fixed supply of 1,000,000 PPUSD, priced as 1 USD for trading, with no backing and no value.",
+        "token": {
+          "category": "74167994a2d8e1e57188bae9a42035678e3526a1d8650ced756b2ffa4c078ab3",
+          "symbol": "PPUSD",
+          "decimals": 2
+        },
+        "uris": {
+          "icon": "https://pennypicker.pages.dev/ppusd-256.png",
+          "web": "https://pennypicker.pages.dev",
+          "support": "https://t.me/bethechange_global"
+        }
+      },
       "2026-11-18T12:00:00.000Z": {
         "name": "PennyPickerUSD",
         "description": "Experimental test stablecoin for the PennyPicker oracle-delta BPS orderbook on BCH Chipnet. Fixed supply of 1,000,000 PUSD, priced as 1 USD for trading, with no backing and no value.",

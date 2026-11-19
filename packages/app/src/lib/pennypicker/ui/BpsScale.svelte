@@ -74,7 +74,7 @@
 	.ref { position: absolute; top: -10px; bottom: -10px; width: 2px; margin-left: -1px; background: var(--pp-text); border-radius: 2px; }
 	.ref-label { position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 0.3rem; background: var(--pp-surface); padding: 0 0.3rem; border-radius: 6px; }
 	.draft { position: absolute; top: 50%; width: 0; height: 0; z-index: 2; transition: left 0.25s ease; }
-	.diamond { position: absolute; width: 16px; height: 16px; left: -8px; top: -8px; transform: rotate(45deg); border-radius: 4px; background: var(--pp-accent); border: 2px solid var(--pp-surface); box-shadow: 0 0 0 3px var(--pp-accent-soft); }
+	.diamond { position: absolute; width: 16px; height: 16px; left: -8px; top: -8px; transform: rotate(45deg); border-radius: 4px; background: var(--pp-brand); border: 2px solid var(--pp-surface); box-shadow: 0 0 0 3px var(--pp-accent-soft); }
 	.draft-label { position: absolute; top: 12px; left: 0; transform: translateX(-50%); white-space: nowrap; font-size: 0.72rem; font-weight: 700; color: var(--pp-accent); background: var(--pp-surface); padding: 0.05rem 0.3rem; border-radius: 4px; border: 1px solid var(--pp-accent-soft); }
 	.draft-label.flip { transform: translateX(-100%); }
 	.draft-label.flip-l { transform: none; }

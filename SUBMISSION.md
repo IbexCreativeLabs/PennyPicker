@@ -2,8 +2,8 @@
 
 **Oracle Delta Basis Points Denominated Orderbook DEX for Stablecoins, on Bitcoin Cash.**
 
-- Live demo: **https://pennypicker.pages.dev**. PennyPickerUSD on BCH Chipnet (free test coins), and ParyonUSD on BCH
-  mainnet (real money, 25 PUSD cap per order), chosen in the header
+- Live demo: **https://pennypicker.pages.dev**. PennyPickerUSD (PPUSD) on BCH Chipnet (free test coins), and ParyonUSD
+  (PUSD) on BCH mainnet (real money, 25 PUSD cap per order), chosen in the header
 - Source: https://github.com/IbexCreativeLabs/PennyPicker
 - Recording of a real two-wallet trade: [`media/two-wallet-trade.gif`](media/two-wallet-trade.gif)
 
@@ -24,8 +24,8 @@ one P2P market of this kind could replace three protocol mechanics:
 |---|---|
 | **Order covenant** (`PennyPickerOrder.cash`) | Each order is its own P2SH32 contract holding the escrow. `fill()` settles exactly against `reference × (10000+bps)/10000` with integer math. `cancel()` is maker-only. Partial fills work in both directions. |
 | **Real oracle** (`PennyPickerOracle.cash`) | Uses the BCH/USD price signed by General Protocols (oracles.cash), the same oracle ParyonUSD uses. The signature is verified on-chain with `OP_CHECKDATASIG`, updates are permissionless, and replay is blocked by a strictly increasing sequence. Orders and fills carry the newest message, so they trade at the live price. |
-| **Exchange UI** | Orderbook in BPS, limit orders, "trade now" routing across orders, my orders with cancel, activity, plus Wallet and a sectioned About (with Token and Oracle). Fully public: no admin area and no passwords. |
-| **Wallet** | Cashonize over WalletConnect. Keys never leave the wallet. Every transaction is previewed, signed in Cashonize, checked byte-for-byte against the preview, and broadcast only on an explicit click. |
+| **Exchange UI** | Orderbook in BPS that updates itself while it is on screen, limit orders, "trade now" routing across orders, my orders with cancel, activity, plus Wallet and a sectioned About (with Token and Oracle). Fully public: no admin area and no passwords. |
+| **Wallet** | Cashonize over WalletConnect, or any HD wallet over WizardConnect (all used addresses are scanned and spent from, each input signed with its own HD path). Keys never leave the wallet. Every transaction is previewed, signed in the wallet, checked byte-for-byte against the preview, and broadcast only on an explicit click. |
 | **Contention handling** | If someone else uses the shared price record first, the app says nothing was broadcast and offers **Rebuild with the latest state**. |
 | **Mainnet** | Selecting ParyonUSD switches the whole app to BCH mainnet: addresses, Cashonize chain and Electrum. A mainnet price record exists, and a real order, fill and cancel with ParyonUSD were done (txids below). Mainnet trading is open on the public site, capped at 25 PUSD per order. |
 
@@ -52,7 +52,7 @@ All of these were signed in Cashonize and broadcast from the app:
 
 Explorer for the Chipnet rows: `https://bchexplorer.cash/chipnet/tx/<txid>`. The full log is in [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
-**Try it:** follow the five steps under *Try it in 5 minutes* in the [README](README.md) or on the About page. The
+**Try it:** follow the steps under *Try it in 5 minutes* in the [README](README.md) or on the About page. The
 Chipnet book is seeded with asks and bids around the oracle price.
 
 ## Tests
@@ -61,9 +61,9 @@ Run from `packages/app`. The covenants are executed in libauth's BCH 2025 virtua
 
 - **33 covenant checks:** valid and invalid fills, forged or replayed oracle messages, a real oracles.cash message, and
   attack cases.
-- **92 transaction-builder checks:** chained signed transactions, mainnet ParyonUSD order and fill, the order cap, and
+- **100 transaction-builder checks:** chained signed transactions, mainnet ParyonUSD order and fill, the order cap, and
   the broadcast switch.
-- **9 mechanism checks** and **8 token-identity checks.**
+- **8 token-identity checks** and **21 WizardConnect checks** (HD address scan, per-input signing paths).
 
 CI runs these and the production build on every push.
 
@@ -79,7 +79,6 @@ each oracle message. An independent audit is required before mainnet trading wit
 - **Mainnet.** Live with a 25 PUSD cap per order. There is no price keeper yet, so a resting order can be filled at the
   last stored price in a quiet market; keep mainnet orders small and short-lived. An external audit is needed before the
   cap is raised.
-- **Liquidations and redemptions.** These are pricing simulations on the About page, not deployed vault contracts.
 
 ## Credits
 
