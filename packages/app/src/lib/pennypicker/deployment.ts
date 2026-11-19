@@ -80,6 +80,8 @@ export interface StablecoinMarket {
 	/** Per-order cap in stablecoin base units (cents), if any. */
 	maxOrderUnits?: bigint;
 	category: string | undefined;
+	/** Token icon: our own for PPUSD; ParyonUSD's official icon from its on-chain (BCMR) metadata. */
+	icon: string;
 	summary: string;
 	links: { label: string; href: string }[];
 }
@@ -105,6 +107,7 @@ export const MARKETS: StablecoinMarket[] = [
 		network: 'chipnet',
 		status: 'live',
 		category: CHIPNET_DEPLOYMENT.pusdCategory,
+		icon: '/ppusd-256.png',
 		summary: 'Experimental test stablecoin on BCH Chipnet: 1,000,000 fixed supply, priced as 1 USD, no backing. Trade it freely with test coins.',
 		links: []
 	},
@@ -115,6 +118,7 @@ export const MARKETS: StablecoinMarket[] = [
 		network: 'mainnet',
 		...mainnetStatus(),
 		category: PARYONUSD_CATEGORY,
+		icon: 'https://paryonusd.com/logo.svg',
 		maxOrderUnits: MAINNET_MAX_ORDER_UNITS,
 		summary: 'The BCH-collateralised USD stablecoin on Bitcoin Cash mainnet, priced by the same oracles.cash BCH/USD oracle as PennyPicker. Real money: orders are capped until the contracts are independently audited.',
 		links: [

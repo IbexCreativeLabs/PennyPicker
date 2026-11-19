@@ -10,9 +10,9 @@
 - Tip: Cashonize ends its dapp sessions when you switch wallets inside it, so pair after choosing the wallet.
 
 ## 0:00 — The idea in five seconds (25 s)
-*Exchange, top of the page: the steamroller rolls in and paves the headline.*
-"Don't pick up pennies in front of the steamroller. A stablecoin limit order at a fixed dollar price gets flattened every
-time BCH moves. PennyPicker prices orders in basis points from the live oracle price instead."
+*Exchange, top of the page: the headline "Limit orders that move with the price".*
+"A stablecoin limit order at a fixed dollar price goes stale every time BCH moves. PennyPicker prices orders in basis
+points from the live oracle price instead."
 *Scroll to the market card: the diagram puts the live price in the middle, bids on the green side, asks on the red
 side, each placed by its BPS. Type +25 into the order form: the 'Your order' marker moves and shows its price.*
 

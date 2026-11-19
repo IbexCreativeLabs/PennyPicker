@@ -29,9 +29,17 @@
 	];
 	const active = (href: string) => (href === '/' ? page.url.pathname === '/' : page.url.pathname === href || page.url.pathname.startsWith(href + '/'));
 	let marketOpen = $state(false);
+	let marketEl: HTMLElement | undefined = $state();
+	/** Close the market menu on a click outside it or on Escape. */
+	function closeMarket(event: Event) {
+		if (!marketOpen) return;
+		if (event instanceof KeyboardEvent ? event.key === 'Escape' : !marketEl?.contains(event.target as Node)) marketOpen = false;
+	}
 
 	onMount(() => pp.start());
 </script>
+
+<svelte:window onclick={closeMarket} onkeydown={closeMarket} />
 
 <div class="pp">
 	<header class="topbar">
@@ -40,7 +48,7 @@
 				<img class="logo" src="/pennypicker-128.png" alt="" width="36" height="36" />
 				<strong>PennyPicker</strong>
 			</a>
-			<div class="market">
+			<div class="market" bind:this={marketEl}>
 				<button class="market-btn" type="button" aria-haspopup="listbox" aria-expanded={marketOpen} onclick={() => (marketOpen = !marketOpen)}>
 					<span class="pair">BCH / <span class="long">{pp.selectedMarket.name}</span><span class="short">{pp.selectedMarket.symbol}</span></span>
 					<span class="net {pp.selectedMarket.network}">{pp.networkInfo.label}</span>

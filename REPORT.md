@@ -12,9 +12,9 @@ two markets chosen in the header:
 
 What it does:
 
-- **Explains itself at first sight.** The Exchange opens with the steamroller and "Don't pick up pennies in front of the
-  steamroller", one sentence on BPS, and a live diagram that places the real bids, asks and the order you are typing
-  around the oracle price.
+- **Explains itself at first sight.** The Exchange opens with "Limit orders that move with the price", one sentence on
+  BPS, and (when the book has orders) a live diagram that places the real bids, asks and the order you are typing around
+  the oracle price.
 - **Trade BCH against a stablecoin in a floating order book.**
   - Buy or sell limit orders at ±BPS from the oracles.cash BCH/USD price; each limit moves with the price.
   - "Trade now" fills across the best orders in one transaction; cancel your own orders at any time.

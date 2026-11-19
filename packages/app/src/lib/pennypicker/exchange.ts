@@ -34,7 +34,7 @@ import {
 } from '@bitauth/libauth';
 import orderArtifact from './contracts/PennyPickerOrder.json';
 import oracleArtifact from './contracts/PennyPickerOracle.json';
-import { NETWORKS, type NetworkId } from './network';
+import { NETWORKS, networkOfAddress, type NetworkId } from './network';
 import {
 	askFillUnitsDue,
 	assertOrderDelta,
@@ -156,6 +156,19 @@ export function addressToLockingBytecode(address: string): Uint8Array {
 	const decoded = cashAddressToLockingBytecode(address);
 	if (typeof decoded === 'string') throw new Error(`Invalid address: ${decoded}`);
 	return decoded.bytecode;
+}
+
+/** The 20-byte key hash of a P2PKH address on the given network (the maker key of an order). */
+export function makerPkhFromAddress(address: string, network: NetworkId): string {
+	if (networkOfAddress(address) !== network) {
+		throw new Error(`Maker address must be a prefixed BCH ${NETWORKS[network].label} address (${NETWORKS[network].prefix}:…).`);
+	}
+	const bytecode = addressToLockingBytecode(address);
+	const p2pkh = bytecode.length === 25 && bytecode[0] === 0x76 && bytecode[1] === 0xa9 && bytecode[2] === 0x14 && bytecode[23] === 0x88 && bytecode[24] === 0xac;
+	if (!p2pkh) throw new Error('Maker address must be a P2PKH address; P2SH addresses are not supported.');
+	const pkh = binToHex(bytecode.slice(3, 23));
+	if (/^0{40}$/.test(pkh)) throw new Error('Maker public-key hash cannot be all zeroes.');
+	return pkh;
 }
 
 export function lockingBytecodeToAddress(bytecode: Uint8Array, network: NetworkId = 'chipnet', tokenSupport = false): string {

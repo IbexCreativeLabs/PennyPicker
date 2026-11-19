@@ -31,8 +31,7 @@ import {
 } from '$lib/pennypicker/chain';
 import { oracleStateFromMessage, type OracleMessage } from '$lib/pennypicker/contracts';
 import { MARKETS, type MarketId } from '$lib/pennypicker/deployment';
-import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
-import { makerPkhFromAddress } from '$lib/pennypicker/orderCommitment';
+import { makerPkhFromAddress, type ChainUtxo, type MarketConfig, type OracleUtxo, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 import { NETWORKS, type NetworkId } from '$lib/pennypicker/network';
 import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identity';
 import { balancesOf, errorText, type ConnectedWallet, type WalletConnectWallet, type WizardConnectWallet } from './wallet';
@@ -65,8 +64,6 @@ class PennyPickerSession {
 	network = $derived<NetworkId>(this.selectedMarket.network);
 	networkInfo = $derived(NETWORKS[this.network]);
 	config = $state(loadMarketConfig('chipnet'));
-	/** The selected market can create orders and fills in this build. */
-	canTrade = $derived(this.selectedMarket.status === 'live');
 
 	selectMarket(id: MarketId) {
 		if (!MARKETS.some((m) => m.id === id)) return;
@@ -106,20 +103,16 @@ class PennyPickerSession {
 	loadingWallet = $state(false);
 	/** Current PUSD identity output (BCMR authchain head), resolved from Chipnet. */
 	pusdIdentity = $state<IdentityHead | undefined>();
-	identityError = $state('');
 	loadingMarket = $state(false);
 	marketError = $state('');
 	history = $state<TxRecord[]>([]);
 	nowSec = $state(Math.floor(Date.now() / 1000));
-	lastRefreshed = $state<Date | undefined>();
 	/** Number of open transaction dialogs; background refreshes pause while any is open. */
 	txOpen = $state(0);
-	/** Last time the background poll checked the market (read-only). */
-	lastChecked = $state<Date | undefined>();
 
 	market = $derived<MarketConfig | undefined>(isCompleteMarket(this.config) ? this.config : undefined);
 	balances = $derived(balancesOf(this.utxos, this.config.pusdCategory));
-	/** Latest signed BCH/USD message from oracles.cash (polled every minute). */
+	/** Latest signed BCH/USD message from oracles.cash (refreshed every FEED_REFRESH_MS while the tab is visible). */
 	feed = $state<OracleMessage | undefined>();
 	feedError = $state('');
 	/** Price of the oracle message before the current one, to show the direction of the last move. */
@@ -231,9 +224,8 @@ class PennyPickerSession {
 			if (!walletDone && this.wallet && now - this.lastWalletRefresh > WALLET_REFRESH_MS) {
 				await this.refreshWallet({ rescan: now - this.lastHdScan > HD_RESCAN_MS });
 			}
-			this.lastChecked = new Date();
 		} catch {
-			/* transient network error: the next tick retries; manual Refresh still reports errors */
+			/* transient network error: the next tick retries */
 		} finally {
 			this.polling = false;
 		}
@@ -266,7 +258,13 @@ class PennyPickerSession {
 			if (outcome === 'timeout' && this.walletStatus === 'checking') {
 				this.walletStatus = 'disconnected';
 				this.walletError = 'Cashonize did not answer. Open Cashonize (on the same network) and it will reconnect, or connect again.';
-				adopted.then(() => (this.walletError = '')).catch(() => undefined);
+				// A late answer still connects: clear the message and load the balances then.
+				adopted
+					.then(() => {
+						this.walletError = '';
+						return this.refreshWallet();
+					})
+					.catch(() => undefined);
 			}
 		} catch (cause) {
 			this.walletStatus = 'disconnected';
@@ -359,8 +357,15 @@ class PennyPickerSession {
 	/** True while an HD wallet's addresses are being scanned. */
 	scanningAddresses = $state(false);
 
-	/** Find every used address of the connected HD wallet (gap-limit scan of each shared path). */
-	private async scanHdAddresses(wallet: WizardConnectWallet) {
+	private scan: Promise<void> | undefined;
+
+	/** Find every used address of the connected HD wallet (gap-limit scan of each shared path). Overlapping calls share one scan. */
+	private scanHdAddresses(wallet: WizardConnectWallet): Promise<void> {
+		this.scan ??= this.runHdScan(wallet).finally(() => (this.scan = undefined));
+		return this.scan;
+	}
+
+	private async runHdScan(wallet: WizardConnectWallet) {
 		const wizard = await import('$lib/wizardconnect/wizardconnect');
 		this.scanningAddresses = true;
 		try {
@@ -473,10 +478,9 @@ class PennyPickerSession {
 			const tracksIdentity = this.network === 'chipnet';
 			if (category && tracksIdentity) {
 				try {
-					head = await getIdentityHead(category, this.wallet.address);
-					this.identityError = '';
-				} catch (cause) {
-					this.identityError = `Could not resolve the token identity output (${errorText(cause)}). All output-0 coins are held back until it resolves.`;
+					head = await getIdentityHead(category, wallet.address);
+				} catch {
+					// Unresolved: every output-0 coin is held back below until the identity output can be found.
 				}
 			}
 			this.pusdIdentity = head;
@@ -492,9 +496,12 @@ class PennyPickerSession {
 
 	async refreshMarket() {
 		this.reloadConfig();
+		// The user can switch markets while this runs: results for another network are dropped.
+		const network = this.network;
 		if (!this.config.oracleCategory && this.config.oracleOperatorPkh) {
 			try {
-				const found = await discoverOracleCategory(this.config.oracleOperatorPkh, this.network);
+				const found = await discoverOracleCategory(this.config.oracleOperatorPkh, network);
+				if (network !== this.network) return;
 				if (found) {
 					this.config = { ...this.config, oracleCategory: found, source: { ...this.config.source, oracleCategory: 'discovered' } };
 				}
@@ -512,15 +519,18 @@ class PennyPickerSession {
 		}
 		this.loadingMarket = true;
 		try {
-			this.oracle = await getOracleState(market);
+			const oracle = await getOracleState(market);
+			if (network !== this.network) return;
+			// Show the price first; the order scan takes a few seconds more.
+			this.oracle = oracle;
 			this.oracleLoaded = true;
-			this.discovery = this.oracle ? await discoverOrders(market) : undefined;
-			this.lastRefreshed = new Date();
+			const discovery = oracle ? await discoverOrders(market) : undefined;
+			if (network !== this.network) return;
+			this.discovery = discovery;
 			this.lastFullMarketRefresh = Date.now();
-			this.lastChecked = new Date();
 			this.marketError = '';
 		} catch (cause) {
-			this.marketError = errorText(cause);
+			if (network === this.network) this.marketError = errorText(cause);
 		} finally {
 			this.loadingMarket = false;
 		}

@@ -13,8 +13,14 @@ the earlier research log.
 ## Final changes before handover (2026-11-19, night)
 
 - **Brand:** new steamroller logo for the favicon, app icons, header and the PPUSD token icon. Light and dark themes
-  use its colours (amber `#FDA60D`, yellow `#FDD045`, charcoal `#1E1B1D`). The Exchange hero reads "Don't pick up
-  pennies in front of the steamroller", with the roller paving the headline (no motion under reduced-motion).
+  use its colours (amber `#FDA60D`, yellow `#FDD045`, charcoal `#1E1B1D`). ParyonUSD shows its official icon
+  (`https://paryonusd.com/logo.svg`, from its on-chain metadata). The Exchange hero reads "Limit orders that move with
+  the price", with a static logo (no animation, no buttons); "How it works" is a button in the demo notice. The BPS
+  diagram appears only when the book has orders, and an empty book shows "No orders yet".
+- **Cleanup:** removed unused modules from earlier designs (`market.ts`, `orderCommitment.ts`, `oracle.ts`,
+  `pusdGenesis.ts`, `bcmrDraft.ts`) and unused session state. Fixed: a market reload finishing after a market switch
+  could show the previous market's data; a late WalletConnect restore never loaded balances; overlapping HD address
+  scans; the market menu did not close on an outside click or Escape.
 - **Design pass:** white page, borders made transparent, layered shadows, buttons shrink on press, visible focus rings,
   eased motion, no all-caps labels or eyebrows, `text-wrap: balance` on titles, tabular numbers, the market menu grows
   from its button, scrollers fade at the edge on phones.
@@ -254,7 +260,7 @@ A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe
 | `/about/oracle` | Live oracles.cash price, on-chain reference, permissionless update, history |
 
 The admin area was removed on 2026-11-19 (open source, no passwords). Its token and metadata tools did their one-time
-jobs; the builders remain in `exchange.ts` and `pusdGenesis.ts` and are covered by the tests.
+jobs; the builders remain in `exchange.ts` and are covered by the tests.
 
 Header: stablecoin selector (PennyPickerUSD on Chipnet, tradable; ParyonUSD `2469acc5…2544` on mainnet, live with a 25 PUSD cap). Bottom-right **Chat** button opens the Telegram community panel (link set in `deployment.ts` → `COMMUNITY.telegramUrl`). Old `/penny-picker/...` links redirect via `static/_redirects`.
 
@@ -339,7 +345,6 @@ The UI has been driven end to end in Chrome by the agent (see the live test tabl
 - **Discovery limits.** It scans the last 300 oracle-history transactions and makes one Electrum call per announced order.
 - **Fees.** Estimated at about 1 sat/byte. Order outputs keep a 1,000-sat reserve, and the minimum trade is 5,000 sats.
 - **Local state.** Transaction history and config live in localStorage per browser unless set via `VITE_PENNYPICKER_*`.
-- **Older helpers.** `orderCommitment.ts` (address helpers) and `market.ts` (shared order math from the original simulator) come from earlier designs.
 - **No security review.** The covenants have not been independently reviewed.
 
 ## External actions required (you)

@@ -17,7 +17,7 @@
 <div class="about-page">
 	<div class="pp-page-head">
 		<div class="title">
-			{#if market.id === 'pennypickerusd'}<img src="/ppusd-256.png" alt="" width="56" height="56" />{/if}
+			<img src={market.icon} alt="" width="56" height="56" />
 			<div>
 				<h1>{market.name} <span class="muted">({market.symbol})</span></h1>
 				<p>{market.summary}</p>

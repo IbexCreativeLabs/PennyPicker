@@ -20,11 +20,12 @@ import {
 	type OpenOrder,
 	type OracleUtxo
 } from './exchange';
-import { PUSD_CATEGORY_STORAGE_KEY } from './pusdGenesis';
 import { DEPLOYMENTS, MAINNET_MAX_ORDER_UNITS, MAINNET_WRITES_ENABLED } from './deployment';
 import { NETWORKS, networkOfAddress, type NetworkId } from './network';
 import { resolveIdentityHead, type IdentityHead } from './identity';
 
+/** Token category saved in this browser by an earlier in-app genesis (kept for old browsers; the deployment wins). */
+export const PUSD_CATEGORY_STORAGE_KEY = 'pennypicker:chipnet:pusd-category';
 export const ORACLE_CATEGORY_STORAGE_KEY = 'pennypicker:chipnet:oracle-category';
 export const ORACLE_OPERATOR_STORAGE_KEY = 'pennypicker:chipnet:oracle-operator-pkh';
 export const TX_HISTORY_STORAGE_KEY = 'pennypicker:chipnet:tx-history';

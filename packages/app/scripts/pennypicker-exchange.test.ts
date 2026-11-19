@@ -38,6 +38,7 @@ import {
 	orderParams,
 	p2pkhLockingBytecode,
 	parseAnnouncement,
+	makerPkhFromAddress,
 	toOpenOrder,
 	type ChainUtxo,
 	type MarketConfig,
@@ -45,7 +46,6 @@ import {
 } from '../src/lib/pennypicker/exchange';
 
 import { describeBroadcastError, describeSignError } from '../src/lib/pennypicker/ui/txErrors';
-import { makerPkhFromAddress } from '../src/lib/pennypicker/orderCommitment';
 import { networkOfAddress } from '../src/lib/pennypicker/network';
 import { assertBroadcastAllowed, loadMarketConfig } from '../src/lib/pennypicker/chain';
 import { MAINNET_MAX_ORDER_UNITS, MAINNET_WRITES_ENABLED, MARKETS, PARYONUSD_CATEGORY } from '../src/lib/pennypicker/deployment';

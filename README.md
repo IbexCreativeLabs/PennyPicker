@@ -2,8 +2,6 @@
 
 # PennyPicker
 
-*Don't pick up pennies in front of the steamroller.*
-
 **Oracle Delta Basis Points Denominated Orderbook DEX for Stablecoins**, on Bitcoin Cash.
 
 Live demo: **https://pennypicker.pages.dev** (Chipnet with free test coins, plus a live ParyonUSD market on BCH mainnet)

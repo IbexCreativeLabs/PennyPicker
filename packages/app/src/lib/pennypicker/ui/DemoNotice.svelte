@@ -39,7 +39,10 @@
 				<li><strong>Unaudited code.</strong> The contracts have had an internal security review only, no independent audit.</li>
 			</ul>
 			<p class="small muted">Questions or problems? Use the <strong>Chat</strong> button at the bottom right of every page.</p>
-			<button class="pp-btn pp-btn-primary pp-btn-block" type="button" onclick={accept}>I understand. Open the demo</button>
+			<div class="actions">
+				<button class="pp-btn pp-btn-primary" type="button" onclick={accept}>I understand. Open the demo</button>
+				<a class="pp-btn" href="/about" onclick={accept}>How it works</a>
+			</div>
 		</div>
 	</div>
 {/if}
@@ -48,6 +51,8 @@
 	.backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(20, 18, 16, 0.55); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) 16px; overflow-y: auto; }
 	.dialog { max-width: 34rem; width: 100%; box-shadow: var(--pp-shadow-lg); transform-origin: top center; animation: pop 0.28s var(--pp-ease); }
 	.logo { display: block; margin-bottom: 0.5rem; }
+	.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+	.actions > * { flex: 1 1 12rem; }
 	@keyframes pop { from { opacity: 0; transform: scale(0.96) translateY(6px); } }
 	@media (prefers-reduced-motion: reduce) { .dialog { animation: none; } }
 	ul { padding-left: 1.1rem; margin: 0.75rem 0; }

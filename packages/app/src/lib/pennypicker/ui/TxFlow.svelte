@@ -2,10 +2,9 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { binToHex, hashTransaction, hexToBin, stringify } from '@bitauth/libauth';
 	import { requestCashonizeTransactionSignature } from '$lib/cashonize/walletconnect';
-	import { lockingBytecodeToAddress, verifySignedMatchesUnsigned, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
+	import { formatSats, lockingBytecodeToAddress, verifySignedMatchesUnsigned, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 	import { assertBroadcastAllowed, broadcastSignedTransaction, transactionHeight } from '$lib/pennypicker/chain';
 	import { NETWORKS } from '$lib/pennypicker/network';
-	import { formatBchFromSatoshis } from '$lib/pennypicker/market';
 	import { explorerTx, pp } from './session.svelte';
 	import { describeBroadcastError, describeSignError } from './txErrors';
 	import type { ConnectedWallet } from './wallet';
@@ -92,7 +91,6 @@
 		{ key: ['broadcast'], label: 'Broadcast' },
 		{ key: ['confirmed'], label: 'Confirmed' }
 	];
-	const order: Stage[] = ['preview', 'signing', 'signed', 'broadcasting', 'broadcast', 'confirmed'];
 	const stepIndex = $derived(steps.findIndex((s) => s.key.includes(stage)));
 
 	let slow = $state(false);
@@ -188,7 +186,6 @@
 	});
 	const fmtToken = (token: { amount: bigint; nft?: { capability: string } } | undefined) =>
 		token ? `${token.amount > 0n ? `${token.amount.toString()} units` : ''}${token.nft ? ` ${token.nft.capability} NFT` : ''}` : '';
-	void order;
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -198,14 +195,14 @@
 	<div class="pp-card-head">
 		<h2 id="txflow-title">{title ?? kindLabel[unsigned.kind]}</h2>
 		<ol class="steps">
-			{#each steps as step, i}
+			{#each steps as step, i (step.label)}
 				<li class:done={i < stepIndex || stage === 'confirmed'} class:current={i === stepIndex && stage !== 'confirmed'}>{step.label}</li>
 			{/each}
 		</ol>
 	</div>
 
 	<ul class="summary">
-		{#each unsigned.summary as line}<li>{line}</li>{/each}
+		{#each unsigned.summary as line, i (i)}<li>{line}</li>{/each}
 	</ul>
 
 	{#if net.realFunds}
@@ -220,16 +217,16 @@
 			<table class="pp-table">
 				<thead><tr><th>#</th><th>Input (spends)</th><th>Unlock</th><th class="r">BCH</th><th>Token</th></tr></thead>
 				<tbody>
-					{#each inputs as input}
-						<tr><td>{input.index}</td><td class="mono">{input.outpoint}</td><td>{input.contract}</td><td class="r">{formatBchFromSatoshis(input.sats)}</td><td class="small">{fmtToken(input.token)}</td></tr>
+					{#each inputs as input (input.index)}
+						<tr><td>{input.index}</td><td class="mono">{input.outpoint}</td><td>{input.contract}</td><td class="r">{formatSats(input.sats)}</td><td class="small">{fmtToken(input.token)}</td></tr>
 					{/each}
 				</tbody>
 			</table>
 			<table class="pp-table">
 				<thead><tr><th>#</th><th>Output (to)</th><th class="r">BCH</th><th>Token</th></tr></thead>
 				<tbody>
-					{#each rows as row}
-						<tr><td>{row.index}</td><td class="mono">{row.to}{row.mine ? ' (you)' : ''}</td><td class="r">{formatBchFromSatoshis(row.sats)}</td><td class="small">{fmtToken(row.token)}</td></tr>
+					{#each rows as row (row.index)}
+						<tr><td>{row.index}</td><td class="mono">{row.to}{row.mine ? ' (you)' : ''}</td><td class="r">{formatSats(row.sats)}</td><td class="small">{fmtToken(row.token)}</td></tr>
 					{/each}
 				</tbody>
 			</table>

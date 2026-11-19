@@ -324,20 +324,14 @@
 	{:else}
 	<section class="hero">
 		<div class="hero-copy">
-			<h1 class="slogan"><span class="paved">Don’t pick up pennies in front of the steamroller</span></h1>
+			<h1>Limit orders that move with the price</h1>
 			<p class="hero-sub">
-				A fixed-price limit order gets flattened the moment BCH moves. On PennyPicker you set your price in
-				<strong>basis points</strong> from the live BCH/USD oracle, so every order rolls along with the market.
+				Set your price in <strong>basis points</strong> from the live BCH/USD oracle instead of a fixed dollar amount.
+				When BCH moves, every order moves with it, so nobody gets filled at a stale price.
 			</p>
-			<p class="hero-eg num">+25 BPS = 0.25% above the oracle price{#if price}{' · '}{formatPrice(limitPrice(price, 25))} {sym}/BCH right now{/if}</p>
-			<div class="hero-cta">
-				<a class="pp-btn pp-btn-primary" href="#trade">Place an order</a>
-				<a class="pp-btn" href="/about">How it works</a>
-			</div>
+			<p class="hero-eg num">+25 BPS = 0.25% above the oracle price{#if price}<span class="eg-now">· {formatPrice(limitPrice(price, 25))} {sym}/BCH right now</span>{/if}</p>
 		</div>
-		<div class="hero-art" aria-hidden="true">
-			<img src="/steamroller-880.webp" alt="" width="440" height="440" fetchpriority="high" />
-		</div>
+		<img class="hero-art" src="/steamroller-880.webp" alt="" width="220" height="220" aria-hidden="true" />
 	</section>
 
 	{#if pp.networkInfo.realFunds}
@@ -376,7 +370,7 @@
 	<section class="pp-card market">
 		<div class="m-row">
 			<div class="pair">
-				<img class="coin" src={pp.selectedMarket.id === 'pennypickerusd' ? '/ppusd-256.png' : '/pennypicker-128.png'} alt="" width="40" height="40" />
+				<img class="coin" src={pp.selectedMarket.icon} alt="" width="40" height="40" />
 				<div>
 					<h2 class="pair-h">BCH <span class="faint">/</span> {sym}</h2>
 					<span class="small muted">{pp.selectedMarket.name} · {pp.networkInfo.label}</span>
@@ -404,18 +398,25 @@
 					<div class="num"><span class="skel" style="width: 7rem"></span></div>
 					<div class="small muted">Loading the book…</div>
 				{:else}
-					<div class="num m-best">
-						<span class="bid-c">{bestBid && price ? formatPrice(limitPrice(price, bestBid.deltaBps)) : '—'}</span>
-						<span class="faint">/</span>
-						<span class="ask-c">{bestAsk && price ? formatPrice(limitPrice(price, bestAsk.deltaBps)) : '—'}</span>
-					</div>
-					<div class="small muted">{bestBid ? signed(bestBid.deltaBps) : '—'} / {bestAsk ? signed(bestAsk.deltaBps) : '—'} BPS</div>
+					{#if bestBid || bestAsk}
+						<div class="num m-best">
+							<span class="bid-c">{bestBid && price ? formatPrice(limitPrice(price, bestBid.deltaBps)) : '—'}</span>
+							<span class="faint">/</span>
+							<span class="ask-c">{bestAsk && price ? formatPrice(limitPrice(price, bestAsk.deltaBps)) : '—'}</span>
+						</div>
+						<div class="small muted">{bestBid ? signed(bestBid.deltaBps) : '—'} / {bestAsk ? signed(bestAsk.deltaBps) : '—'} BPS</div>
+					{:else}
+						<div class="m-best muted">No orders yet</div>
+						<div class="small muted">Place the first one below</div>
+					{/if}
 				{/if}
 			</div>
 		</div>
-		<div class="m-viz">
-			<BpsScale {price} orders={scaleOrders} {draft} loading={!price} />
-		</div>
+		{#if scaleOrders.length}
+			<div class="m-viz">
+				<BpsScale {price} orders={scaleOrders} {draft} loading={!price} />
+			</div>
+		{/if}
 	</section>
 
 	{#if !pp.market}
@@ -519,7 +520,7 @@
 						<div class="pp-input-group"><input class="pp-input" inputmode="numeric" bind:value={bpsInput} /><span class="pp-addon">BPS</span></div>
 					</label>
 					<div class="chips">
-						{#each quickBps as q}<button type="button" class="pp-btn pp-btn-sm" class:sel={String(q) === bpsInput.trim()} onclick={() => (bpsInput = String(q))}>{signed(q)}</button>{/each}
+						{#each quickBps as q (q)}<button type="button" class="pp-btn pp-btn-sm" class:sel={String(q) === bpsInput.trim()} onclick={() => (bpsInput = String(q))}>{signed(q)}</button>{/each}
 					</div>
 					<label class="pp-field">
 						<span>{side === 'ask' ? 'Amount of BCH to sell' : `${sym} to spend`}</span>
@@ -639,30 +640,13 @@
 </main>
 
 <style>
-	/* Hero: the steamroller paves the slogan (left to right) on wide screens. */
-	.hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); gap: 1rem 2.5rem; align-items: center; margin: 0.75rem 0 2rem; }
-	.slogan { font-size: clamp(2rem, 4.6vw, 3.4rem); line-height: 1.06; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 0.9rem; max-width: 15ch; }
-	.paved { display: inline; background: linear-gradient(transparent 62%, color-mix(in srgb, var(--pp-brand) 55%, transparent) 62%, color-mix(in srgb, var(--pp-brand) 55%, transparent) 92%, transparent 92%); background-repeat: no-repeat; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-	.hero-sub { color: var(--pp-muted); font-size: 1.08rem; line-height: 1.6; margin: 0 0 0.6rem; max-width: 34rem; }
-	.hero-eg { font-size: 0.92rem; color: var(--pp-text); margin: 0 0 1.1rem; }
-	.hero-cta { display: flex; flex-wrap: wrap; gap: 0.6rem; }
-	.hero-art { position: relative; justify-self: center; width: min(100%, 25rem); }
-	.hero-art img { display: block; width: 100%; height: auto; filter: drop-shadow(0 18px 30px rgba(30, 27, 29, 0.18)); }
-	.hero-art::after { content: ''; position: absolute; left: 12%; right: 12%; bottom: -0.4rem; height: 1.1rem; border-radius: 50%; background: radial-gradient(closest-side, rgba(30, 27, 29, 0.18), transparent); z-index: -1; }
-	@media (prefers-reduced-motion: no-preference) {
-		.hero-art img { animation: roll-in 1.5s var(--pp-ease) both, rumble 0.22s 1.5s ease-in-out 3; }
-		.slogan .paved { animation: pave 1.5s var(--pp-ease) both; }
-		.hero-sub, .hero-eg, .hero-cta { animation: rise 0.6s 0.9s var(--pp-ease) both; }
-	}
-	@keyframes roll-in { from { transform: translateX(-140%); } }
-	@keyframes rumble { 50% { transform: translateY(-2px) rotate(-0.6deg); } }
-	@keyframes pave { from { clip-path: inset(-0.2em 100% -0.2em 0); } to { clip-path: inset(-0.2em 0 -0.2em 0); } }
-	@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
-	@media (max-width: 760px) {
-		.hero { grid-template-columns: minmax(0, 1fr); margin-top: 0.25rem; }
-		.hero-art { grid-row: 1; width: min(62%, 15rem); justify-self: start; }
-		@keyframes roll-in { from { transform: translateX(-60%); opacity: 0; } }
-	}
+	.hero { display: flex; align-items: center; justify-content: space-between; gap: 1rem 2.5rem; margin: 0.5rem 0 1.75rem; }
+	.hero h1 { font-size: clamp(1.9rem, 4.2vw, 3rem); line-height: 1.08; font-weight: 800; letter-spacing: -0.015em; margin: 0 0 0.8rem; max-width: 18ch; }
+	.hero-sub { color: var(--pp-muted); font-size: 1.08rem; line-height: 1.6; margin: 0 0 0.6rem; max-width: 36rem; }
+	.hero-eg { font-size: 0.92rem; margin: 0; }
+	.eg-now { margin-left: 0.3em; }
+	.hero-art { flex: none; width: clamp(7rem, 18vw, 13.5rem); height: auto; }
+	@media (max-width: 640px) { .hero-art { display: none; } }
 
 	.skel { display: inline-block; height: 0.9em; min-width: 2rem; border-radius: 6px; background: linear-gradient(90deg, var(--pp-surface-2), var(--pp-border-strong), var(--pp-surface-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; vertical-align: middle; }
 	.skel-row td { padding: 0.55rem 0.5rem; }

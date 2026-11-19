@@ -1,7 +1,7 @@
 <script lang="ts">
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
 	import LiveExample from '$lib/pennypicker/ui/LiveExample.svelte';
-	import { pp, explorerTx, formatAge, STALE_AFTER_SECONDS } from '$lib/pennypicker/ui/session.svelte';
+	import { pp, explorerTx, formatAge } from '$lib/pennypicker/ui/session.svelte';
 	import { errorText } from '$lib/pennypicker/ui/wallet';
 	import { formatPrice, GP_BCH_USD_ORACLE, oracleStateFromMessage } from '$lib/pennypicker/contracts';
 	import { buildOracleGenesis, buildOracleRefresh, formatSats, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
