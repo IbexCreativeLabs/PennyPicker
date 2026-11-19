@@ -8,6 +8,33 @@ PennyPicker is an experimental BCH/PUSD orderbook DEX on **BCH Chipnet**. Orders
 relative to an on-chain reference price. PUSD is a fixed-supply test token (1,000,000 PUSD, 2 decimals) with no USD
 backing and no peg. `PENNYPICKER_PROGRESS.md` is the earlier research log.
 
+## Community feedback pass (2026-11-19)
+
+Feedback from first-time visitors of the public site, evaluated against the code. Commits `6185b0b` and `9a548cf`.
+
+| # | Feedback | Decision | What changed |
+| --- | --- | --- | --- |
+| 1 | The BPS idea should be obvious at once | **Done** | Exchange hero: "Trade BCH against the live oracle price", one sentence on BPS (100 BPS = 1%), and a live diagram (`BpsScale.svelte`) placing the real bids, asks and the order being drafted around the oracle price, with prices on the axis |
+| 2 | The first ~15 s look broken | **Done, root cause fixed** | Startup waited for the WalletConnect session restore, which asks Cashonize for its address, before loading any market data. The price and book now load straight away, with the wallet in parallel; in a test where WalletConnect stalls, the book appeared in ~3 s instead of never. Skeleton rows and "Loading…" texts replace "—", "No asks" and "No reference price yet" until data has arrived |
+| 3 | Explain the floating order book | **Done** | Heading "Floating order book" and one line: orders are priced relative to the live reference price, so their absolute price moves with the oracle |
+| 4 | Review modal not noticeable | **Done** | The review was an inline panel above the book, off-screen after clicking the button. `TxFlow` is now a centered modal with a backdrop, page scroll lock and focus; Esc closes it except while signing or broadcasting. The transaction logic is unchanged |
+| 5 | Wallet balance top right | **Done** | The header pill shows the connected wallet's real BCH and PUSD balances and the address (balances only after the wallet query returns; the address is hidden on phones) |
+| 6 | Auto-refresh best bid/ask | **Done** | A read-only poll every 5 s makes one Electrum request (oracle-address history). Every announcement, fill and price update touches that address, so the book reloads only when it changed, plus every 60 s for cancels. Wallet balances refresh every 30 s. No overlap, hidden tabs skipped, paused while a transaction dialog is open, form input untouched. Raw transactions are cached. A label shows "Auto-updating · Ns ago" |
+| 7 | WizardConnect | **Deferred (documented)** | See below |
+| 8 | Link to Staking Arena | **Done** | A companion-project card on About → Overview, and a footer link |
+| 9 | Keep onboarding, oracle text, BPS concept | **Kept** | Not rewritten |
+
+**WizardConnect, evaluated:** it is real. It is a dapp-to-wallet protocol over an end-to-end encrypted Nostr relay
+(`@wizardconnect/dapp`), supported by Cashonize since 0.9.0 and used by ParyonUSD. It is designed for **HD wallets**: the
+wallet shares xpubs, the dapp derives many addresses, and every signing request must carry HD path metadata for each
+input. PennyPicker is built around a single address: balance and UTXO queries, the maker key hash in each order, and the
+input selection all assume one address. Supporting it means multi-address discovery (gap-limit scanning), change paths
+and per-input path metadata across the order, fill and cancel builders. That is a substantial rewrite of the
+wallet layer three days before the deadline, with a real risk to the working flow. It also reaches no new wallet:
+Cashonize, the wallet it targets, already works through WalletConnect, and Cashonize's own settings note that
+single-address wallets (such as the test wallets) cannot use WizardConnect. **Recommended after the hackathon**, as a
+second connector next to WalletConnect.
+
 ## Live market on Chipnet (2026-11-17)
 
 All three wallets are Cashonize single-address **Chipnet development wallets** in the VM's Chrome (seed phrases stay in Cashonize; never exported).
