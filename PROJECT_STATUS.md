@@ -20,20 +20,36 @@ Feedback from first-time visitors of the public site, evaluated against the code
 | 4 | Review modal not noticeable | **Done** | The review was an inline panel above the book, off-screen after clicking the button. `TxFlow` is now a centered modal with a backdrop, page scroll lock and focus; Esc closes it except while signing or broadcasting. The transaction logic is unchanged |
 | 5 | Wallet balance top right | **Done** | The header pill shows the connected wallet's real BCH and PUSD balances and the address (balances only after the wallet query returns; the address is hidden on phones) |
 | 6 | Auto-refresh best bid/ask | **Done** | A read-only poll every 5 s makes one Electrum request (oracle-address history). Every announcement, fill and price update touches that address, so the book reloads only when it changed, plus every 60 s for cancels. Wallet balances refresh every 30 s. No overlap, hidden tabs skipped, paused while a transaction dialog is open, form input untouched. Raw transactions are cached. A label shows "Auto-updating · Ns ago" |
-| 7 | WizardConnect | **Deferred (documented)** | See below |
+| 7 | WizardConnect | **Done (phase 1, 2026-11-19)** | See below |
 | 8 | Link to Staking Arena | **Done** | A companion-project card on About → Overview, and a footer link |
 | 9 | Keep onboarding, oracle text, BPS concept | **Kept** | Not rewritten |
 
-**WizardConnect, evaluated:** it is real. It is a dapp-to-wallet protocol over an end-to-end encrypted Nostr relay
-(`@wizardconnect/dapp`), supported by Cashonize since 0.9.0 and used by ParyonUSD. It is designed for **HD wallets**: the
-wallet shares xpubs, the dapp derives many addresses, and every signing request must carry HD path metadata for each
-input. PennyPicker is built around a single address: balance and UTXO queries, the maker key hash in each order, and the
-input selection all assume one address. Supporting it means multi-address discovery (gap-limit scanning), change paths
-and per-input path metadata across the order, fill and cancel builders. That is a substantial rewrite of the
-wallet layer three days before the deadline, with a real risk to the working flow. It also reaches no new wallet:
-Cashonize, the wallet it targets, already works through WalletConnect, and Cashonize's own settings note that
-single-address wallets (such as the test wallets) cannot use WizardConnect. **Recommended after the hackathon**, as a
-second connector next to WalletConnect.
+**WizardConnect, phase 1 (2026-11-19, owner-approved):** a second connect button on the Wallet page, next to
+WalletConnect, for HD wallets (Cashonize 0.9+ HD wallets).
+- **How:** `src/lib/wizardconnect/wizardconnect.ts` pairs over the WizardConnect Nostr relay (`wiz://` QR code or
+  "Open in Cashonize web"), derives the trading address **receive/0** from the shared xpub, and signs with
+  `inputPaths = [inputIndex, "receive", 0]` for every input that spends that address. The transaction builders are
+  unchanged: every wallet input PennyPicker builds spends the one trading address, and cancels are authorised by a
+  plain wallet input, so no contract input needs a wallet signature.
+- **Safe for what worked:** the module is loaded on demand (its own ~100 KB chunk, never fetched unless used). The
+  WalletConnect code path is unchanged apart from a type tag; `verifySignedMatchesUnsigned` checks WizardConnect
+  signatures exactly like WalletConnect ones. The library session is stored per network.
+- **Phase-1 limit:** only coins on receive/0 are used; the Wallet page says so. Phase 2 (multi-address coins) is post-hackathon.
+- **Session handling:** restore from the stored session at once (address from stored xpubs); an explicit wallet
+  disconnect ends the session in the app; a sign request the wallet never answers is cancelled after 3 minutes.
+  Cashonize ends WizardConnect sessions when you switch wallets in it, so pair again after switching.
+- **Tested on Chipnet** with a new Cashonize HD test wallet ("PP Wizard HD", funded with 0.0012 tBCH from PP Trader A,
+  `a172bc15…8154f6`): pairing, address derivation (matches Cashonize's own receive/0), session restore after reload,
+  an ask signed over WizardConnect and broadcast (`18c706e65205b2a5d44630acf9f731c38c6b2d1868245b68f668b514b8384f6f`),
+  and its cancel (`8d8204f9a059aeae7dde033fae42d44dbe7eeb348d3c2f590297e0097761dd25`). Regression: the same wallet over
+  WalletConnect still signs and verifies (signed, then discarded). Mainnet WizardConnect is code-ready but untested.
+- **Unit tests:** `scripts/pennypicker-wizardconnect.test.ts` (14 checks, in CI): receive/0 derivation cross-checked
+  with libauth, input paths only for trading-address inputs, relay JSON format.
+- **Library:** `@wizardconnect/core` 0.2.10 and `@wizardconnect/dapp` 0.2.6 (pinned, Nov 12 releases) by Whiterun LLC
+  (Riften Labs), LGPL-3.0-or-later per the source headers (npm shows no license field). Credited in the README,
+  `SUBMISSION.md` and About → Safety & status.
+- **Also fixed:** a WalletConnect session restore that Cashonize never answers no longer leaves the Wallet page stuck
+  on "checking" with disabled buttons; after 20 s the buttons return with an explanation.
 
 ## Live market on Chipnet (2026-11-17)
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { binToHex, stringify } from '@bitauth/libauth';
+	import { binToHex, hashTransaction, hexToBin, stringify } from '@bitauth/libauth';
 	import { requestCashonizeTransactionSignature } from '$lib/cashonize/walletconnect';
 	import { lockingBytecodeToAddress, verifySignedMatchesUnsigned, type UnsignedExchangeTransaction } from '$lib/pennypicker/exchange';
 	import { assertBroadcastAllowed, broadcastSignedTransaction, transactionHeight } from '$lib/pennypicker/chain';
@@ -23,6 +23,7 @@
 	/** The broadcast lost a race for a shared input: the transaction must be rebuilt, not retried. */
 	let conflict = $state(false);
 	const net = $derived(NETWORKS[wallet.network]);
+	const walletLabel = $derived(wallet.kind === 'wizardconnect' ? wallet.signer.walletName : 'Cashonize');
 
 	type Stage = 'preview' | 'signing' | 'signed' | 'broadcasting' | 'broadcast' | 'confirmed';
 	let stage = $state<Stage>('preview');
@@ -104,14 +105,22 @@
 		try {
 			// Do not even ask the wallet to sign what this build may not broadcast.
 			assertBroadcastAllowed(wallet.network);
-			const result = await requestCashonizeTransactionSignature(
-				wallet.client,
-				wallet.session,
-				unsigned.unsignedHex,
-				JSON.parse(stringify(unsigned.sourceOutputs)),
-				`PennyPicker: ${unsigned.summary[0] ?? unsigned.kind}`,
-				net.walletConnectChain
-			);
+			const prompt = `PennyPicker: ${unsigned.summary[0] ?? unsigned.kind}`;
+			let result: { signedTransaction: string; signedTransactionHash: string };
+			if (wallet.kind === 'wizardconnect') {
+				// WizardConnect returns only the signed bytes; the content checks below still compare every input and output.
+				const signedTransaction = await wallet.signer.sign(unsigned.unsignedHex, unsigned.sourceOutputs, prompt);
+				result = { signedTransaction, signedTransactionHash: hashTransaction(hexToBin(signedTransaction)) };
+			} else {
+				result = await requestCashonizeTransactionSignature(
+					wallet.client,
+					wallet.session,
+					unsigned.unsignedHex,
+					JSON.parse(stringify(unsigned.sourceOutputs)),
+					prompt,
+					net.walletConnectChain
+				);
+			}
 			txid = verifySignedMatchesUnsigned(unsigned, result.signedTransaction, result.signedTransactionHash);
 			signedHex = result.signedTransaction;
 			stage = 'signed';
@@ -231,14 +240,14 @@
 
 	<div class="actions">
 		{#if stage === 'preview' || stage === 'signing'}
-			<p class="small muted">Cashonize will ask you to approve. It signs only; nothing is broadcast until you press Broadcast.</p>
+			<p class="small muted">{walletLabel} will ask you to approve. It signs only; nothing is broadcast until you press Broadcast.</p>
 			<div class="pp-row">
 				<button type="button" class="pp-btn pp-btn-primary" onclick={sign} disabled={stage === 'signing'}>
-					{stage === 'signing' ? 'Waiting for approval in Cashonize…' : 'Sign in Cashonize'}
+					{stage === 'signing' ? `Waiting for approval in ${walletLabel}…` : `Sign in ${walletLabel}`}
 				</button>
 				<button type="button" class="pp-btn pp-btn-ghost" onclick={onDismiss} disabled={stage === 'signing'}>Discard</button>
 			</div>
-			{#if slow}<p class="pp-callout warn small" style="margin-top: 0.6rem">Still waiting. Open Cashonize on the device you paired, make sure it is on {net.label}, and look for the signing request. If the session ended, reconnect on the Wallet page.</p>{/if}
+			{#if slow}<p class="pp-callout warn small" style="margin-top: 0.6rem">Still waiting. Open {walletLabel} on the device you paired, make sure it is on {net.label}, and look for the signing request. If the session ended, reconnect on the Wallet page.</p>{/if}
 		{:else if stage === 'signed' || stage === 'broadcasting'}
 			<p class="pp-callout ok small">Signed and checked: the signed transaction spends and creates exactly what was previewed. <strong>Not broadcast yet.</strong></p>
 			<p class="small mono">{txid}</p>

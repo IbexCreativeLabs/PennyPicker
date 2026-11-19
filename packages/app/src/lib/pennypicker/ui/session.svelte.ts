@@ -34,7 +34,7 @@ import type { ChainUtxo, MarketConfig, OracleUtxo, UnsignedExchangeTransaction }
 import { makerPkhFromAddress } from '$lib/pennypicker/orderCommitment';
 import { NETWORKS, type NetworkId } from '$lib/pennypicker/network';
 import { markIdentityOutputs, type IdentityHead } from '$lib/pennypicker/identity';
-import { balancesOf, errorText, type ConnectedWallet } from './wallet';
+import { balancesOf, errorText, type ConnectedWallet, type WalletConnectWallet } from './wallet';
 
 export const STALE_AFTER_SECONDS = 15 * 60;
 
@@ -43,6 +43,8 @@ const POLL_INTERVAL_MS = 5_000;
 /** Full book reload even without activity, to pick up cancels (which do not touch the oracle address). */
 const FULL_REFRESH_MS = 60_000;
 const WALLET_REFRESH_MS = 30_000;
+/** How long a WalletConnect session restore may wait for Cashonize before the connect buttons are re-enabled. */
+const RESTORE_TIMEOUT_MS = 20_000;
 
 class PennyPickerSession {
 	wallet = $state<ConnectedWallet | undefined>();
@@ -211,32 +213,43 @@ class PennyPickerSession {
 			const client = await createCashonizeClient();
 			const session = getApprovedSession(client, this.networkInfo.walletConnectChain);
 			if (!session) {
-				this.walletStatus = 'disconnected';
+				// No WalletConnect session: restore a stored WizardConnect session, if any (loaded on demand).
+				if (!(await this.restoreWizard())) this.walletStatus = 'disconnected';
 				return;
 			}
-			await this.adopt(client, session);
+			// Restoring asks Cashonize for its address. If the wallet does not answer (app asleep, tab closed), do not
+			// leave the page stuck on "checking": re-enable the connect buttons after a while. A late answer still connects.
+			const adopted = this.adopt(client, session).then(() => 'ok' as const);
+			const outcome = await Promise.race([adopted, new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), RESTORE_TIMEOUT_MS))]);
+			if (outcome === 'timeout' && this.walletStatus === 'checking') {
+				this.walletStatus = 'disconnected';
+				this.walletError = 'Cashonize did not answer. Open Cashonize (on the same network) and it will reconnect, or connect again.';
+				adopted.then(() => (this.walletError = '')).catch(() => undefined);
+			}
 		} catch (cause) {
 			this.walletStatus = 'disconnected';
 			this.walletError = describeWalletConnectError(cause);
 		}
 	}
 
-	private async adopt(client: ConnectedWallet['client'], session: ConnectedWallet['session']) {
+	private async adopt(client: WalletConnectWallet['client'], session: WalletConnectWallet['session']) {
 		const network = this.network;
 		const [address] = await requestAddresses(client, session, NETWORKS[network].walletConnectChain);
 		if (!address) throw new Error(`Cashonize returned no ${NETWORKS[network].label} address.`);
 		// The user may have switched markets while Cashonize was answering.
 		if (network !== this.network) return;
-		this.wallet = { client, session, address, pkh: makerPkhFromAddress(address, network), network };
+		if (this.wallet?.kind === 'wizardconnect') this.wallet.signer.suspend();
+		this.wallet = { kind: 'walletconnect', client, session, address, pkh: makerPkhFromAddress(address, network), network };
 		this.walletStatus = 'connected';
 		const clear = ({ topic }: { topic: string }) => {
-			if (this.wallet?.session.topic === topic) this.forgetWallet();
+			if (this.wallet?.kind !== 'wizardconnect' && this.wallet?.session.topic === topic) this.forgetWallet();
 		};
 		client.on('session_delete', clear);
 		client.on('session_expire', clear);
 	}
 
 	private forgetWallet() {
+		if (this.wallet?.kind === 'wizardconnect') this.wallet.signer.suspend();
 		this.wallet = undefined;
 		this.walletStatus = 'disconnected';
 		this.utxos = [];
@@ -269,10 +282,79 @@ class PennyPickerSession {
 		}
 	}
 
+	/** WizardConnect pairing URI (wiz://…) while a pairing is in progress. */
+	wizardUri = $state('');
+	private wizardCancel: (() => void) | undefined;
+
+	/** Restore a stored WizardConnect session for this network. Returns true if one was adopted. */
+	private async restoreWizard(): Promise<boolean> {
+		const network = this.network;
+		const wizard = await import('$lib/wizardconnect/wizardconnect');
+		if (!wizard.hasStoredWizardSession(network)) return false;
+		const signer = wizard.restoreWizardConnect(network, (reason) => this.wizardEnded(reason));
+		if (!signer || network !== this.network) return false;
+		this.wallet = { kind: 'wizardconnect', signer, address: signer.address, pkh: signer.pkh, network };
+		this.walletStatus = 'connected';
+		return true;
+	}
+
+	/** Pair an HD wallet over WizardConnect (the wallet scans the wiz:// QR code). */
+	async connectWizard() {
+		if (this.walletStatus === 'connecting') return;
+		this.walletStatus = 'connecting';
+		this.walletError = '';
+		const network = this.network;
+		try {
+			const wizard = await import('$lib/wizardconnect/wizardconnect');
+			const pairing = wizard.pairWizardConnect(network, (reason) => this.wizardEnded(reason));
+			this.wizardCancel = pairing.cancel;
+			this.wizardUri = pairing.uri;
+			const signer = await pairing.ready;
+			this.wizardUri = '';
+			this.wizardCancel = undefined;
+			if (network !== this.network) {
+				signer.suspend();
+				throw new Error('The market changed while pairing; pair again on this network.');
+			}
+			this.wallet = { kind: 'wizardconnect', signer, address: signer.address, pkh: signer.pkh, network };
+			this.walletStatus = 'connected';
+			await this.refreshWallet();
+		} catch (cause) {
+			this.wizardUri = '';
+			this.walletStatus = this.wallet ? 'connected' : 'disconnected';
+			this.walletError = errorText(cause);
+		}
+	}
+
+	/** The wallet ended or abandoned the WizardConnect session: drop it (the stored session is cleared too). */
+	private wizardEnded(reason: string) {
+		if (this.wallet?.kind !== 'wizardconnect') return;
+		const signer = this.wallet.signer;
+		this.wallet = undefined;
+		this.walletStatus = 'disconnected';
+		this.utxos = [];
+		this.utxosLoaded = false;
+		this.walletError = reason;
+		void signer.disconnect().catch(() => undefined);
+	}
+
+	cancelWizardPairing() {
+		this.wizardCancel?.();
+		this.wizardCancel = undefined;
+		this.wizardUri = '';
+		if (this.walletStatus === 'connecting') this.walletStatus = this.wallet ? 'connected' : 'disconnected';
+	}
+
 	async disconnect() {
 		if (!this.wallet) return;
 		try {
-			await disconnectCashonizeSession(this.wallet.client, this.wallet.session);
+			if (this.wallet.kind === 'wizardconnect') {
+				const signer = this.wallet.signer;
+				this.wallet = undefined;
+				await signer.disconnect();
+			} else {
+				await disconnectCashonizeSession(this.wallet.client, this.wallet.session);
+			}
 		} catch (cause) {
 			this.walletError = describeWalletConnectError(cause);
 		}

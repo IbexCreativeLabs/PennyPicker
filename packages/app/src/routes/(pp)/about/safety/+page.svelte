@@ -54,7 +54,9 @@
 		</p>
 		<p class="muted small" style="margin-bottom: 0">
 			Forked from <a href={COMMUNITY.forkedFromUrl} target="_blank" rel="noopener">Vox</a> by 2qx. Built with CashScript, Libauth and
-			Cashonize, priced by the General Protocols oracle behind oracles.cash.
+			Cashonize, priced by the General Protocols oracle behind oracles.cash. WizardConnect support uses the
+			<a href="https://gitlab.com/riftenlabs/lib/wizardconnect" target="_blank" rel="noopener">WizardConnect libraries</a> by
+			Whiterun LLC (Riften Labs), LGPL-3.0-or-later.
 		</p>
 	</div>
 </section>

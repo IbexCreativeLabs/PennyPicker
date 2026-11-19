@@ -51,8 +51,9 @@ signed in Cashonize and broadcast only when you press Broadcast.
   signed message with `OP_CHECKDATASIG` and only accepts newer messages, so anyone can update it and old prices can
   never be replayed against resting orders. Orders and fills carry the newest message and update the price in the
   same transaction.
-- **Wallet.** [Cashonize](https://cashonize.com) over WalletConnect. Every transaction is previewed, signed in the
-  wallet, checked against the preview and only then broadcast.
+- **Wallet.** [Cashonize](https://cashonize.com) over WalletConnect, or any HD wallet over
+  [WizardConnect](https://wizardconnect-456f57.gitlab.io) (trading from the wallet's first receive address). Every
+  transaction is previewed, signed in the wallet, checked against the preview and only then broadcast.
 
 Contracts: [`packages/app/src/lib/pennypicker/contracts`](packages/app/src/lib/pennypicker/contracts) ·
 Transaction builders: [`exchange.ts`](packages/app/src/lib/pennypicker/exchange.ts) ·

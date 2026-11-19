@@ -2,14 +2,25 @@ import type { CashonizeClient, CashonizeSession } from '$lib/cashonize/walletcon
 import { getAddressUtxos } from '$lib/pennypicker/chain';
 import type { ChainUtxo } from '$lib/pennypicker/exchange';
 import type { NetworkId } from '$lib/pennypicker/network';
+import type { WizardSigner } from '$lib/wizardconnect/wizardconnect';
 
-export interface ConnectedWallet {
-	client: CashonizeClient;
-	session: CashonizeSession;
+interface WalletBase {
 	address: string;
 	pkh: string;
 	network: NetworkId;
 }
+/** Cashonize over WalletConnect v2 (the default connector). */
+export interface WalletConnectWallet extends WalletBase {
+	kind?: 'walletconnect';
+	client: CashonizeClient;
+	session: CashonizeSession;
+}
+/** An HD wallet over WizardConnect, trading from one address (receive/0). */
+export interface WizardConnectWallet extends WalletBase {
+	kind: 'wizardconnect';
+	signer: WizardSigner;
+}
+export type ConnectedWallet = WalletConnectWallet | WizardConnectWallet;
 
 export interface Balances {
 	/** BCH in BCH-only UTXOs (spendable as plain BCH). */

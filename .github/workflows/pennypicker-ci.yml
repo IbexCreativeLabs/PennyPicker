@@ -31,5 +31,6 @@ jobs:
           pnpm dlx tsx@4 scripts/pennypicker-exchange.test.ts
           pnpm dlx tsx@4 scripts/pennypicker-mechanisms.test.ts
           pnpm dlx tsx@4 scripts/pennypicker-identity.test.ts
+          pnpm dlx tsx@4 scripts/pennypicker-wizardconnect.test.ts
       - name: Production build (static site in ./docs)
         run: pnpm app:build

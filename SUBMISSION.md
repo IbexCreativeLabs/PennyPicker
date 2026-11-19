@@ -84,4 +84,5 @@ each oracle message. An independent audit is required before mainnet trading wit
 ## Credits
 
 Forked from [Vox](https://github.com/2qx/vox) by 2qx. Built with CashScript, Libauth, Cashonize and the General
-Protocols oracles.
+Protocols oracles. WizardConnect support uses `@wizardconnect/core` and `@wizardconnect/dapp` by Whiterun LLC (Riften
+Labs), LGPL-3.0-or-later ([source](https://gitlab.com/riftenlabs/lib/wizardconnect)).

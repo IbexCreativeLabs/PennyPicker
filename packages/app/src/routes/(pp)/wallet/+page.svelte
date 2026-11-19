@@ -66,6 +66,17 @@
 	const label = (category: string) =>
 		category === pp.config.pusdCategory ? 'PUSD' : category === pp.config.oracleCategory ? 'Oracle' : `${category.slice(0, 8)}…`;
 
+	let wizCopied = $state(false);
+	async function copyWizardUri() {
+		try {
+			await navigator.clipboard.writeText(pp.wizardUri);
+			wizCopied = true;
+			setTimeout(() => (wizCopied = false), 2500);
+		} catch {
+			wizCopied = false;
+		}
+	}
+
 	let uriCopied = $state(false);
 	async function copyPairingUri() {
 		try {
@@ -84,7 +95,7 @@
 	<div class="pp-page-head">
 		<div>
 			<h1>Wallet</h1>
-			<p>PennyPicker connects to Cashonize through WalletConnect. Your keys stay in Cashonize: the app only reads your public address and asks Cashonize to sign transactions you review.</p>
+			<p>PennyPicker connects to Cashonize through WalletConnect, or to an HD wallet through WizardConnect. Your keys stay in your wallet: the app only reads public data and asks the wallet to sign transactions you review.</p>
 		</div>
 	</div>
 
@@ -95,7 +106,7 @@
 				<span class="pp-badge {pp.walletStatus === 'connected' ? 'ok' : pp.walletStatus === 'connecting' || pp.walletStatus === 'checking' ? 'warn' : 'bad'}">{pp.walletStatus}</span>
 			</div>
 			<dl class="pp-kv">
-				<dt>Wallet</dt><dd>Cashonize (WalletConnect v2)</dd>
+				<dt>Wallet</dt><dd>{#if pp.wallet?.kind === 'wizardconnect'}{pp.wallet.signer.walletName} (WizardConnect){:else}Cashonize (WalletConnect v2){/if}</dd>
 				<dt>Network</dt><dd>BCH {pp.networkInfo.label} <span class="faint mono">{pp.networkInfo.walletConnectChain}</span>{#if pp.networkInfo.realFunds} <span class="pp-badge bad plain">real money</span>{/if}<br /><span class="small muted">Follows the market selected at the top. Switch to {pp.network === 'chipnet' ? 'ParyonUSD for mainnet' : 'PennyPickerUSD for Chipnet'}.</span></dd>
 				{#if pp.wallet}
 					<dt>Address</dt><dd class="mono">{pp.wallet.address}</dd>
@@ -103,6 +114,9 @@
 					<dd><span class="mono">{tokenAddress}</span> <button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={copyAddress}>{copied ? 'Copied' : 'Copy'}</button><br /><span class="small muted">Share this to receive PUSD from a teammate.</span></dd>
 					<dt>Key hash</dt><dd class="mono">{pp.wallet.pkh}</dd>
 					<dt>Role</dt><dd>{pp.isOperator ? 'Market creator · trader' : 'Trader'}</dd>
+					{#if pp.wallet.kind === 'wizardconnect'}
+						<dt>Trading address</dt><dd class="small">PennyPicker trades from one address of your HD wallet (<span class="mono">receive/0</span>), shown above. Coins on your wallet's other addresses are not used: send what you want to trade to this address.</dd>
+					{/if}
 				{/if}
 			</dl>
 			<div class="pp-row" style="margin-top: 0.85rem">
@@ -111,10 +125,28 @@
 					<button class="pp-btn pp-btn-ghost" type="button" onclick={() => pp.disconnect()}>Disconnect</button>
 				{:else}
 					<button class="pp-btn pp-btn-primary" type="button" onclick={() => pp.connect()} disabled={pp.walletStatus === 'connecting' || pp.walletStatus === 'checking'}>
-						{pp.walletStatus === 'connecting' ? 'Waiting for Cashonize…' : 'Connect Cashonize'}
+						{pp.walletStatus === 'connecting' && !pp.wizardUri ? 'Waiting for Cashonize…' : 'Connect Cashonize'}
+					</button>
+					<button class="pp-btn" type="button" onclick={() => pp.connectWizard()} disabled={pp.walletStatus === 'connecting' || pp.walletStatus === 'checking'} title="For HD wallets that support WizardConnect (e.g. Cashonize 0.9+ HD wallets)">
+						{pp.wizardUri ? 'Waiting for the wallet…' : 'Connect with WizardConnect'}
 					</button>
 				{/if}
 			</div>
+			{#if !pp.wallet && !pp.pairingUri && !pp.wizardUri}
+				<p class="small muted" style="margin-top: 0.5rem"><strong>Which one?</strong> <em>Connect Cashonize</em> works with any Cashonize wallet. <em>WizardConnect</em> is for HD wallets (in Cashonize: an HD wallet, then Connect → paste or scan the code).</p>
+			{/if}
+			{#if pp.wizardUri}
+				<div class="pairing">
+					<p class="small">Scan with a WizardConnect wallet (set to {pp.networkInfo.label}), or paste the code into your wallet's Connect screen.</p>
+					<qr-code contents={pp.wizardUri} aria-label="WizardConnect pairing QR code"></qr-code>
+					<div class="pair-copy">
+						<button class="pp-btn pp-btn-sm" type="button" onclick={copyWizardUri}>{wizCopied ? 'Copied ✓' : 'Copy pairing code'}</button>
+						<a class="pp-btn pp-btn-sm" href={`https://cashonize.com/?uri=${encodeURIComponent(pp.wizardUri)}`} target="_blank" rel="noopener">Open in Cashonize web ↗</a>
+						<button class="pp-btn pp-btn-ghost pp-btn-sm" type="button" onclick={() => pp.cancelWizardPairing()}>Cancel</button>
+					</div>
+					<details class="pp-details"><summary>Pairing code</summary><textarea class="pp-input" readonly rows="3">{pp.wizardUri}</textarea></details>
+				</div>
+			{/if}
 			{#if pp.pairingUri}
 				<div class="pairing">
 					<p class="small">Scan with Cashonize (set to {pp.networkInfo.label}), or paste the URI into Cashonize's WalletConnect screen.</p>
