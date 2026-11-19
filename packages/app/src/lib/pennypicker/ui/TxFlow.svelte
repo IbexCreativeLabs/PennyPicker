@@ -6,7 +6,7 @@
 	import { assertBroadcastAllowed, broadcastSignedTransaction, transactionHeight } from '$lib/pennypicker/chain';
 	import { NETWORKS } from '$lib/pennypicker/network';
 	import { formatBchFromSatoshis } from '$lib/pennypicker/market';
-	import { explorerTx } from './session.svelte';
+	import { explorerTx, pp } from './session.svelte';
 	import { describeBroadcastError, describeSignError } from './txErrors';
 	import type { ConnectedWallet } from './wallet';
 
@@ -32,11 +32,22 @@
 	let confirmations = $state(0);
 	let poll: ReturnType<typeof setInterval> | undefined;
 	let panel = $state<HTMLElement | undefined>();
-	// The review can open far from the button that started it (e.g. Cancel in "My orders"): bring it into view.
+	// Shown as a modal: lock page scroll, focus the dialog, and pause background market refreshes while it is open.
+	let previousOverflow = '';
 	onMount(() => {
-		const rect = panel?.getBoundingClientRect();
-		if (panel && rect && (rect.top < 0 || rect.bottom > window.innerHeight)) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		previousOverflow = document.body.style.overflow;
+		document.body.style.overflow = 'hidden';
+		pp.txOpen += 1;
+		panel?.focus();
 	});
+	onDestroy(() => {
+		document.body.style.overflow = previousOverflow;
+		pp.txOpen = Math.max(0, pp.txOpen - 1);
+	});
+	/** Escape closes the dialog, except while the wallet is signing or the broadcast is in flight. */
+	function onKey(event: KeyboardEvent) {
+		if (event.key === 'Escape' && stage !== 'signing' && stage !== 'broadcasting') onDismiss();
+	}
 
 	const kindLabel: Record<UnsignedExchangeTransaction['kind'], string> = {
 		'oracle-genesis': 'Create oracle',
@@ -171,9 +182,12 @@
 	void order;
 </script>
 
-<section class="pp-card txflow" aria-live="polite" bind:this={panel}>
+<svelte:window onkeydown={onKey} />
+
+<div class="tx-backdrop" role="presentation">
+<div class="pp-card txflow" role="dialog" aria-modal="true" aria-labelledby="txflow-title" aria-live="polite" tabindex="-1" bind:this={panel}>
 	<div class="pp-card-head">
-		<h2>{title ?? kindLabel[unsigned.kind]}</h2>
+		<h2 id="txflow-title">{title ?? kindLabel[unsigned.kind]}</h2>
 		<ol class="steps">
 			{#each steps as step, i}
 				<li class:done={i < stepIndex || stage === 'confirmed'} class:current={i === stepIndex && stage !== 'confirmed'}>{step.label}</li>
@@ -255,10 +269,16 @@
 			</div>
 		{/if}
 	</div>
-</section>
+</div>
+</div>
 
 <style>
-	.txflow { border-color: var(--pp-accent); box-shadow: 0 0 0 3px var(--pp-accent-soft); }
+	.tx-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(20, 18, 16, 0.6); backdrop-filter: blur(2px); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) 16px; overflow-y: auto; animation: fade 0.15s ease-out; }
+	.txflow { width: 100%; max-width: 40rem; max-height: calc(100dvh - 32px); overflow-y: auto; border-color: var(--pp-accent); box-shadow: 0 0 0 3px var(--pp-accent-soft), 0 24px 60px rgba(0, 0, 0, 0.35); outline: none; animation: pop 0.18s ease-out; }
+	.txflow .pp-card-head { flex-wrap: wrap; gap: 0.5rem; }
+	@keyframes fade { from { opacity: 0; } }
+	@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+	@media (prefers-reduced-motion: reduce) { .tx-backdrop, .txflow { animation: none; } }
 	.steps { display: flex; gap: 0.35rem; list-style: none; padding: 0; margin: 0; flex-wrap: wrap; }
 	.steps li { font-size: 0.75rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--pp-surface-2); color: var(--pp-faint); border: 1px solid var(--pp-border); }
 	.steps li.done { color: var(--pp-bid); background: var(--pp-bid-soft); border-color: transparent; }

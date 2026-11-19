@@ -1,3 +1,7 @@
+<script lang="ts">
+	import { COMMUNITY } from '$lib/pennypicker/deployment';
+</script>
+
 <svelte:head>
 	<title>About · PennyPicker</title>
 	<meta name="description" content="PennyPicker: an oracle-delta basis-points orderbook DEX for stablecoins on Bitcoin Cash." />
@@ -75,7 +79,25 @@
 	</div>
 </section>
 
+<section class="ab-section">
+	<a class="pp-card companion" href={COMMUNITY.stakingArenaUrl} target="_blank" rel="noopener">
+		<span class="ab-icon big" aria-hidden="true">⚔</span>
+		<span class="c-text">
+			<span class="tag accent">Companion project</span>
+			<strong>Part of a bigger stablecoin design</strong>
+			<span class="muted">PennyPicker is not only a standalone exchange: it is one component of a novel stablecoin design. Explore the other component, <b>Staking Arena</b>.</span>
+		</span>
+		<span class="c-go" aria-hidden="true">↗</span>
+	</a>
+</section>
+
 <style>
+	.companion { display: flex; align-items: center; gap: 1rem; text-decoration: none !important; color: var(--pp-text); border-color: color-mix(in srgb, var(--pp-accent) 35%, var(--pp-border)); background: linear-gradient(120deg, var(--pp-accent-soft), var(--pp-surface) 60%); transition: border-color 0.15s, transform 0.15s; }
+	.companion:hover { border-color: var(--pp-accent); transform: translateY(-1px); }
+	.companion .big { width: 2.8rem; height: 2.8rem; font-size: 1.3rem; }
+	.c-text { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; font-size: 0.93rem; line-height: 1.5; }
+	.c-text strong { font-size: 1.05rem; }
+	.c-go { font-size: 1.3rem; color: var(--pp-accent); }
 	.example { display: flex; flex-direction: column; gap: 0.4rem; }
 	.ex-row { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: center; }
 	.ex-row p { margin: 0.2rem 0; font-size: 1.05rem; }

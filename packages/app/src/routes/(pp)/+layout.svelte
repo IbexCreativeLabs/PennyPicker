@@ -4,6 +4,7 @@
 	import '$lib/pennypicker/ui/theme.css';
 	import { pp } from '$lib/pennypicker/ui/session.svelte';
 	import { formatPrice } from '$lib/pennypicker/contracts';
+	import { formatUnits } from '$lib/pennypicker/exchange';
 	import DemoNotice from '$lib/pennypicker/ui/DemoNotice.svelte';
 	import TelegramChat from '$lib/pennypicker/ui/TelegramChat.svelte';
 	import { MARKETS, COMMUNITY } from '$lib/pennypicker/deployment';
@@ -12,6 +13,12 @@
 	const shortAddress = (address: string) => {
 		const body = address.split(':')[1] ?? address;
 		return `${body.slice(0, 6)}…${body.slice(-4)}`;
+	};
+
+	/** Compact BCH amount for the header (exact value in the tooltip). */
+	const shortBch = (sats: bigint) => {
+		const whole = Number(sats) / 1e8;
+		return whole === 0 ? '0' : whole < 0.0001 ? '<0.0001' : whole.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
 	};
 
 	const build = __PENNYPICKER_BUILD__;
@@ -80,7 +87,15 @@
 					<span class="pp-badge warn">Market not set</span>
 				{/if}
 				{#if pp.walletStatus === 'connected' && pp.wallet}
-					<a href="/wallet" class="pp-badge ok" title={pp.wallet.address}>{shortAddress(pp.wallet.address)}</a>
+					<a href="/wallet" class="wallet-pill" title="{pp.wallet.address} · {pp.networkInfo.label}">
+						<span class="w-dot" aria-hidden="true"></span>
+						{#if pp.utxosLoaded}
+							<span class="w-bal num"><strong>{shortBch(pp.balances.bchSats)}</strong> BCH <span class="faint">·</span> <strong>{formatUnits(pp.balances.pusdUnits)}</strong> PUSD</span>
+						{:else}
+							<span class="w-bal muted">Loading balance…</span>
+						{/if}
+						<span class="w-addr mono">{shortAddress(pp.wallet.address)}</span>
+					</a>
 				{:else if pp.walletStatus === 'checking'}
 					<span class="pp-badge">Wallet…</span>
 				{:else}
@@ -106,7 +121,7 @@
 	<footer class="foot">
 		<div class="bar small muted">
 			<span>{#if pp.networkInfo.realFunds}Experimental prototype. {pp.selectedMarket.name} on BCH mainnet is real money; the contracts are not independently audited and orders are capped.{:else}Experimental prototype on BCH Chipnet. PUSD is a test token priced as 1 USD, with no real backing.{/if} Prices come from the oracles.cash BCH/USD oracle. <button class="linkish" type="button" onclick={() => notice?.show()}>About this demo</button> · build {build.commit}</span>
-			<span><a href="/about">About</a> · <a href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Source code</a></span>
+			<span><a href="/about">About</a> · <a href={COMMUNITY.stakingArenaUrl} target="_blank" rel="noopener">Staking Arena ↗</a> · <a href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Source code</a></span>
 		</div>
 	</footer>
 </div>
@@ -125,6 +140,11 @@
 	.net-strip .bar { justify-content: space-between; padding-block: 0.35rem; }
 	.status { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 	.status a { text-decoration: none !important; }
+	.wallet-pill { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--pp-border); background: var(--pp-surface); color: var(--pp-text) !important; border-radius: 999px; padding: 0.22rem 0.65rem; font-size: 0.8rem; }
+	.wallet-pill:hover { border-color: var(--pp-accent); }
+	.w-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pp-bid); box-shadow: 0 0 0 3px var(--pp-bid-soft); flex: none; }
+	.w-bal strong { font-weight: 650; }
+	.w-addr { color: var(--pp-muted); font-size: 0.74rem; padding-left: 0.45rem; border-left: 1px solid var(--pp-border); }
 	.bar .menu { display: none; margin-left: auto; font-size: 1.2rem; }
 	.market { position: relative; }
 	.market-btn { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid var(--pp-border); background: var(--pp-surface); color: var(--pp-text); border-radius: 999px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
@@ -150,5 +170,6 @@
 		/* Keep the coin, market selector and menu on one row on phones. */
 		.bar { gap: 0.5rem; }
 		.brand strong { display: none; }
+		.w-addr { display: none; }
 	}
 </style>

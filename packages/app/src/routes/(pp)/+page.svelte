@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TxFlow from '$lib/pennypicker/ui/TxFlow.svelte';
+	import BpsScale from '$lib/pennypicker/ui/BpsScale.svelte';
 	import { pp, explorerTx, formatAge } from '$lib/pennypicker/ui/session.svelte';
 	import { errorText, parseBch, parsePusd } from '$lib/pennypicker/ui/wallet';
 	import {
@@ -68,7 +69,7 @@
 	}
 
 	const maker = $derived.by(() => {
-		if (!price) return { error: 'No reference price yet.' };
+		if (!price) return { error: pp.oracleLoaded && pp.feedError ? 'No reference price available right now.' : 'Loading the live oracle price…' };
 		try {
 			if (!/^-?\d+$/.test(bpsInput.trim())) throw new Error('BPS must be a whole number.');
 			const delta = Number(bpsInput);
@@ -234,6 +235,11 @@
 		}
 	}
 	const mainnet = $derived(pp.networkInfo.realFunds);
+	/** True until the first orderbook scan finishes (so empty-book messages are never shown before data arrives). */
+	const bookLoading = $derived(!pp.discovery && !(pp.oracleLoaded && !pp.oracle) && !pp.marketError);
+	const scaleOrders = $derived(live.map((o) => ({ deltaBps: o.deltaBps, side: o.side })));
+	const draft = $derived(mode === 'limit' && !('error' in maker) ? { deltaBps: maker.delta, side } : undefined);
+	const checkedAgo = $derived(pp.lastChecked ? Math.max(0, pp.nowSec - Math.floor(pp.lastChecked.getTime() / 1000)) : undefined);
 	const funded = $derived(!!pp.wallet && pp.utxosLoaded && pp.balances.bchSats > 0n);
 	const showGuide = $derived(!guideHidden && !funded);
 
@@ -294,6 +300,21 @@
 		</div>
 	</section>
 	{:else}
+	<section class="hero">
+		<div class="hero-text">
+			<p class="kicker">Floating order book · BCH / {pp.selectedMarket.name} · {pp.networkInfo.label}</p>
+			<h1>Trade BCH against the live oracle price</h1>
+			<p class="hero-sub">
+				Instead of a fixed price, you place orders at <strong>± basis points (BPS)</strong> from the live BCH/USD price
+				(100 BPS = 1%). When the price moves, every order moves with it, so orders never go stale.
+			</p>
+			<a class="small" href="/about/how-it-works">How it works →</a>
+		</div>
+		<div class="pp-card hero-viz">
+			<BpsScale {price} orders={scaleOrders} {draft} loading={!price} />
+		</div>
+	</section>
+
 	{#if pp.networkInfo.realFunds}
 		<p class="pp-callout bad small" style="margin-bottom: 1rem"><strong>BCH mainnet: real money.</strong> The contracts have had an internal security review only, no independent audit. Only trade amounts you can afford to lose.</p>
 	{/if}
@@ -334,13 +355,13 @@
 		<div class="pair">
 			{#if pp.selectedMarket.id === 'pennypickerusd'}<img class="coin" src="/pennypickerusd-256.png" alt="" width="40" height="40" />{:else}<span class="coin coin-generic" aria-hidden="true">$</span>{/if}
 			<div>
-				<h1>BCH <span class="faint">/</span> PUSD</h1>
+				<h2 class="pair-h">BCH <span class="faint">/</span> PUSD</h2>
 				<span class="small muted">{pp.selectedMarket.name} · priced in BPS from the live oracle · {pp.networkInfo.label}</span>
 			</div>
 		</div>
 		<div class="m-stat">
 			<div class="pp-stat-label"><span class="pp-live"></span> Reference</div>
-			<div class="pp-stat-value">{price ? formatPrice(price) : '—'}</div>
+			<div class="pp-stat-value">{#if price}{formatPrice(price)}{:else}<span class="skel" style="width: 5.5rem"></span>{/if}</div>
 			<div class="small muted">PUSD per BCH {#if move}<span class={move.up ? 'bid-c' : 'ask-c'}>{move.label}</span>{/if}</div>
 		</div>
 		<div class="m-stat">
@@ -356,14 +377,24 @@
 		</div>
 		<div class="m-stat">
 			<div class="pp-stat-label">Best bid / ask</div>
+			{#if bookLoading}
+			<div class="num"><span class="skel" style="width: 7rem"></span></div>
+			<div class="small muted">Loading the book…</div>
+			{:else}
 			<div class="num">
 				<span class="bid-c">{bestBid && price ? formatPrice(limitPrice(price, bestBid.deltaBps)) : '—'}</span>
 				<span class="faint">/</span>
 				<span class="ask-c">{bestAsk && price ? formatPrice(limitPrice(price, bestAsk.deltaBps)) : '—'}</span>
 			</div>
 			<div class="small muted">{bestBid ? signed(bestBid.deltaBps) : '—'} / {bestAsk ? signed(bestAsk.deltaBps) : '—'} BPS</div>
+			{/if}
 		</div>
-		<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
+		<div class="refresh">
+			<button class="pp-btn pp-btn-sm" type="button" onclick={() => pp.refreshAll()} disabled={pp.loadingMarket}>{pp.loadingMarket ? 'Refreshing…' : 'Refresh'}</button>
+			<span class="small faint" title="The book and best bid/ask update automatically (read-only); paused while a transaction is open.">
+				{#if pp.txOpen > 0}Auto-update paused{:else if checkedAgo !== undefined}Auto-updating · {checkedAgo < 5 ? 'just now' : `${checkedAgo}s ago`}{:else}Auto-updating{/if}
+			</span>
+		</div>
 	</section>
 
 	{#if !pp.market}
@@ -384,9 +415,10 @@
 		<!-- Orderbook -->
 		<section class="pp-card book">
 			<div class="pp-card-head">
-				<h2>Orderbook</h2>
-				<span class="small muted">Limit = reference × (1 + BPS/10000)</span>
+				<h2>Floating order book</h2>
+				<span class="small faint mono">price = reference × (1 + BPS/10000)</span>
 			</div>
+			<p class="small muted book-note">Orders are priced relative to the live reference price, so their absolute price moves with the oracle.</p>
 			<div class="pp-table-wrap">
 				<table class="pp-table">
 					<thead><tr><th>BPS</th><th class="r">Price</th><th class="r">Size BCH</th><th class="r">Total PUSD</th><th></th></tr></thead>
@@ -404,11 +436,15 @@
 								</td>
 							</tr>
 						{:else}
-							<tr><td colspan="5" class="muted small">No asks (nobody selling BCH yet).</td></tr>
+							{#if bookLoading}
+								{#each [0, 1, 2] as i (i)}<tr class="skel-row"><td colspan="5"><span class="skel" style="width: {70 - i * 8}%"></span></td></tr>{/each}
+							{:else}
+								<tr><td colspan="5" class="muted small">No asks (nobody selling BCH yet).</td></tr>
+							{/if}
 						{/each}
 						<tr class="ref-row">
 							<td colspan="5">
-								<span><span class="pp-live"></span> Reference <strong class="num">{price ? formatPrice(price) : '—'}</strong> PUSD/BCH</span>
+								<span><span class="pp-live"></span> Reference <strong class="num">{price ? formatPrice(price) : 'loading…'}</strong> PUSD/BCH</span>
 								{#if bestAsk && bestBid}<span class="muted small"> · spread {bestAsk.deltaBps - bestBid.deltaBps} BPS</span>{/if}
 							</td>
 						</tr>
@@ -425,12 +461,18 @@
 								</td>
 							</tr>
 						{:else}
-							<tr><td colspan="5" class="muted small">No bids (nobody buying BCH yet).</td></tr>
+							{#if bookLoading}
+								{#each [0, 1, 2] as i (i)}<tr class="skel-row"><td colspan="5"><span class="skel" style="width: {54 + i * 8}%"></span></td></tr>{/each}
+							{:else}
+								<tr><td colspan="5" class="muted small">No bids (nobody buying BCH yet).</td></tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>
 			</div>
-			{#if pp.discovery}
+			{#if bookLoading}
+				<p class="small faint">Scanning the chain for orders…</p>
+			{:else if pp.discovery}
 				<p class="small faint">{pp.discovery.announcedCount} orders announced · {pp.discovery.fills.length} fills · {pp.discovery.canceled.length} canceled{pp.discovery.historyTruncated ? ' · older history not scanned' : ''}</p>
 			{/if}
 		</section>
@@ -519,7 +561,7 @@
 	<!-- My orders -->
 	{#if pp.wallet}
 		<section class="pp-card" style="margin-top: 1rem">
-			<div class="pp-card-head"><h2>My orders</h2><span class="small muted">Balances: {formatSats(pp.balances.bchSats)} BCH · {formatUnits(pp.balances.pusdUnits)} PUSD</span></div>
+			<div class="pp-card-head"><h2>My orders</h2><span class="small muted">{#if pp.utxosLoaded}Balances: {formatSats(pp.balances.bchSats)} BCH · {formatUnits(pp.balances.pusdUnits)} PUSD{:else}Loading balances…{/if}</span></div>
 			<div class="pp-table-wrap">
 				<table class="pp-table">
 					<thead><tr><th>Side</th><th>BPS</th><th class="r">Limit now</th><th class="r">Remaining</th><th class="r">Proceeds</th><th>Status</th><th></th></tr></thead>
@@ -538,7 +580,7 @@
 								<td class="r"><button class="pp-btn pp-btn-sm" type="button" onclick={() => cancel(order)}>{order.exhausted ? 'Withdraw' : 'Cancel'}</button></td>
 							</tr>
 						{:else}
-							<tr><td colspan="7" class="muted small">You have no orders on this market.</td></tr>
+							<tr><td colspan="7" class="muted small">{bookLoading ? 'Loading your orders…' : 'You have no orders on this market.'}</td></tr>
 						{/each}
 					</tbody>
 				</table>
@@ -569,7 +611,7 @@
 					<a class="small" href={explorerTx(fill.txid)} target="_blank" rel="noopener">View ↗</a>
 				</div>
 			{:else}
-				<p class="small muted">No fills observed on this market yet.</p>
+				<p class="small muted">{bookLoading ? 'Loading fills…' : 'No fills observed on this market yet.'}</p>
 			{/each}
 		</section>
 	</div>
@@ -577,12 +619,24 @@
 </main>
 
 <style>
+	.hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 1.25rem 2rem; align-items: center; margin: 0.25rem 0 1.1rem; }
+	.hero .kicker { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.7rem; color: var(--pp-accent); font-weight: 700; margin: 0; }
+	.hero h1 { font-size: clamp(1.55rem, 3.4vw, 2.2rem); line-height: 1.15; letter-spacing: -0.015em; margin: 0.3rem 0 0.5rem; }
+	.hero-sub { color: var(--pp-muted); font-size: 1rem; line-height: 1.55; margin: 0 0 0.4rem; max-width: 34rem; }
+	.hero-viz { padding-top: 0.8rem; padding-bottom: 0.4rem; }
+	.refresh { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+	.book-note { margin: -0.35rem 0 0.6rem; }
+	.skel { display: inline-block; height: 0.9em; min-width: 2rem; border-radius: 6px; background: linear-gradient(90deg, var(--pp-surface-2), var(--pp-border), var(--pp-surface-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; vertical-align: middle; }
+	.skel-row td { padding: 0.55rem 0.5rem; }
+	@keyframes shimmer { to { background-position: -200% 0; } }
+	@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+	@media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); } .refresh { align-items: flex-start; } }
 	.mainnet h1 { font-size: 1.4rem; margin: 0; }
 	.mainnet .pp-row { margin-top: 0.75rem; flex-wrap: wrap; }
 	.vo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.9rem; margin: 0.9rem 0; }
 	.market { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-bottom: 1rem; }
 	.pair { margin-right: auto; display: flex; align-items: center; gap: 0.75rem; }
-	.pair h1 { font-size: 1.5rem; }
+	.pair-h { font-size: 1.5rem; margin: 0; }
 	.coin { width: 40px; height: 40px; border-radius: 50%; box-shadow: var(--pp-shadow); }
 	.coin-generic { display: grid; place-items: center; flex: none; background: #2f8f5b; color: #fff; font-weight: 700; font-size: 1.2rem; }
 	.guide { margin-bottom: 1rem; border-color: color-mix(in srgb, var(--pp-accent) 35%, var(--pp-border)); }
