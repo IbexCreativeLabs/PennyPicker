@@ -5,7 +5,6 @@
 - Live demo: **https://pennypicker.pages.dev**. PennyPickerUSD (PPUSD) on BCH Chipnet (free test coins), and ParyonUSD
   (PUSD) on BCH mainnet (real money, 25 PUSD cap per order), chosen in the header
 - Source: https://github.com/IbexCreativeLabs/PennyPicker
-- Recording of a real two-wallet trade: [`media/two-wallet-trade.gif`](media/two-wallet-trade.gif)
 
 ## The idea
 

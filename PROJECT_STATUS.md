@@ -178,8 +178,8 @@ Together with the earlier +20 BPS ask, the book shows a 20 BPS spread around the
 
 **Two-wallet trade recorded on the public site (2026-11-18):** PP Trader A bought 0.001 BCH from Trader B's +10 BPS
 ask for 0.21 PUSD, bundling the newest oracles.cash message (#1931898). The fill is
-`74966ac56d7fed89db2ff4e21f912f18e83541fdd6ba6efcd55099f341a71de7`. The recording is
-`pennypicker_two_wallet_trade.gif` (kept outside the repo).
+`74966ac56d7fed89db2ff4e21f912f18e83541fdd6ba6efcd55099f341a71de7`. A GIF recording of
+this trade was in the README until 2026-11-20, when it was removed because it showed an older version of the site.
 
 **Contention handling verified on Chipnet (2026-11-18):** Trader A signed a sell into the −10 BPS bid but held it.
 A competing fill `6900ec50ed4bbd1049842b45f2dc96941f52f5048c6170a9e9bbbb473f9bfe2a` then spent the oracle first.
