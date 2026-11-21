@@ -18,6 +18,18 @@
 
 	const build = __PENNYPICKER_BUILD__;
 	let notice: DemoNotice | undefined = $state();
+	const projectAddress = 'bitcoincash:zqdmssrx58hp2pwaguqqaymwa70d3ctg6svqyl2525';
+	let copyStatus = $state('');
+
+	async function copyProjectAddress() {
+		copyStatus = '';
+		try {
+			await navigator.clipboard.writeText(projectAddress);
+			copyStatus = 'Address copied';
+		} catch {
+			copyStatus = 'Could not copy address';
+		}
+	}
 
 	let { children } = $props();
 	let menuOpen = $state(false);
@@ -47,7 +59,16 @@
 			<a class="pp-btn pp-btn-sm" href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Code</a>
 			<span>This project was <a href={COMMUNITY.forkedFromUrl} target="_blank" rel="noopener">forked</a> with permission from <a href="https://vox.cash/cat" target="_blank" rel="noopener">CatDex</a>.</span>
 			<a class="pp-btn pp-btn-sm" href={`${COMMUNITY.sourceUrl}/blob/main/PennyPicker.pdf`} target="_blank" rel="noopener">Slides</a>
-			<code>bitcoincash:zqdmssrx58hp2pwaguqqaymwa70d3ctg6svqyl2525</code>
+			<span class="project-address">
+				<code>{projectAddress}</code>
+				<button class="pp-btn pp-btn-ghost pp-btn-sm copy-address" type="button" aria-label="Copy Bitcoin Cash address" title="Copy Bitcoin Cash address" onclick={copyProjectAddress}>
+					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<rect x="8" y="8" width="12" height="12" rx="2" />
+						<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+					</svg>
+				</button>
+			</span>
+			<span class="copy-status" role="status">{copyStatus}</span>
 		</div>
 	</div>
 	<header class="topbar">
@@ -139,6 +160,9 @@
 	.project-banner { background: var(--pp-surface-2); border-bottom: 1px solid var(--pp-border); }
 	.project-banner .bar { gap: 0.4rem 0.75rem; }
 	.project-banner a:not(.pp-btn) { text-decoration: underline; text-underline-offset: 2px; }
+	.project-address { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; }
+	.project-banner .copy-address { flex: 0 0 2rem; padding-inline: 0; }
+	.copy-status:empty { position: absolute; }
 	.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--pp-bg) 88%, transparent); backdrop-filter: blur(12px) saturate(1.4); box-shadow: 0 1px 0 var(--pp-border); }
 	.bar { max-width: 76rem; margin: 0 auto; padding: 0.55rem max(16px, 2vw); display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 	.brand { display: flex; align-items: center; gap: 0.55rem; color: var(--pp-text) !important; text-decoration: none !important; }
