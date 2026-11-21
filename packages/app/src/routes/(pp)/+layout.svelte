@@ -42,6 +42,14 @@
 <svelte:window onclick={closeMarket} onkeydown={closeMarket} />
 
 <div class="pp">
+	<div class="project-banner">
+		<div class="bar small muted">
+			<a class="pp-btn pp-btn-sm" href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Code</a>
+			<span>This project was <a href={COMMUNITY.forkedFromUrl}>forked</a> with permission from <a href="https://vox.cash/cat" target="_blank" rel="noopener">CatDex</a>.</span>
+			<a class="pp-btn pp-btn-sm" href={`${COMMUNITY.sourceUrl}/blob/main/PennyPicker.pdf`} target="_blank" rel="noopener">Slides</a>
+			<code>bitcoincash:zqdmssrx58hp2pwaguqqaymwa70d3ctg6svqyl2525</code>
+		</div>
+	</div>
 	<header class="topbar">
 		<div class="bar">
 			<a class="brand" href="/">
@@ -127,6 +135,9 @@
 </div>
 
 <style>
+	.project-banner { background: var(--pp-surface-2); border-bottom: 1px solid var(--pp-border); }
+	.project-banner .bar { gap: 0.4rem 0.75rem; }
+	.project-banner a:not(.pp-btn) { text-decoration: underline; text-underline-offset: 2px; }
 	.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--pp-bg) 88%, transparent); backdrop-filter: blur(12px) saturate(1.4); box-shadow: 0 1px 0 var(--pp-border); }
 	.bar { max-width: 76rem; margin: 0 auto; padding: 0.55rem max(16px, 2vw); display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 	.brand { display: flex; align-items: center; gap: 0.55rem; color: var(--pp-text) !important; text-decoration: none !important; }
