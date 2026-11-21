@@ -18,7 +18,7 @@
 
 	const build = __PENNYPICKER_BUILD__;
 	let notice: DemoNotice | undefined = $state();
-	const projectAddress = 'bitcoincash:zqdmssrx58hp2pwaguqqaymwa70d3ctg6svqyl2525';
+	const projectAddress = 'bitcoincash:qqdmssrx58hp2pwaguqqaymwa70d3ctg6st2hpyj48';
 	let copyStatus = $state('');
 
 	async function copyProjectAddress() {
