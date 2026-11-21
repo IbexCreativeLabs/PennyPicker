@@ -109,6 +109,7 @@
 				{:else}
 					<a href="/wallet" class="pp-badge bad">Connect wallet</a>
 				{/if}
+				<span class="companion small">Penny Picker is a part of a larger stablecoin design. Another part is <a href={COMMUNITY.stakingArenaUrl} target="_blank" rel="noopener">Stake Arena</a></span>
 			</div>
 		</div>
 		{#if pp.marketError}
@@ -151,7 +152,9 @@
 	.net-strip { background: var(--pp-danger); color: #fff; }
 	.net-strip .bar { justify-content: space-between; padding-block: 0.35rem; }
 	.status { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
-	.status a { text-decoration: none !important; }
+	.status > a { text-decoration: none !important; }
+	.companion { max-width: 19rem; padding: 0.3rem 0.65rem; border-radius: var(--pp-radius-sm); background: var(--pp-accent-soft); line-height: 1.3; }
+	.companion a { font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
 	.wallet-pill { display: inline-flex; align-items: center; gap: 0.45rem; background: var(--pp-surface-2); color: var(--pp-text) !important; border-radius: 999px; padding: 0.25rem 0.7rem; font-size: 0.8rem; transition: background 0.18s var(--pp-ease); }
 	.wallet-pill:hover { background: var(--pp-accent-soft); }
 	.w-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pp-bid); box-shadow: 0 0 0 3px var(--pp-bid-soft); flex: none; }

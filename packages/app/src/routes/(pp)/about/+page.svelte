@@ -1,7 +1,3 @@
-<script lang="ts">
-	import { COMMUNITY } from '$lib/pennypicker/deployment';
-</script>
-
 <svelte:head>
 	<title>How it works · PennyPicker</title>
 	<meta name="description" content="PennyPicker: an order book for BCH and USD stablecoins where every price is set in basis points from the live oracle." />
@@ -58,9 +54,6 @@
 		<li><strong>Fairer liquidations.</strong> Bids from 0 to −1000 BPS compete, instead of a flat 10% penalty.</li>
 		<li><strong>Market-priced redemptions.</strong> The book sets the price, not hard-coded fees.</li>
 	</ul>
-	<a class="companion" href={COMMUNITY.stakingArenaUrl} target="_blank" rel="noopener">
-		PennyPicker is one half of a larger stablecoin design. The other half is <strong>Staking Arena</strong> ↗
-	</a>
 </section>
 
 <style>
@@ -74,8 +67,6 @@
 	.intro { margin: -0.4rem 0 1rem; }
 	.cta { margin-top: 1.25rem; }
 	.why { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.5rem; max-width: 40rem; }
-	.companion { display: inline-block; margin-top: 1.25rem; padding: 0.75rem 1rem; border-radius: var(--pp-radius-sm); background: var(--pp-accent-soft); color: var(--pp-text) !important; text-decoration: none !important; transition: transform 0.15s var(--pp-ease); }
-	.companion:hover { transform: translateY(-1px); }
 	@media (max-width: 640px) {
 		.compare { grid-template-columns: 1fr; }
 		.arrow { transform: rotate(90deg); justify-self: start; }

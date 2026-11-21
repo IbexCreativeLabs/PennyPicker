@@ -60,7 +60,7 @@ export const DEPLOYMENTS: Record<NetworkId, DeploymentIds> = { chipnet: CHIPNET_
 /** Public community links. Set the Telegram invite link here (t.me/…) once the group exists. */
 export const COMMUNITY = {
 	/** Companion project: the other component of the stablecoin design. */
-	stakingArenaUrl: 'https://staking-arena-blaze2026.github.io/staking-arena-blaze-site/?network=mainnet#/',
+	stakingArenaUrl: 'https://stakearena.bethechange.global/',
 	telegramUrl: 'https://t.me/bethechange_global' as string,
 	sourceUrl: 'https://github.com/IbexCreativeLabs/PennyPicker',
 	forkedFromUrl: 'https://github.com/2qx/vox'
