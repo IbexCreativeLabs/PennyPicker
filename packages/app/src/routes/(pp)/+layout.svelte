@@ -45,7 +45,7 @@
 	<div class="project-banner">
 		<div class="bar small muted">
 			<a class="pp-btn pp-btn-sm" href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Code</a>
-			<span>This project was <a href={COMMUNITY.forkedFromUrl}>forked</a> with permission from <a href="https://vox.cash/cat" target="_blank" rel="noopener">CatDex</a>.</span>
+			<span>This project was <a href={COMMUNITY.forkedFromUrl} target="_blank" rel="noopener">forked</a> with permission from <a href="https://vox.cash/cat" target="_blank" rel="noopener">CatDex</a>.</span>
 			<a class="pp-btn pp-btn-sm" href={`${COMMUNITY.sourceUrl}/blob/main/PennyPicker.pdf`} target="_blank" rel="noopener">Slides</a>
 			<code>bitcoincash:zqdmssrx58hp2pwaguqqaymwa70d3ctg6svqyl2525</code>
 		</div>
