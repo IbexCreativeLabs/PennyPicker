@@ -7,7 +7,7 @@ PennyPicker is a **static site**:
 - The browser talks directly to the BCH **Chipnet** Electrum servers over WSS (`chipnet.imaginary.cash`) and to the WalletConnect relay.
 - No app server, database or persistent process is needed.
 
-There is no server-side code and no secret: everything is public, static files.
+The app is static. A Cloudflare Pages Function streams `/PennyPicker.pdf` from GitHub with inline PDF headers. It needs no secrets.
 
 **Why Cloudflare Pages:**
 - It deploys private repositories owned by GitHub organizations on the free plan.

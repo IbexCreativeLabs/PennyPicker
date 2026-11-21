@@ -58,7 +58,7 @@
 		<div class="bar small muted">
 			<a class="pp-btn pp-btn-sm" href={COMMUNITY.sourceUrl} target="_blank" rel="noopener">Code</a>
 			<span>This project was <a href={COMMUNITY.forkedFromUrl} target="_blank" rel="noopener">forked</a> with permission from <a href="https://vox.cash/cat" target="_blank" rel="noopener">CatDex</a>.</span>
-			<a class="pp-btn pp-btn-sm" href={`${COMMUNITY.sourceUrl}/blob/main/PennyPicker.pdf`} target="_blank" rel="noopener">Slides</a>
+			<a class="pp-btn pp-btn-sm" href="/PennyPicker.pdf" target="_blank" rel="noopener">Slides</a>
 			<span class="project-address">
 				<code>{projectAddress}</code>
 				<button class="pp-btn pp-btn-ghost pp-btn-sm copy-address" type="button" aria-label="Copy Bitcoin Cash address" title="Copy Bitcoin Cash address" onclick={copyProjectAddress}>
