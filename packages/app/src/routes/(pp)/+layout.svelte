@@ -18,7 +18,8 @@
 
 	const build = __PENNYPICKER_BUILD__;
 	let notice: DemoNotice | undefined = $state();
-	const projectAddress = 'bitcoincash:qqdmssrx58hp2pwaguqqaymwa70d3ctg6st2hpyj48';
+	const projectAddress = 'bitcoincash:zqdmssrx58hp2pwaguqqaymwa70d3ctg6svqyl2525';
+	const projectAddressUrl = 'https://explorer.salemkode.com/address/zqdmssrx58hp2pwaguqqaymwa70d3ctg6svqyl2525';
 	let copyStatus = $state('');
 
 	async function copyProjectAddress() {
@@ -60,7 +61,7 @@
 			<span>This project was <a href={COMMUNITY.forkedFromUrl} target="_blank" rel="noopener">forked</a> with permission from <a href="https://vox.cash/cat" target="_blank" rel="noopener">CatDex</a>.</span>
 			<a class="pp-btn pp-btn-sm" href="/PennyPicker.pdf" target="_blank" rel="noopener">Slides</a>
 			<span class="project-address">
-				<code>{projectAddress}</code>
+				<a href={projectAddressUrl} target="_blank" rel="noopener" title="View on block explorer"><code>{projectAddress}</code></a>
 				<button class="pp-btn pp-btn-ghost pp-btn-sm copy-address" type="button" aria-label="Copy Bitcoin Cash address" title="Copy Bitcoin Cash address" onclick={copyProjectAddress}>
 					<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 						<rect x="8" y="8" width="12" height="12" rx="2" />
